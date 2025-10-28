@@ -5,6 +5,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const UDP_PORT = 4254;
 
+// Variable to store tempo value
+let tempo = null;
+
 // Create UDP socket with reuseAddr option
 const udpServer = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
@@ -22,6 +25,15 @@ udpServer.on('message', (msg, rinfo) => {
       if (packet.address) {
         console.log(`[OSC] Address: ${packet.address}`);
         console.log(`[OSC] Arguments:`, packet.args);
+        
+        // Subscribe to tempo value
+        if (packet.address === '/tempo') {
+          if (packet.args && packet.args.length > 0) {
+            // OSC arguments can be accessed directly or via .value property
+            tempo = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
+            console.log(`[TEMPO] Updated: ${tempo}`);
+          }
+        }
       } else if (packet.timeTag) {
         console.log(`[OSC] Bundle received`);
         if (packet.packets) {
@@ -29,6 +41,14 @@ udpServer.on('message', (msg, rinfo) => {
             console.log(`[OSC] Bundle message ${i + 1}:`);
             console.log(`  Address: ${p.address}`);
             console.log(`  Arguments:`, p.args);
+            
+            // Subscribe to tempo value in bundles
+            if (p.address === '/tempo') {
+              if (p.args && p.args.length > 0) {
+                tempo = p.args[0];
+                console.log(`[TEMPO] Updated: ${tempo}`);
+              }
+            }
           });
         }
       } else {
