@@ -1,6 +1,8 @@
 const express = require('express');
 const dgram = require('dgram');
 const osc = require('osc');
+const http = require('http');
+const { WebSocketServer } = require('ws');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const UDP_PORT = 4254;
@@ -21,12 +23,34 @@ let currentBeat = null;
 let previousBar = null;
 let previousBeat = null;
 
+// Store connected WebSocket clients (will be initialized later)
+let clients = null;
+
+// Function to broadcast beat data to all WebSocket clients
+function broadcastBeat() {
+  if (!clients || clients.size === 0) {
+    return; // No clients connected yet
+  }
+  
+  const message = JSON.stringify({
+    type: 'beat',
+    bar: currentBar
+  });
+  
+  console.log('[WS] Message:', message);
+  
+  clients.forEach(client => {
+    if (client.readyState === client.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
 // Function to calculate current bar and beat
 function calculateBarAndBeat() {
 
-  // console.log(`[BAR/BEAT] currentSongTime: ${currentSongTime}, tempo: ${tempo}, signatureNumerator: ${signatureNumerator}, signatureDenominator: ${signatureDenominator}`);
   if (currentSongTime === null || tempo === null || signatureNumerator === null || signatureDenominator === null) {
-    console.log('[BAR/BEAT] Not enough data to calculate.');
+    console.log('[BAR/BEAT] Please initialize the Max4Live plugin.');
     return;
   }
 
@@ -50,18 +74,21 @@ function calculateBarAndBeat() {
     // Store beat as string "a/b"
     const beatString = `${newBeat}/${beatValue}`;
 
-    // console.log(`[DEBUG] Calculated - Bar: ${newBar}, Beat: ${beatString}`);
-
     // Only log when bar or beat changes
     if (newBar !== previousBar || beatString !== previousBeat) {
+      const oldBar = currentBar;
       currentBar = newBar;
       currentBeat = beatString;
       previousBar = newBar;
       previousBeat = beatString;
-      console.log(`[BAR/BEAT] Bar: ${currentBar}, Beat: ${currentBeat}`);
+      
+      // Broadcast only when bar changes
+      if (currentBar !== oldBar) {
+        broadcastBeat();
+      }
     }
   } catch (error) {
-    console.error(`[BAR/BEAT] Calculation error:`, error.message);
+    // Silent error handling
   }
 }
 
@@ -75,20 +102,11 @@ udpServer.on('message', (msg, rinfo) => {
     const data = new Uint8Array(msg);
     const packet = osc.readPacket(data, {});
 
-    if (!packet) {
-      console.log('[OSC] Packet is undefined');
-    } else {
+    if (packet) {
       if (packet.address) {
-        if (packet.address !== '/current_song_time') {
-          console.log(`[UDP] Received from ${rinfo.address}:${rinfo.port}`);
-          console.log(`[OSC] Address: ${packet.address}`);
-          console.log(`[OSC] Arguments:`, packet.args);
-        }
-
         // Subscribe to tempo value
         if (packet.address === '/tempo') {
           if (packet.args && packet.args.length > 0) {
-            // OSC arguments can be accessed directly or via .value property
             tempo = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
             console.log(`[TEMPO] Updated: ${tempo}`);
           }
@@ -118,13 +136,8 @@ udpServer.on('message', (msg, rinfo) => {
           }
         }
       } else if (packet.timeTag) {
-        console.log(`[OSC] Bundle received`);
         if (packet.packets) {
-          packet.packets.forEach((p, i) => {
-            console.log(`[OSC] Bundle message ${i + 1}:`);
-            console.log(`  Address: ${p.address}`);
-            console.log(`  Arguments:`, p.args);
-
+          packet.packets.forEach((p) => {
             // Subscribe to tempo value in bundles
             if (p.address === '/tempo') {
               if (p.args && p.args.length > 0) {
@@ -159,19 +172,12 @@ udpServer.on('message', (msg, rinfo) => {
                 calculateBarAndBeat();
               }
             }
-
-            if (packet.address !== '/current_song_time') {
-              console.log('---');
-            }
           });
         }
-      } else {
-        console.log('[OSC] Unknown packet type:', packet);
       }
     }
   } catch (oscErr) {
-    console.error(`[OSC] Error decoding OSC packet:`, oscErr.message);
-    console.error(`[OSC] Stack:`, oscErr.stack);
+    // Silent error handling
   }
 
 });
@@ -182,7 +188,6 @@ udpServer.on('listening', () => {
 });
 
 udpServer.on('error', (err) => {
-  console.error('[UDP] Server error:', err);
   udpServer.close();
 });
 
@@ -192,13 +197,11 @@ udpServer.bind(UDP_PORT);
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static('.')); // Serve static files from current directory
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Welcome to the Express Server!',
-    status: 'running'
-  });
+  res.sendFile(__dirname + '/index.html');
 });
 
 app.get('/api/health', (req, res) => {
@@ -208,15 +211,59 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// API endpoint to get current beat data
+app.get('/api/beat', (req, res) => {
+  res.json({
+    beat: currentBeat,
+    bar: currentBar,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// HTTP server
+const server = http.createServer(app);
+
+// Create WebSocket server on port 4254
+const wsServer = http.createServer();
+const wss = new WebSocketServer({ server: wsServer });
+
+// Initialize clients Set
+clients = new Set();
+
+wss.on('connection', (ws) => {
+  clients.add(ws);
+  
+  ws.on('close', () => {
+    clients.delete(ws);
+  });
+  
+  ws.on('error', (error) => {
+    // Silent error handling
+  });
+  
+  // Send current state immediately when client connects
+  const initMessage = JSON.stringify({
+    type: 'beat',
+    beat: currentBeat,
+    bar: currentBar
+  });
+  ws.send(initMessage);
+});
+
 // Start HTTP server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`[HTTP] Server is running on http://localhost:${PORT}`);
+});
+
+// Start WebSocket server on port 4254
+wsServer.listen(4254, () => {
+  console.log(`[WS] WebSocket server is running on ws://localhost:4254`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\nShutting down servers...');
   udpServer.close();
+  wsServer.close();
   process.exit(0);
 });
 
