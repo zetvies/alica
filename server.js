@@ -8,6 +8,9 @@ const UDP_PORT = 4254;
 // Variable to store tempo value
 let tempo = null;
 
+// Variable to store time signature value
+let timeSignature = null;
+
 // Create UDP socket with reuseAddr option
 const udpServer = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
@@ -32,6 +35,14 @@ udpServer.on('message', (msg, rinfo) => {
             // OSC arguments can be accessed directly or via .value property
             tempo = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
             console.log(`[TEMPO] Updated: ${tempo}`);
+          }
+        }
+        
+        // Subscribe to time signature value
+        if (packet.address === '/time_signature') {
+          if (packet.args && packet.args.length > 0) {
+            timeSignature = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
+            console.log(`[TIMESIG] Updated: ${timeSignature}`);
           }
         }
       } else if (packet.timeTag) {
