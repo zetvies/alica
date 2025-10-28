@@ -36,7 +36,7 @@ function calculateBarAndBeat() {
     const beatValue = signatureDenominator;
 
     // Calculate beats per second
-    const beatsPerSecond = (tempo / 60) * (beatValue / 4);
+    const beatsPerSecond =  beatValue / 4;
 
     // Calculate total beats elapsed
     const totalBeats = currentSongTime * beatsPerSecond;
