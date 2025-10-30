@@ -66,63 +66,59 @@ function initializeMax4Live() {
 
 initializeMax4Live();
 
-function sendNote(note, velocity = 80, duration = 500, channel = 0) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
   if (!midiOutput) return;
   if (note === undefined || note === null) return;
   try {
     midiOutput.send('noteon', { note, velocity, channel });
     if (duration > 0) {
-      setTimeout(() => {
-        try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) {}
-      }, duration);
+      await sleep(duration);
+      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) {}
+    } else {
+      // If duration is 0 or negative, send immediate noteoff
+      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) {}
     }
   } catch (e) {
   }
 }
 
-// Chainable MIDI sender: send(67).d(500).v(127).c(2) – order interchangeable
-function send(note) {
-  let params = {
-    note,
-    velocity: 80,
-    duration: 500,
-    channel: 1 // user-facing 1-16; converted to 0-15 when sending
-  };
-  let timer = null;
-
-  function schedule() {
-    if (timer) clearTimeout(timer);
-    // Debounce to next tick to allow chaining before sending
-    timer = setTimeout(() => {
-      // convert 1-16 to 0-15 for easymidi
-      const zeroBasedChannel = Math.max(1, Math.min(16, params.channel)) - 1;
-      sendNote(params.note, params.velocity, params.duration, zeroBasedChannel);
-    }, 0);
-  }
-
-  // If user calls just n(note), send with defaults
-  schedule();
-
-  const api = {
-    d(ms) {
-      if (typeof ms === 'number' && ms >= 0) params.duration = ms;
-      schedule();
-      return api;
-    },
-    v(vel) {
-      if (typeof vel === 'number') params.velocity = Math.max(0, Math.min(127, vel));
-      schedule();
-      return api;
-    },
-    c(ch) {
-      if (typeof ch === 'number') params.channel = Math.max(1, Math.min(16, ch));
-      // Accept 1-16 only; conversion to 0-15 happens when sending
-      schedule();
-      return api;
+// Play a sequence like: "n(60).d(500) n(61).d(500)"
+// Default duration per note: one beat duration divided by number of notes
+async function playSequence(sequence) {
+  if (!sequence || typeof sequence !== 'string') return;
+  const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\(\d+\))*/g;
+  const chunks = sequence.match(chunkRegex) || [];
+  const numNotes = Math.max(1, chunks.length);
+  console.log(numNotes);
+  // 1 beat in ms ≈ 60000 / tempo (quarter-note beat)
+  const barDurationMs = (typeof tempo === 'number' && tempo > 0) ? (60000 / tempo) * signatureDenominator : 500;
+  const defaultDurationMs = Math.max(1, Math.round(barDurationMs / numNotes));
+  
+  console.log(defaultDurationMs);
+  for (const chunk of chunks) {
+    const noteMatch = chunk.match(/n\((\d+)\)/);
+    if (!noteMatch) continue;
+    const note = parseInt(noteMatch[1], 10);
+    let velocity = 80;
+    let duration = null; // if not provided, use defaultDurationMs
+    let channel = 1; // user-facing 1-16
+    const paramRegex = /\.(d|v|c)\((\d+)\)/g;
+    let m;
+    while ((m = paramRegex.exec(chunk)) !== null) {
+      const key = m[1];
+      const val = parseInt(m[2], 10);
+      if (key === 'd') duration = Math.max(0, val);
+      if (key === 'v') velocity = Math.max(0, Math.min(127, val));
+      if (key === 'c') channel = Math.max(1, Math.min(16, val));
     }
-  };
-
-  return api;
+    const zeroBasedChannel = channel - 1;
+    const useDuration = (duration === null) ? defaultDurationMs : duration;
+    await sendNote(note, velocity, useDuration, zeroBasedChannel);
+  }
 }
 
 // Function to calculate current bar and beat
@@ -138,7 +134,7 @@ function calculateBarAndBeat() {
     const beatValue = signatureDenominator;
 
     // Calculate beats per second
-    const beatsPerSecond = beatValue / 4;
+    const beatsPerSecond = beatValue / beatsPerBar;
 
     // Calculate total beats elapsed
     const totalBeats = currentSongTime * beatsPerSecond;
@@ -163,7 +159,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        send(60).d(500);
+        playSequence("n(60) n(70) n(90) n(70)");
       }
     }
   } catch (error) {
