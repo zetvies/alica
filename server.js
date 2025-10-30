@@ -88,7 +88,7 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
 
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
-async function playSequence(sequence, type = "even") {
+async function playSequence(sequence, type = "fit") {
   if (!sequence || typeof sequence !== 'string') return;
   const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\([^)]*\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
@@ -102,15 +102,44 @@ async function playSequence(sequence, type = "even") {
   const br = barDurationMs
 
   let defaultDurationMs = null;
-  if (type === "evenly") {
+  if (type === "fit") {
     defaultDurationMs = ev;
   } else if (type === "beat") {
     defaultDurationMs = bt;
-  } 
-  // Fallback default to evenly if not set
+  }
+  // Fallback default to fit if not set
   if (defaultDurationMs === null) defaultDurationMs = ev;
+  const disallowBtBr = (type === 'fit');
 
-  for (const chunk of chunks) {
+  // For type=fit, pre-compute weights from d(*f) / d(/f). Default weight=1.
+  let weights = null;
+  let totalWeight = 0;
+  if (type === 'fit') {
+    weights = chunks.map((chunk) => {
+      let weight = 1;
+      const paramRegexW = /\.(d)\(([^)]+)\)/g;
+      let mw;
+      while ((mw = paramRegexW.exec(chunk)) !== null) {
+        const rawW = (mw[2] || '').trim();
+        const normW = rawW.replace(/\s+/g, '').toLowerCase();
+        const wMul = normW.match(/^\*(\d*(?:\.\d+)?)$/);
+        const wDiv = normW.match(/^\/(\d*(?:\.\d+)?)$/);
+        if (wMul && wMul[1] !== '') {
+          const f = parseFloat(wMul[1]);
+          if (!isNaN(f) && f > 0) weight = f;
+        } else if (wDiv && wDiv[1] !== '') {
+          const f = parseFloat(wDiv[1]);
+          if (!isNaN(f) && f > 0) weight = 1 / f;
+        }
+      }
+      return weight;
+    });
+    totalWeight = weights.reduce((a, b) => a + b, 0);
+    if (!isFinite(totalWeight) || totalWeight <= 0) totalWeight = numNotes;
+  }
+
+  for (let idx = 0; idx < chunks.length; idx++) {
+    const chunk = chunks[idx];
     const noteMatch = chunk.match(/n\((\d+)\)/);
     if (!noteMatch) continue;
     const note = parseInt(noteMatch[1], 10);
@@ -127,36 +156,42 @@ async function playSequence(sequence, type = "even") {
         const norm = raw.replace(/\s+/g, '').toLowerCase();
 
         // Helpers to get base durations
-        const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'ev' ? ev : tok === 'br' ? br : null);
+        const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'br' ? br : null);
 
         // Allowed patterns ONLY:
         // d(*f) or d(/f)
         const mMul = norm.match(/^\*(\d*(?:\.\d+)?)$/);
         const mDiv = norm.match(/^\/(\d*(?:\.\d+)?)$/);
-        // d(bt) | d(ev) | d(br)
-        const mAbs = norm.match(/^(bt|ev|br)$/);
-        // d(bt*f) | d(ev*f) | d(br*f) — require explicit '*'
-        const mTokMul = norm.match(/^(bt|ev|br)\*(\d*(?:\.\d+)?)$/);
-        // d(bt/f) | d(ev/f) | d(br/f)
-        const mTokDiv = norm.match(/^(bt|ev|br)\/(\d*(?:\.\d+)?)$/);
+        // d(bt) | d(br)
+        const mAbs = norm.match(/^(bt|br)$/);
+        // d(bt*f) | d(br*f) — require explicit '*'
+        const mTokMul = norm.match(/^(bt|br)\*(\d*(?:\.\d+)?)$/);
+        // d(bt/f) | d(br/f)
+        const mTokDiv = norm.match(/^(bt|br)\/(\d*(?:\.\d+)?)$/);
 
         if (mMul && mMul[1] !== '') {
           f = parseFloat(mMul[1]);
-          if (!isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs * f));
+          if (type !== 'fit' && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs * f));
         } else if (mDiv && mDiv[1] !== '') {
           f = parseFloat(mDiv[1]);
-          if (!isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs / f));
+          if (type !== 'fit' && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs / f));
         } else if (mAbs) {
-          const base = baseFromToken(mAbs[1]);
-          if (base !== null) duration = Math.max(0, Math.round(base));
+          if (!(disallowBtBr && (mAbs[1] === 'bt' || mAbs[1] === 'br'))) {
+            const base = baseFromToken(mAbs[1]);
+            if (base !== null) duration = Math.max(0, Math.round(base));
+          }
         } else if (mTokMul && mTokMul[2] !== '') {
-          const base = baseFromToken(mTokMul[1]);
-          f = parseFloat(mTokMul[2]);
-          if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base * f));
+          if (!(disallowBtBr && (mTokMul[1] === 'bt' || mTokMul[1] === 'br'))) {
+            const base = baseFromToken(mTokMul[1]);
+            f = parseFloat(mTokMul[2]);
+            if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base * f));
+          }
         } else if (mTokDiv && mTokDiv[2] !== '') {
-          const base = baseFromToken(mTokDiv[1]);
-          f = parseFloat(mTokDiv[2]);
-          if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base / f));
+          if (!(disallowBtBr && (mTokDiv[1] === 'bt' || mTokDiv[1] === 'br'))) {
+            const base = baseFromToken(mTokDiv[1]);
+            f = parseFloat(mTokDiv[2]);
+            if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base / f));
+          }
         } else {
           // Any other form is ignored per spec; leave duration as-is (null => defaults)
         }
@@ -171,7 +206,13 @@ async function playSequence(sequence, type = "even") {
       }
     }
     const zeroBasedChannel = channel - 1;
-    const useDuration = (duration === null) ? defaultDurationMs : duration;
+    let useDuration = null;
+    if (type === 'fit' && weights) {
+      const weight = weights[idx] || 1;
+      useDuration = Math.max(1, Math.round(barDurationMs * (weight / totalWeight)));
+    } else {
+      useDuration = (duration === null) ? defaultDurationMs : duration;
+    }
     await sendNote(note, velocity, useDuration, zeroBasedChannel);
   }
 }
@@ -214,7 +255,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60).d(ev*2) n(70).d(/2) n(70).d(br/6) ", "evenly");
+        playSequence("n(60) n(70).d(/2) n(70).d(/10)");
       }
     }
   } catch (error) {
