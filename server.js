@@ -86,11 +86,44 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
   }
 }
 
+// Convert note tokens like "c3", "c3#", "c3b", "c#3" to MIDI number.
+// Uses scientific pitch: C4 = 60, so C3 = 48
+function noteTokenToMidi(value) {
+  if (value === undefined || value === null) return null;
+  // Numeric MIDI already
+  const maybeNum = Number(value);
+  if (!Number.isNaN(maybeNum)) {
+    const n = Math.max(0, Math.min(127, Math.round(maybeNum)));
+    return n;
+  }
+  const raw = String(value).trim().toLowerCase();
+  // Accept ONLY scientific pitch: letter + optional accidental + octave, e.g. c#3, cb3, c3
+  let letter = null, accidental = '', octaveStr = '';
+  const m1 = raw.match(/^([a-g])(#[b]?|b)?(\d+)$/);
+  if (m1) {
+    letter = m1[1];
+    accidental = (m1[2] || '');
+    octaveStr = m1[3];
+  } else {
+    return null;
+  }
+  const baseMap = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+  if (!(letter in baseMap)) return null;
+  let semitone = baseMap[letter];
+  if (accidental === '#') semitone += 1;
+  if (accidental === 'b') semitone -= 1;
+  const octave = parseInt(octaveStr, 10);
+  if (Number.isNaN(octave)) return null;
+  let midi = (octave + 1) * 12 + semitone; // C4 (octave 4) -> 60
+  midi = Math.max(0, Math.min(127, midi));
+  return midi;
+}
+
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null) {
   if (!sequence || typeof sequence !== 'string') return;
-  const chunkRegex = /n\(\d+\)(?:\^\d+)?(?:\.(?:d|v|c)\([^)]*\))*/g;
+  const chunkRegex = /n\([^\)]+\)(?:\^\d+)?(?:\.(?:d|v|c)\([^)]*\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
   const numNotes = Math.max(1, chunks.length);
 
@@ -142,9 +175,11 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 
   for (let idx = 0; idx < chunks.length; idx++) {
     const chunk = chunks[idx];
-    const noteMatch = chunk.match(/n\((\d+)\)/);
+    const noteMatch = chunk.match(/n\(([^)]+)\)/);
     if (!noteMatch) continue;
-    const note = parseInt(noteMatch[1], 10);
+    const noteArg = noteMatch[1].trim();
+    const midiNote = noteTokenToMidi(noteArg);
+    if (midiNote === null) continue;
     const repeatMatch = chunk.match(/\^(\d+)/);
     const repeatCount = repeatMatch ? Math.max(1, parseInt(repeatMatch[1], 10)) : 1;
     let velocity = 80;
@@ -223,7 +258,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       useDuration = (duration === null) ? defaultDurationMs : duration;
     }
     for (let r = 0; r < repeatCount; r++) {
-      await sendNote(note, velocity, useDuration, zeroBasedChannel);
+      await sendNote(midiNote, velocity, useDuration, zeroBasedChannel);
     }
   }
 }
@@ -299,7 +334,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(60)^2 n(70)^3 n(80)].t(fit).c(2).co(2br) [n(70).d(bt*2) n(60)^3 ].t(beat).c(1).co(2br)");
+        playCycle("[n(c4)^2].t(fit).c(2).co(2br) [n(c3)^2].t(beat).c(1).co(2br)");
       }
     }
   } catch (error) {
