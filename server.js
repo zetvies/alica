@@ -90,13 +90,14 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence) {
   if (!sequence || typeof sequence !== 'string') return;
-  const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\(\d+\))*/g;
+  const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\([^)]*\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
   const numNotes = Math.max(1, chunks.length);
 
   const beatsPerBar = signatureNumerator;
   const barDurationMs = (typeof tempo === 'number' && tempo > 0) ? (60000 / tempo) * beatsPerBar : 500;
-  const defaultDurationMs = Math.max(1, Math.round(barDurationMs / numNotes));
+  const defaultDurationMs = Math.max(1, Math.round(barDurationMs / beatsPerBar));
+  console.log(barDurationMs," ",defaultDurationMs)
 
   for (const chunk of chunks) {
     const noteMatch = chunk.match(/n\((\d+)\)/);
@@ -105,17 +106,39 @@ async function playSequence(sequence) {
     let velocity = 80;
     let duration = null; // if not provided, use defaultDurationMs
     let channel = 1; // user-facing 1-16
-    const paramRegex = /\.(d|v|c)\((\d+)\)/g;
+    const paramRegex = /\.(d|v|c)\(([^)]+)\)/g;
     let m;
     while ((m = paramRegex.exec(chunk)) !== null) {
       const key = m[1];
-      const val = parseInt(m[2], 10);
-      if (key === 'd') duration = Math.max(0, val);
-      if (key === 'v') velocity = Math.max(0, Math.min(127, val));
-      if (key === 'c') channel = Math.max(1, Math.min(16, val));
+      const raw = m[2].trim();
+      if (key === 'd') {
+        let f = null;
+        let ms = null;
+        const norm = raw.replace(/\s+/g, '');
+        // Accept milliseconds (number), or multipliers d(xf) or divisors d(/f)
+        if (/^x\d*(?:\.\d+)?$/i.test(norm)) {
+          f = parseFloat(norm.slice(1));
+          if (!isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs * f));
+        } else if (/^\/\d*(?:\.\d+)?$/.test(norm)) {
+          f = parseFloat(norm.slice(1));
+          if (!isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs / f));
+        } else {
+          ms = parseFloat(norm);
+          if (!isNaN(ms)) duration = Math.max(0, Math.round(ms));
+        }
+      }
+      if (key === 'v') {
+        const v = parseInt(raw, 10);
+        if (!isNaN(v)) velocity = Math.max(0, Math.min(127, v));
+      }
+      if (key === 'c') {
+        const ch = parseInt(raw, 10);
+        if (!isNaN(ch)) channel = Math.max(1, Math.min(16, ch));
+      }
     }
     const zeroBasedChannel = channel - 1;
     const useDuration = (duration === null) ? defaultDurationMs : duration;
+    console.log(useDuration)
     await sendNote(note, velocity, useDuration, zeroBasedChannel);
   }
 }
@@ -158,7 +181,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60) n(70) n(90) n(70)");
+        playSequence("n(60).d(/2) n(70).d(/2) n(80).d(/2) n(75).d(/2)");
       }
     }
   } catch (error) {
