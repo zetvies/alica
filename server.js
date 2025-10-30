@@ -88,7 +88,7 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
 
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
-async function playSequence(sequence) {
+async function playSequence(sequence, type = "even") {
   if (!sequence || typeof sequence !== 'string') return;
   const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\([^)]*\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
@@ -96,8 +96,17 @@ async function playSequence(sequence) {
 
   const beatsPerBar = signatureNumerator;
   const barDurationMs = (typeof tempo === 'number' && tempo > 0) ? (60000 / tempo) * beatsPerBar : 500;
-  const defaultDurationMs = Math.max(1, Math.round(barDurationMs / beatsPerBar));
-  console.log(barDurationMs," ",defaultDurationMs)
+
+  const ev = Math.max(1, Math.round(barDurationMs / numNotes))
+  const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar))
+  const br = barDurationMs
+
+  let defaultDurationMs = null;
+  if (type === "evenly") {
+    defaultDurationMs = ev;
+  } else if (type === "beat") {
+    defaultDurationMs = bt;
+  }
 
   for (const chunk of chunks) {
     const noteMatch = chunk.match(/n\((\d+)\)/);
@@ -138,7 +147,6 @@ async function playSequence(sequence) {
     }
     const zeroBasedChannel = channel - 1;
     const useDuration = (duration === null) ? defaultDurationMs : duration;
-    console.log(useDuration)
     await sendNote(note, velocity, useDuration, zeroBasedChannel);
   }
 }
@@ -181,7 +189,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60).d(/2) n(70).d(/2) n(80).d(/2) n(75).d(/2)");
+        playSequence("n(60) n(70) n(80)", "beat");
       }
     }
   } catch (error) {
