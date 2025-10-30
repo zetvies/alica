@@ -106,7 +106,9 @@ async function playSequence(sequence, type = "even") {
     defaultDurationMs = ev;
   } else if (type === "beat") {
     defaultDurationMs = bt;
-  }
+  } 
+  // Fallback default to evenly if not set
+  if (defaultDurationMs === null) defaultDurationMs = ev;
 
   for (const chunk of chunks) {
     const noteMatch = chunk.match(/n\((\d+)\)/);
@@ -122,18 +124,41 @@ async function playSequence(sequence, type = "even") {
       const raw = m[2].trim();
       if (key === 'd') {
         let f = null;
-        let ms = null;
-        const norm = raw.replace(/\s+/g, '');
-        // Accept milliseconds (number), or multipliers d(xf) or divisors d(/f)
-        if (/^x\d*(?:\.\d+)?$/i.test(norm)) {
-          f = parseFloat(norm.slice(1));
+        const norm = raw.replace(/\s+/g, '').toLowerCase();
+
+        // Helpers to get base durations
+        const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'ev' ? ev : tok === 'br' ? br : null);
+
+        // Allowed patterns ONLY:
+        // d(*f) or d(/f)
+        const mMul = norm.match(/^\*(\d*(?:\.\d+)?)$/);
+        const mDiv = norm.match(/^\/(\d*(?:\.\d+)?)$/);
+        // d(bt) | d(ev) | d(br)
+        const mAbs = norm.match(/^(bt|ev|br)$/);
+        // d(bt*f) | d(ev*f) | d(br*f) — require explicit '*'
+        const mTokMul = norm.match(/^(bt|ev|br)\*(\d*(?:\.\d+)?)$/);
+        // d(bt/f) | d(ev/f) | d(br/f)
+        const mTokDiv = norm.match(/^(bt|ev|br)\/(\d*(?:\.\d+)?)$/);
+
+        if (mMul && mMul[1] !== '') {
+          f = parseFloat(mMul[1]);
           if (!isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs * f));
-        } else if (/^\/\d*(?:\.\d+)?$/.test(norm)) {
-          f = parseFloat(norm.slice(1));
+        } else if (mDiv && mDiv[1] !== '') {
+          f = parseFloat(mDiv[1]);
           if (!isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs / f));
+        } else if (mAbs) {
+          const base = baseFromToken(mAbs[1]);
+          if (base !== null) duration = Math.max(0, Math.round(base));
+        } else if (mTokMul && mTokMul[2] !== '') {
+          const base = baseFromToken(mTokMul[1]);
+          f = parseFloat(mTokMul[2]);
+          if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base * f));
+        } else if (mTokDiv && mTokDiv[2] !== '') {
+          const base = baseFromToken(mTokDiv[1]);
+          f = parseFloat(mTokDiv[2]);
+          if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base / f));
         } else {
-          ms = parseFloat(norm);
-          if (!isNaN(ms)) duration = Math.max(0, Math.round(ms));
+          // Any other form is ignored per spec; leave duration as-is (null => defaults)
         }
       }
       if (key === 'v') {
@@ -189,7 +214,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60) n(70) n(80)", "beat");
+        playSequence("n(60).d(ev*2) n(70).d(/2) n(70).d(br/6) ", "evenly");
       }
     }
   } catch (error) {
