@@ -90,7 +90,7 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null) {
   if (!sequence || typeof sequence !== 'string') return;
-  const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\([^)]*\))*/g;
+  const chunkRegex = /n\(\d+\)(?:\^\d+)?(?:\.(?:d|v|c)\([^)]*\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
   const numNotes = Math.max(1, chunks.length);
 
@@ -132,7 +132,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           if (!isNaN(f) && f > 0) weight = 1 / f;
         }
       }
-      return weight;
+      const repMatch = chunk.match(/n\(\d+\)\^(\d+)/);
+      const repeatCount = repMatch ? Math.max(1, parseInt(repMatch[1], 10)) : 1;
+      return weight * repeatCount;
     });
     totalWeight = weights.reduce((a, b) => a + b, 0);
     if (!isFinite(totalWeight) || totalWeight <= 0) totalWeight = numNotes;
@@ -143,6 +145,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     const noteMatch = chunk.match(/n\((\d+)\)/);
     if (!noteMatch) continue;
     const note = parseInt(noteMatch[1], 10);
+    const repeatMatch = chunk.match(/\^(\d+)/);
+    const repeatCount = repeatMatch ? Math.max(1, parseInt(repeatMatch[1], 10)) : 1;
     let velocity = 80;
     let duration = null; // if not provided, use defaultDurationMs
     let channel = 1; // user-facing 1-16
@@ -212,12 +216,15 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     const zeroBasedChannel = channel - 1;
     let useDuration = null;
     if (type === 'fit' && weights) {
-      const weight = weights[idx] || 1;
-      useDuration = Math.max(1, Math.round(barDurationMs * (weight / totalWeight)));
+      const weightedTotalForChunk = weights[idx] || 1;
+      const perInstanceWeight = weightedTotalForChunk / repeatCount;
+      useDuration = Math.max(1, Math.round(barDurationMs * (perInstanceWeight / totalWeight)));
     } else {
       useDuration = (duration === null) ? defaultDurationMs : duration;
     }
-    await sendNote(note, velocity, useDuration, zeroBasedChannel);
+    for (let r = 0; r < repeatCount; r++) {
+      await sendNote(note, velocity, useDuration, zeroBasedChannel);
+    }
   }
 }
 
@@ -259,7 +266,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60) n(70).d(/2) n(70).d(/10)", "beat");
+        playSequence("n(60)^2 n(70)^3.d(/5) n(70).d(*4)", "fit");
       }
     }
   } catch (error) {
