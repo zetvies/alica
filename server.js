@@ -77,10 +77,10 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
     midiOutput.send('noteon', { note, velocity, channel });
     if (duration > 0) {
       await sleep(duration);
-      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) {}
+      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
     } else {
       // If duration is 0 or negative, send immediate noteoff
-      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) {}
+      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
     }
   } catch (e) {
   }
@@ -93,12 +93,11 @@ async function playSequence(sequence) {
   const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\(\d+\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
   const numNotes = Math.max(1, chunks.length);
-  console.log(numNotes);
-  // 1 beat in ms ≈ 60000 / tempo (quarter-note beat)
-  const barDurationMs = (typeof tempo === 'number' && tempo > 0) ? (60000 / tempo) * signatureDenominator : 500;
+
+  const beatsPerBar = signatureNumerator;
+  const barDurationMs = (typeof tempo === 'number' && tempo > 0) ? (60000 / tempo) * beatsPerBar : 500;
   const defaultDurationMs = Math.max(1, Math.round(barDurationMs / numNotes));
-  
-  console.log(defaultDurationMs);
+
   for (const chunk of chunks) {
     const noteMatch = chunk.match(/n\((\d+)\)/);
     if (!noteMatch) continue;
@@ -327,7 +326,7 @@ wsServer.listen(4254, () => {
 process.on('SIGINT', () => {
   udpServer.close();
   wsServer.close();
-  try { if (midiOutput) midiOutput.close(); } catch (e) {}
+  try { if (midiOutput) midiOutput.close(); } catch (e) { }
   process.exit(0);
 });
 
