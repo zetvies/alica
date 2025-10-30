@@ -228,6 +228,39 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   }
 }
 
+// Play multiple sequences in a cycle with per-block modifiers.
+// Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
+async function playCycle(cycleStr) {
+  if (!cycleStr || typeof cycleStr !== 'string') return;
+  // Match blocks: [sequence] then optional .t(...).c(...).co(...)
+  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co)\([^)]*\))*)/g;
+  const modifierRegex = /\.(t|c|co)\(([^)]+)\)/g;
+  let m;
+  while ((m = blockRegex.exec(cycleStr)) !== null) {
+    const seq = m[1].trim();
+    const mods = m[2] || '';
+    let type = 'fit';
+    let channelOverride = null;
+    let cutOff = null;
+    let mm;
+    while ((mm = modifierRegex.exec(mods)) !== null) {
+      const key = mm[1];
+      const rawVal = (mm[2] || '').trim();
+      if (key === 't') {
+        const t = rawVal.toLowerCase();
+        if (t === 'fit' || t === 'beat' || t === 'bar') type = t;
+      } else if (key === 'c') {
+        const ch = parseInt(rawVal, 10);
+        if (!isNaN(ch)) channelOverride = Math.max(1, Math.min(16, ch));
+      } else if (key === 'co') {
+        // Pass through cutoff token for future use
+        cutOff = rawVal;
+      }
+    }
+    await playSequence(seq, type, cutOff, channelOverride);
+  }
+}
+
 // Function to calculate current bar and beat
 function calculateBarAndBeat() {
 
@@ -266,7 +299,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60)^2 n(70)^3.d(/5) n(70).d(*4)", "fit");
+        playCycle("[n(60)^2 n(70)^3 n(80)].t(fit).c(2).co(2br) [n(70).d(bt*2) n(60)^3 ].t(beat).c(1).co(2br)");
       }
     }
   } catch (error) {
