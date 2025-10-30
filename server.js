@@ -88,7 +88,7 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
 
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
-async function playSequence(sequence, type = "fit") {
+async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null) {
   if (!sequence || typeof sequence !== 'string') return;
   const chunkRegex = /n\(\d+\)(?:\.(?:d|v|c)\([^)]*\))*/g;
   const chunks = sequence.match(chunkRegex) || [];
@@ -205,6 +205,10 @@ async function playSequence(sequence, type = "fit") {
         if (!isNaN(ch)) channel = Math.max(1, Math.min(16, ch));
       }
     }
+    if (typeof channelOverride === 'number') {
+      const coerced = Math.max(1, Math.min(16, channelOverride));
+      channel = coerced;
+    }
     const zeroBasedChannel = channel - 1;
     let useDuration = null;
     if (type === 'fit' && weights) {
@@ -255,7 +259,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playSequence("n(60) n(70).d(/2) n(70).d(/10)");
+        playSequence("n(60) n(70).d(/2) n(70).d(/10)", "beat");
       }
     }
   } catch (error) {
