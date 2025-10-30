@@ -31,7 +31,9 @@ let initialized = false;
 function checkInitialization() {
   if (!initialized && tempo !== null && signatureNumerator !== null && signatureDenominator !== null) {
     initialized = true;
+    console.log('[INITIALIZATION] Connected to Max4Live');
   }
+  console.log('[INITIALIZATION] Please add Max4Live effecct in Ableton');
 }
 
 // Store connected WebSocket clients (will be initialized later)
@@ -76,7 +78,7 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
   try {
     midiOutput.send('noteon', { note, velocity, channel });
     if (duration > 0) {
-      await sleep(duration);
+      await sleep(duration-50);
       try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
     } else {
       // If duration is 0 or negative, send immediate noteoff
@@ -334,7 +336,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c4)^2].t(fit).c(2).co(2br) [n(c3)^2].t(beat).c(1).co(2br)");
+        playCycle("[n(c4)^2].t(fit).c(2).co(2br) [n(c3).d(br)].t(beat).c(1).co(2br)");
       }
     }
   } catch (error) {
