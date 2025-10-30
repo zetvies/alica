@@ -273,6 +273,7 @@ async function playCycle(cycleStr) {
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co)\([^)]*\))*)/g;
   const modifierRegex = /\.(t|c|co)\(([^)]+)\)/g;
   let m;
+  const plays = [];
   while ((m = blockRegex.exec(cycleStr)) !== null) {
     const seq = m[1].trim();
     const mods = m[2] || '';
@@ -294,8 +295,9 @@ async function playCycle(cycleStr) {
         cutOff = rawVal;
       }
     }
-    await playSequence(seq, type, cutOff, channelOverride);
+    plays.push(playSequence(seq, type, cutOff, channelOverride));
   }
+  if (plays.length > 0) await Promise.all(plays);
 }
 
 // Function to calculate current bar and beat
@@ -336,7 +338,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c4)^2].t(fit).c(2).co(2br) [n(c3).d(br)].t(beat).c(1).co(2br)");
+        playCycle("[n(c3)].c(2)  [n(e3)].c(2) [n(c3).d(br)].t(beat).c(1).co(2br)");
       }
     }
   } catch (error) {
