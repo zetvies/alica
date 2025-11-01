@@ -876,15 +876,31 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar))
   const br = barDurationMs
 
-  // Check if any chunk uses dRange, and if so, override type to 'beat'
-  let usesDRange = false;
+  // Check if any chunk uses duration settings (dRange, d(r), duration array, or explicit durations), 
+  // and if so, override type to 'beat'
+  let usesDurationSetting = false;
   for (const chunk of chunks) {
     if (chunk.includes('dRange(')) {
-      usesDRange = true;
+      usesDurationSetting = true;
       break;
     }
+    // Check for d(...) parameter
+    const dParamMatch = chunk.match(/\.d\(([^)]+)\)/);
+    if (dParamMatch) {
+      const dValue = dParamMatch[1].trim().toLowerCase();
+      // Check for d(r) or d(r.o{...}) - random duration or duration array
+      if (dValue === 'r' || dValue.includes('r.o{')) {
+        usesDurationSetting = true;
+        break;
+      }
+      // Check for explicit duration tokens like bt, br, bt/2, bt*2, or numbers
+      if (dValue.includes('bt') || dValue.includes('br') || /^\d+$/.test(dValue)) {
+        usesDurationSetting = true;
+        break;
+      }
+    }
   }
-  if (usesDRange) {
+  if (usesDurationSetting) {
     type = 'beat';
   }
 
@@ -1830,7 +1846,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{scale(c-ionian).q(maj9)})^8.nRange(c4, c5).arp(up-down)].c(1)");
+        playCycle("[n(r.o{scale(c-ionian).q(maj9)})^4.nRange(c4, c5).d(r.o{bt/2, bt}).dRange(bt/8,bt*2).arp(up-down)].c(1)");
       }
     }
   } catch (error) {
