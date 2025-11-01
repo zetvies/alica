@@ -419,7 +419,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
   let expandedSequence = processedSequence;
-  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|p|nRange|vRange|pRange|dRange)\([^)]*\))*)/g;
+  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|pm|pr|pmRange|prRange|nRange|vRange|dRange)\([^)]*\))*)/g;
   let repeatMatch;
   let lastIndex = 0;
   let newSequence = '';
@@ -443,7 +443,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     expandedSequence = newSequence;
   }
   
-  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|c|p|nRange|vRange|pRange|dRange)\([^)]*\))*/g;
+  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|c|pm|pr|pmRange|prRange|nRange|vRange|dRange)\([^)]*\))*/g;
   const allChunks = expandedSequence.match(chunkRegex) || [];
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
@@ -451,19 +451,14 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   if (type === 'fit') {
     chunks = allChunks.filter((chunk) => {
       // Check if this chunk has remove probability
-      const paramRegex = /\.(p)\(([^)]+)\)/g;
+      const paramRegex = /\.(pr)\(([^)]+)\)/g;
       let removeProbability = null;
       let m;
       while ((m = paramRegex.exec(chunk)) !== null) {
         const raw = m[2].trim();
-        const norm = raw.replace(/\s+/g, '').toLowerCase();
-        const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
-        if (removeMatch) {
-          const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1);
-          const prob = parseFloat(probStr);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            removeProbability = prob;
-          }
+        const prob = parseFloat(raw);
+        if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+          removeProbability = prob;
         }
       }
       // Apply remove probability: if random < removeProbability, remove this chunk
@@ -555,15 +550,18 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     // Randomization flags and range values
     let randomizeNote = false;
     let randomizeVelocity = false;
-    let randomizeProbability = false;
+    let randomizeMuteProbability = false;
+    let randomizeRemoveProbability = false;
     let randomizeDuration = false;
     let randomizeChannel = false;
     // Note range (MIDI values: [minMidi, maxMidi] or null)
     let nRange = null;
     // Velocity range (0-1 float: [min, max], scales to 0-127)
     let vRange = [0, 1];
-    // Probability range (0-1 float: [min, max])
-    let pRange = [0, 1];
+    // Mute probability range (0-1 float: [min, max])
+    let pmRange = [0, 1];
+    // Remove probability range (0-1 float: [min, max])
+    let prRange = [0, 1];
     // Duration range (duration tokens: [minToken, maxToken] or null)
     let dRange = null;
     
@@ -575,7 +573,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     const midiNote = noteTokenToMidi(noteArg);
     if (midiNote === null && !randomizeNote) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
-    const paramRegex = /\.(d|v|c|p|nRange|vRange|pRange|dRange)\(([^)]+)\)/g;
+    const paramRegex = /\.(d|v|c|pm|pr|pmRange|prRange|nRange|vRange|dRange)\(([^)]+)\)/g;
     let m;
     while ((m = paramRegex.exec(chunk)) !== null) {
       const key = m[1];
@@ -681,14 +679,49 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           }
         }
       }
-      if (key === 'pRange') {
-        // Parse probability range: pRange(min, max) - e.g. pRange(0.2, 0.8)
+      if (key === 'pm') {
+        // Parse mute probability: pm(value) or pm(r) for randomization
+        const norm = raw.replace(/\s+/g, '').toLowerCase();
+        if (norm === 'r') {
+          randomizeMuteProbability = true;
+        } else {
+          const prob = parseFloat(raw);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            muteProbability = prob;
+          }
+        }
+      }
+      if (key === 'pr') {
+        // Parse remove probability: pr(value) or pr(r) for randomization
+        const norm = raw.replace(/\s+/g, '').toLowerCase();
+        if (norm === 'r') {
+          randomizeRemoveProbability = true;
+        } else {
+          const prob = parseFloat(raw);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            removeProbability = prob;
+          }
+        }
+      }
+      if (key === 'pmRange') {
+        // Parse mute probability range: pmRange(min, max) - e.g. pmRange(0.2, 0.8)
         const parts = raw.split(',').map(s => s.trim());
         if (parts.length === 2) {
           const min = parseFloat(parts[0]);
           const max = parseFloat(parts[1]);
           if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max > min) {
-            pRange = [min, max];
+            pmRange = [min, max];
+          }
+        }
+      }
+      if (key === 'prRange') {
+        // Parse remove probability range: prRange(min, max) - e.g. prRange(0.2, 0.8)
+        const parts = raw.split(',').map(s => s.trim());
+        if (parts.length === 2) {
+          const min = parseFloat(parts[0]);
+          const max = parseFloat(parts[1]);
+          if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max > min) {
+            prRange = [min, max];
           }
         }
       }
@@ -727,33 +760,6 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           }
         }
       }
-      if (key === 'p') {
-        // Parse probability: m0.7 (mute) or r0.4 (remove)
-        const norm = raw.replace(/\s+/g, '').toLowerCase();
-        // Match m0.7, m.0.7, m1, m0, etc.
-        const muteMatch = norm.match(/^m(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
-        if (muteMatch) {
-          const probStr = muteMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'm' or 'm.' prefix
-          const prob = parseFloat(probStr);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            muteProbability = prob;
-          }
-        }
-        // Check if it's just 'r' for randomization (before checking remove probability)
-        if (norm === 'r') {
-          randomizeProbability = true;
-        } else {
-          // Match r0.4, r.0.4, r1, r0, etc. (remove probability)
-          const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
-          if (removeMatch) {
-            const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'r' or 'r.' prefix
-            const prob = parseFloat(probStr);
-            if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-              removeProbability = prob;
-            }
-          }
-        }
-      }
     }
     // Apply sequence-level override only if note doesn't have its own setting
     if (typeof channelOverride === 'number' && !hasNoteChannel) {
@@ -771,16 +777,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     if (shouldMuteNoChannel) {
       channel = 1; // Use default channel for muted notes
     }
-    // Apply remove probability: if random < removeProbability, skip this note entirely
-    // (For type=fit, this was already handled before weight calculation, but we check again for other types)
-    if (type !== 'fit') {
-      if (removeProbability !== null && removeProbability > 0) {
-        const random = Math.random();
-        if (random < removeProbability) {
-          continue; // Skip this note - it's removed from the sequence
-        }
-      }
-    }
+    // Note: Remove probability is now handled per-repeat in the loop below
     const zeroBasedChannel = channel - 1;
     let useDuration = null;
     if (type === 'fit' && weights) {
@@ -799,7 +796,23 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       let useVelocity = velocity;
       let useChannel = channel;
       let useMuteProbability = muteProbability;
+      let useRemoveProbability = removeProbability;
       let useDurationValue = useDuration;
+      
+      // Randomize remove probability (0-1) - must be done first as it can skip the note
+      if (randomizeRemoveProbability) {
+        const random = Math.random();
+        useRemoveProbability = prRange[0] + random * (prRange[1] - prRange[0]);
+        useRemoveProbability = Math.max(0, Math.min(1, useRemoveProbability));
+      }
+      
+      // Apply remove probability: if random < useRemoveProbability, skip this note instance
+      if (useRemoveProbability !== null && useRemoveProbability > 0) {
+        const random = Math.random();
+        if (random < useRemoveProbability) {
+          continue; // Skip this note instance - it's removed
+        }
+      }
       
       // Randomize note
       if (randomizeNote) {
@@ -820,10 +833,10 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         useVelocity = Math.max(0, Math.min(127, useVelocity));
       }
       
-      // Randomize probability (0-1)
-      if (randomizeProbability) {
+      // Randomize mute probability (0-1)
+      if (randomizeMuteProbability) {
         const random = Math.random();
-        useMuteProbability = pRange[0] + random * (pRange[1] - pRange[0]);
+        useMuteProbability = pmRange[0] + random * (pmRange[1] - pmRange[0]);
         useMuteProbability = Math.max(0, Math.min(1, useMuteProbability));
       }
       
@@ -1043,7 +1056,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r)^8.nRange(c4, c5).d(r).dRange(bt, bt*2).p(r).pRange(0.6,0.1)].c(1)");
+        playCycle("[n(r)^3.nRange(c4, c5).d(r).dRange(bt, bt*2).pm(r).pmRange(0,0.4)].c(1)");
       }
     }
   } catch (error) {
