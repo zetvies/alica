@@ -1869,7 +1869,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{scale(c-ionian).q(maj9)})^8.nRange(c4, c5).arp(up-down)].c(1)");
+        playCycle(" [n(r.o{scale(c-ionian)})^6.nRange(c3, c4)].c(1) [n(r.o{scale(c-iwato)})^16.nRange(c4, c5).v(r).vRange(0,1).d(r.o{bt/4, bt/2}).pm(r).pmRange(0,0.3).dRange(bt/8,bt*2).arp(up-down)].c(1)");
       }
     }
   } catch (error) {
