@@ -77,15 +77,19 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
   try {
     midiOutput.send('noteon', { note, velocity, channel });
     if (duration > 0) {
-      await sleep(duration - 50);
-      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
+      setTimeout(() => {
+        try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
+      }, duration - 50);
+      await sleep(duration);
     } else {
       // If duration is 0 or negative, send immediate noteoff
-      try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
+      setTimeout(() => {
+        try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
+      }, 0);
     }
   } catch (e) {
   }
-}
+} 
 
 // Convert note tokens like "c3", "c3#", "c3b", "c#3" to MIDI number.
 // Uses scientific pitch: C4 = 60, so C3 = 48
@@ -337,7 +341,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c3)].c(2)  [n(e3)].c(2) [n(f#3)].c(2) [n(c3).d(br)].t(beat).c(1).co(2br)");
+        playCycle("[n(c4) n(d4)]");
       }
     }
   } catch (error) {
