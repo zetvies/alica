@@ -1912,16 +1912,18 @@ function clearAllCycles() {
     return 0;
   }
   
-  // Clear all intervals
-  activeCycle.forEach(cycle => {
-    clearInterval(cycle.intervalId);
-  });
-  
-  // Count how many were cleared
+  // Count how many will be cleared
   const count = activeCycle.length;
   
-  // Clear the activeCycle array
-  activeCycle = [];
+  // Clear all intervals
+  activeCycle.forEach(cycle => {
+    if (cycle.intervalId) {
+      clearInterval(cycle.intervalId);
+    }
+  });
+  
+  // Clear the activeCycle array (use length = 0 to preserve reference)
+  activeCycle.length = 0;
   
   console.log(`[CLEAR ALL CYCLES] Successfully cleared ${count} active cycle(s)`);
   return count;
@@ -1937,12 +1939,14 @@ function onBarChange() {
     if (item && item.function) {
       // Execute the function
       const result = item.function();
+      console.log(`[QUEUE] Processing item id '${item.id}', result type: ${typeof result}, result:`, result);
       
-      // If it's a playCycle, it will return an interval ID (number)
+      // If it's a playCycle, it will return a Timeout object (Node.js setInterval)
       // Cycles loop automatically via setInterval - no need to re-add to queue
       // If it's a playTrack, it returns a Promise (async function)
       // Tracks play once and don't loop
-      if (result !== null && result !== undefined && typeof result === 'number') {
+      // Check if result is a Timeout object (has _onTimeout property) or a number
+      if (result !== null && result !== undefined && (typeof result === 'number' || (typeof result === 'object' && result._onTimeout))) {
         // This is a playCycle - check if id already exists in activeCycle
         const existingIndex = activeCycle.findIndex(cycle => cycle.id === item.id);
         if (existingIndex !== -1) {
@@ -1953,6 +1957,7 @@ function onBarChange() {
             function: item.function,
             intervalId: result
           };
+          console.log(`[QUEUE] Replaced cycle '${item.id}' in activeCycle`);
         } else {
           // Add new cycle to activeCycle (id is unique)
           // Cycle will loop by itself via setInterval
@@ -1961,7 +1966,10 @@ function onBarChange() {
             function: item.function,
             intervalId: result
           });
+          console.log(`[QUEUE] Added cycle '${item.id}' to activeCycle with intervalId ${result}`);
         }
+      } else {
+        console.log(`[QUEUE] Item '${item.id}' result is not a number (likely a track that plays once)`);
       }
       // playTrack runs once and completes - no special handling needed
     }
@@ -2147,6 +2155,127 @@ wss.on('connection', (ws) => {
 
   ws.on('error', (error) => {
     // Silent error handling
+  });
+
+  // Handle incoming messages from client
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      console.log('[WS] Received action:', data.action, data);
+      
+      switch (data.action) {
+        case 'playTrack':
+          playTrack(
+            data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null
+          );
+          console.log('[WS] playTrack called');
+          break;
+          
+        case 'playCycle':
+          const playCycleId = data.id || 'cycle_' + Date.now();
+          const playCycleIntervalId = playCycle(
+            data.cycleStr || "[n(70)^4].c(2)",
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null
+          );
+          if (playCycleIntervalId !== null) {
+            // Check if cycle with same id already exists
+            const existingIndex = activeCycle.findIndex(cycle => cycle.id === playCycleId);
+            if (existingIndex !== -1) {
+              // Replace existing cycle
+              clearInterval(activeCycle[existingIndex].intervalId);
+              activeCycle[existingIndex] = {
+                id: playCycleId,
+                function: () => playCycle(
+                  data.cycleStr || "[n(70)^4].c(2)",
+                  data.tempo || null,
+                  data.signatureNumerator || null,
+                  data.signatureDenominator || null
+                ),
+                intervalId: playCycleIntervalId
+              };
+            } else {
+              // Add new cycle to activeCycle
+              activeCycle.push({
+                id: playCycleId,
+                function: () => playCycle(
+                  data.cycleStr || "[n(70)^4].c(2)",
+                  data.tempo || null,
+                  data.signatureNumerator || null,
+                  data.signatureDenominator || null
+                ),
+                intervalId: playCycleIntervalId
+              });
+            }
+            console.log(`[WS] playCycle called - added to activeCycle with id '${playCycleId}'`);
+          } else {
+            console.log('[WS] playCycle failed to start');
+          }
+          break;
+          
+        case 'addTrackToQueue':
+          const trackId = data.id || 'track_' + Date.now();
+          queue.push({
+            id: trackId,
+            function: () => playTrack(
+              data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
+              data.tempo || null,
+              data.signatureNumerator || null,
+              data.signatureDenominator || null
+            )
+          });
+          console.log(`[WS] Added track '${trackId}' to queue`);
+          break;
+          
+        case 'addCycleToQueue':
+          const cycleId = data.id || 'cycle_' + Date.now();
+          queue.push({
+            id: cycleId,
+            function: () => playCycle(
+              data.cycleStr || "[n(70)^4].c(2)",
+              data.tempo || null,
+              data.signatureNumerator || null,
+              data.signatureDenominator || null
+            )
+          });
+          console.log(`[WS] Added cycle '${cycleId}' to queue`);
+          break;
+          
+        case 'updateCycleById':
+          updateCycleById(
+            data.id,
+            data.cycleStr || "[n(70)^4].c(2)",
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null
+          );
+          console.log(`[WS] Update cycle '${data.id}' requested`);
+          break;
+          
+        case 'clearCycleById':
+          if (!data.id) {
+            console.log('[WS] clearCycleById requires an id');
+            break;
+          }
+          const cleared = clearCycleById(data.id);
+          console.log(`[WS] Clear cycle '${data.id}' requested - ${cleared ? 'success' : 'failed'}`);
+          break;
+          
+        case 'clearAllCycles':
+          const clearedCount = clearAllCycles();
+          console.log(`[WS] Clear all cycles requested - cleared ${clearedCount} cycle(s)`);
+          break;
+          
+        default:
+          console.log(`[WS] Unknown action: ${data.action}`);
+      }
+    } catch (error) {
+      console.error('[WS] Error processing message:', error);
+    }
   });
 
   // Send current state immediately when client connects

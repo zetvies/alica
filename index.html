@@ -11,10 +11,215 @@
             margin: 0;
             padding: 20px;
             font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 500px;
+            margin: 20px auto;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #4a4a4a;
+            color: #ffffff;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #5a5a5a;
+        }
+        button:active {
+            background-color: #3a3a3a;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        label {
+            font-size: 14px;
+            color: #cccccc;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            background-color: #2a2a2a;
+            color: #ffffff;
+            font-size: 14px;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #2a2a2a;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .status.connected {
+            color: #4caf50;
+        }
+        .status.disconnected {
+            color: #f44336;
         }
     </style>
 </head>
 <body>
+    <div class="controls">
+        <h2>ALiCA Control Panel</h2>
+        
+        <div class="status disconnected" id="status">Disconnected</div>
+        
+        <div class="input-group">
+            <label for="cycleStr">Sequence String:</label>
+            <input type="text" id="cycleStr" placeholder='e.g., "[n(60)^2 n(65)^2].c(1)"' value='[n(60)^2 n(65)^2].c(1)'>
+        </div>
+        
+        <div class="input-group">
+            <label for="tempo">Tempo:</label>
+            <input type="number" id="tempo" placeholder="120" value="120">
+        </div>
+        
+        <div class="input-group">
+            <label for="signatureNum">Time Signature Numerator:</label>
+            <input type="number" id="signatureNum" placeholder="4" value="4">
+        </div>
+        
+        <div class="input-group">
+            <label for="signatureDen">Time Signature Denominator:</label>
+            <input type="number" id="signatureDen" placeholder="4" value="4">
+        </div>
+        
+        <div class="input-group">
+            <label for="cycleId">Cycle ID (for update/remove):</label>
+            <input type="text" id="cycleId" placeholder="cycle1" value="cycle1">
+        </div>
+        
+        <button onclick="sendPlayTrack()">1. Play Track</button>
+        <button onclick="sendPlayCycle()">2. Play Cycle</button>
+        <button onclick="sendAddTrackToQueue()">3. Add PlayTrack to Queue</button>
+        <button onclick="sendAddCycleToQueue()">4. Add PlayCycle to Queue</button>
+        <button onclick="sendUpdateCycle()">5. Update Cycle by ID</button>
+        <button onclick="sendRemoveCycle()">6. Remove Cycle by ID</button>
+        <button onclick="sendClearAll()">7. Clear All Cycles</button>
+    </div>
+
+    <script>
+        const ws = new WebSocket(`ws://localhost:4254`);
+        const statusEl = document.getElementById('status');
+        
+        ws.onopen = () => {
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'status connected';
+            console.log('WebSocket connected');
+        };
+        
+        ws.onclose = () => {
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'status disconnected';
+            console.log('WebSocket disconnected');
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log('Received:', data);
+        };
+        
+        function getParams() {
+            const cycleStr = document.getElementById('cycleStr').value;
+            const tempo = document.getElementById('tempo').value ? parseInt(document.getElementById('tempo').value) : null;
+            const signatureNum = document.getElementById('signatureNum').value ? parseInt(document.getElementById('signatureNum').value) : null;
+            const signatureDen = document.getElementById('signatureDen').value ? parseInt(document.getElementById('signatureDen').value) : null;
+            return { cycleStr, tempo, signatureNum, signatureDen };
+        }
+        
+        function sendPlayTrack() {
+            const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
+            ws.send(JSON.stringify({
+                action: 'playTrack',
+                cycleStr,
+                tempo,
+                signatureNumerator: signatureNum,
+                signatureDenominator: signatureDen
+            }));
+        }
+        
+        function sendPlayCycle() {
+            const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
+            const cycleId = document.getElementById('cycleId').value || 'cycle_' + Date.now();
+            ws.send(JSON.stringify({
+                action: 'playCycle',
+                id: cycleId,
+                cycleStr,
+                tempo,
+                signatureNumerator: signatureNum,
+                signatureDenominator: signatureDen
+            }));
+        }
+        
+        function sendAddTrackToQueue() {
+            const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
+            const cycleId = document.getElementById('cycleId').value || 'track_' + Date.now();
+            ws.send(JSON.stringify({
+                action: 'addTrackToQueue',
+                id: cycleId,
+                cycleStr,
+                tempo,
+                signatureNumerator: signatureNum,
+                signatureDenominator: signatureDen
+            }));
+        }
+        
+        function sendAddCycleToQueue() {
+            const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
+            const cycleId = document.getElementById('cycleId').value || 'cycle_' + Date.now();
+            ws.send(JSON.stringify({
+                action: 'addCycleToQueue',
+                id: cycleId,
+                cycleStr,
+                tempo,
+                signatureNumerator: signatureNum,
+                signatureDenominator: signatureDen
+            }));
+        }
+        
+        function sendUpdateCycle() {
+            const cycleId = document.getElementById('cycleId').value;
+            const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
+            ws.send(JSON.stringify({
+                action: 'updateCycleById',
+                id: cycleId,
+                cycleStr,
+                tempo,
+                signatureNumerator: signatureNum,
+                signatureDenominator: signatureDen
+            }));
+        }
+        
+        function sendRemoveCycle() {
+            const cycleId = document.getElementById('cycleId').value;
+            ws.send(JSON.stringify({
+                action: 'clearCycleById',
+                id: cycleId
+            }));
+        }
+        
+        function sendClearAll() {
+            ws.send(JSON.stringify({
+                action: 'clearAllCycles'
+            }));
+        }
+    </script>
     <script src="sketch.js"></script>
 </body>
 </html>
