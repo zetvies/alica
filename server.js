@@ -884,21 +884,44 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       usesDurationSetting = true;
       break;
     }
-    // Check for d(...) parameter
-    const dParamMatch = chunk.match(/\.d\(([^)]+)\)/);
-    if (dParamMatch) {
-      const dValue = dParamMatch[1].trim().toLowerCase();
-      // Check for d(r) or d(r.o{...}) - random duration or duration array
-      if (dValue === 'r' || dValue.includes('r.o{')) {
-        usesDurationSetting = true;
-        break;
+    // Check for d(...) parameter - handle nested braces/parentheses
+    let chunkPos = 0;
+    while (chunkPos < chunk.length) {
+      const dotPos = chunk.indexOf('.d(', chunkPos);
+      if (dotPos === -1) break;
+      
+      const startPos = dotPos + 3; // ".d(".length
+      let parenCount = 1;
+      let i = startPos;
+      let dValue = '';
+      
+      while (i < chunk.length && parenCount > 0) {
+        if (chunk[i] === '(') parenCount++;
+        else if (chunk[i] === ')') parenCount--;
+        else if (parenCount === 1) dValue += chunk[i];
+        i++;
       }
-      // Check for explicit duration tokens like bt, br, bt/2, bt*2, or numbers
-      if (dValue.includes('bt') || dValue.includes('br') || /^\d+$/.test(dValue)) {
-        usesDurationSetting = true;
-        break;
+      
+      if (parenCount === 0) {
+        const normalized = dValue.trim().toLowerCase();
+        // Check for d(r) or d(r.o{...}) - random duration or duration array
+        if (normalized === 'r' || normalized.includes('r.o{')) {
+          usesDurationSetting = true;
+          break;
+        }
+        // Check for explicit duration tokens like bt, br, bt/2, bt*2, or numbers
+        if (normalized.includes('bt') || normalized.includes('br') || /^\d+$/.test(normalized)) {
+          usesDurationSetting = true;
+          break;
+        }
+        chunkPos = i;
+      } else {
+        chunkPos = dotPos + 1;
       }
+      
+      if (usesDurationSetting) break;
     }
+    if (usesDurationSetting) break;
   }
   if (usesDurationSetting) {
     type = 'beat';
@@ -1846,7 +1869,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{scale(c-ionian).q(maj9)})^4.nRange(c4, c5).d(r.o{bt/2, bt}).dRange(bt/8,bt*2).arp(up-down)].c(1)");
+        playCycle("[n(r.o{scale(c-ionian).q(maj9)})^8.nRange(c4, c5).arp(up-down)].c(1)");
       }
     }
   } catch (error) {
