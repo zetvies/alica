@@ -341,9 +341,155 @@ function expandChord(chordStr) {
   return chordNotes.map(n => `n(${n})`).join(' ');
 }
 
+// Generate scale or chord notes within a MIDI range
+function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
+  if (!scaleChordStr || typeof scaleChordStr !== 'string') return [];
+  
+  const scaleChordLower = scaleChordStr.toLowerCase().trim();
+  
+  // Parse scale(root-mode).q(quality) or scale(root-mode)
+  let root = null;
+  let scaleName = null;
+  let quality = null;
+  let intervals = null;
+  
+  if (scaleChordLower.startsWith('scale(')) {
+    // Find matching closing parenthesis for scale(
+    let parenCount = 1;
+    let i = 6; // "scale(".length
+    let scaleArgsEnd = -1;
+    while (i < scaleChordLower.length && parenCount > 0) {
+      if (scaleChordLower[i] === '(') parenCount++;
+      else if (scaleChordLower[i] === ')') parenCount--;
+      i++;
+    }
+    if (parenCount === 0) {
+      scaleArgsEnd = i - 1;
+      const args = scaleChordLower.substring(6, scaleArgsEnd); // Extract content inside scale(...)
+      
+      // Check for optional .q(...) modifier
+      let qualityPart = null;
+      if (scaleChordLower.length > scaleArgsEnd + 1 && scaleChordLower.substring(scaleArgsEnd + 1).startsWith('.q(')) {
+        let qParenCount = 1;
+        let qStart = scaleArgsEnd + 4; // ".q(".length after scale(...)
+        let qEnd = -1;
+        for (let j = qStart; j < scaleChordLower.length; j++) {
+          if (scaleChordLower[j] === '(') qParenCount++;
+          else if (scaleChordLower[j] === ')') {
+            qParenCount--;
+            if (qParenCount === 0) {
+              qEnd = j;
+              break;
+            }
+          }
+        }
+        if (qEnd !== -1) {
+          qualityPart = scaleChordLower.substring(qStart, qEnd);
+        }
+      }
+      
+      const parts = args.split('-');
+      if (parts.length === 2) {
+        root = parts[0].trim();
+        scaleName = parts[1].trim().toLowerCase();
+        quality = qualityPart ? qualityPart.trim() : null;
+        
+        // Get scale intervals
+        if (scaleName === 'major') scaleName = 'ionian';
+        if (scaleName === 'minor') scaleName = 'aeolian';
+        intervals = SCALE_DEFINITIONS[scaleName];
+        
+        // If quality specified, use chord intervals instead
+        if (quality && CHORD_QUALITIES[quality]) {
+          intervals = CHORD_QUALITIES[quality];
+        }
+      }
+    }
+  } else if (scaleChordLower.startsWith('chord(')) {
+    // Find matching closing parenthesis for chord(
+    let parenCount = 1;
+    let i = 6; // "chord(".length
+    let chordArgsEnd = -1;
+    while (i < scaleChordLower.length && parenCount > 0) {
+      if (scaleChordLower[i] === '(') parenCount++;
+      else if (scaleChordLower[i] === ')') parenCount--;
+      i++;
+    }
+    if (parenCount === 0) {
+      chordArgsEnd = i - 1;
+      const args = scaleChordLower.substring(6, chordArgsEnd); // Extract content inside chord(...)
+      
+      const parts = args.split('-');
+      if (parts.length === 2) {
+        root = parts[0].trim();
+        quality = parts[1].trim().toLowerCase();
+        intervals = CHORD_QUALITIES[quality];
+      }
+    }
+  }
+  
+  if (!root || !intervals) return [];
+  
+  // Find the closest root note to the minMidi (first note in range)
+  // Root can be like "c", "c#", "cb", etc.
+  const baseMap = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+  let rootLetter = root[0].toLowerCase();
+  let accidental = '';
+  if (root.length > 1 && (root[1] === '#' || root[1] === 'b')) {
+    accidental = root[1];
+    rootLetter = root.substring(0, 2).toLowerCase();
+  }
+  
+  if (!(rootLetter[0] in baseMap)) return [];
+  
+  let rootSemitone = baseMap[rootLetter[0]];
+  if (accidental === '#') rootSemitone += 1;
+  if (accidental === 'b') rootSemitone -= 1;
+  
+  // Find the octave that puts the root closest to minMidi
+  // Calculate which octave (0-10) would have this root note closest to minMidi
+  let closestRootMidi = null;
+  let bestDiff = Infinity;
+  
+  for (let octave = 0; octave <= 10; octave++) {
+    const rootMidi = (octave + 1) * 12 + rootSemitone;
+    const diff = Math.abs(rootMidi - minMidi);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      closestRootMidi = rootMidi;
+    }
+  }
+  
+  if (closestRootMidi === null) return [];
+  
+  // Generate all notes from intervals within the range [minMidi, maxMidi]
+  const notes = [];
+  
+  // Generate notes across multiple octaves
+  for (let octaveOffset = -2; octaveOffset <= 2; octaveOffset++) {
+    const baseRoot = closestRootMidi + (octaveOffset * 12);
+    
+    for (const interval of intervals) {
+      const noteMidi = baseRoot + interval;
+      if (noteMidi >= minMidi && noteMidi <= maxMidi && noteMidi >= 0 && noteMidi <= 127) {
+        // Avoid duplicates
+        if (!notes.find(n => n.value === noteMidi)) {
+          notes.push({ type: 'note', value: noteMidi });
+        }
+      }
+    }
+  }
+  
+  // Sort by MIDI value
+  notes.sort((a, b) => a.value - b.value);
+  
+  return notes;
+}
+
 // Parse r.o{...} array syntax and return array of values
 // Examples: r.o{c4, d4, e4}, r.o{60, 64, 67}, r.o{0.25, 0.5, 0.75}, r.o{bt/4, bt, bt*2}
 // Duration tokens: bt, bt/even, or bt*even (even numbers only)
+// Also supports: r.o{scale(...)}, r.o{chord(...)}
 function parseArrayRandomizer(str, context = {}) {
   if (!str || typeof str !== 'string') return null;
   
@@ -351,10 +497,28 @@ function parseArrayRandomizer(str, context = {}) {
   if (!match) return null;
   
   const arrayStr = match[1].trim();
+  
+  // Check if the entire content is a scale/chord (no commas)
+  // This handles: r.o{scale(c-iwato)} or r.o{scale(c-ionian).q(maj7)}
+  // Use balanced parentheses matching
+  const scaleChordMatch = arrayStr.match(/^(scale\(.+?\)(?:\.q\(.+?\))?|chord\(.+?\))$/i);
+  if (scaleChordMatch) {
+    // This will be expanded later when nRange is available
+    return [{ type: 'scaleChord', value: arrayStr, original: arrayStr }];
+  }
+  
   const items = arrayStr.split(',').map(s => s.trim());
   const result = [];
   
   for (const item of items) {
+    // Check for scale/chord syntax in individual items
+    const scaleChordItemMatch = item.match(/^(scale\(.+?\)(?:\.q\(.+?\))?|chord\(.+?\))$/i);
+    if (scaleChordItemMatch) {
+      // This will be expanded later when nRange is available
+      result.push({ type: 'scaleChord', value: item, original: item });
+      continue;
+    }
+    
     // Handle duration tokens: bt, bt/even, or bt*even (even numbers only)
     const normItem = item.replace(/\s+/g, '').toLowerCase();
     
@@ -491,10 +655,94 @@ function extractParameterValue(str, paramName) {
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
 
+  console.log('[PLAY_SEQUENCE] sequence:', sequence);
   if (!sequence || typeof sequence !== 'string') return;
   
-  // Expand scale and chord syntax first
+  // Preprocessing: Expand scale/chord inside r.o{...} based on nRange
+  // This must happen BEFORE repeat expansion so expanded notes are available for repeats
   let processedSequence = sequence;
+  
+  // First, extract nRange from the sequence if it exists
+  // Look for .nRange(min, max) pattern
+  const nRangeMatch = processedSequence.match(/\.nRange\(([^,]+),\s*([^)]+)\)/);
+  let nRangeMin = null;
+  let nRangeMax = null;
+  if (nRangeMatch) {
+    nRangeMin = noteTokenToMidi(nRangeMatch[1].trim());
+    nRangeMax = noteTokenToMidi(nRangeMatch[2].trim());
+  }
+  
+  // If we have nRange, expand r.o{scale(...)} and r.o{chord(...)}
+  if (nRangeMin !== null && nRangeMax !== null) {
+    // Find all r.o{...} patterns and check if they contain scale/chord
+    let searchIdx = 0;
+    let replacements = [];
+    
+    while (searchIdx < processedSequence.length) {
+      const rOIndex = processedSequence.indexOf('r.o{', searchIdx);
+      if (rOIndex === -1) break;
+      
+      // Find matching closing brace
+      let braceCount = 1;
+      let braceIdx = rOIndex + 4; // "r.o{".length
+      let contentStart = braceIdx;
+      let contentEnd = -1;
+      
+      while (braceIdx < processedSequence.length && braceCount > 0) {
+        if (processedSequence[braceIdx] === '{') braceCount++;
+        else if (processedSequence[braceIdx] === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            contentEnd = braceIdx;
+            break;
+          }
+        }
+        braceIdx++;
+      }
+      
+      if (contentEnd !== -1) {
+        const content = processedSequence.substring(contentStart, contentEnd);
+        
+        // Check if content is a scale or chord
+        const trimmedContent = content.trim();
+        if (trimmedContent.startsWith('scale(') || trimmedContent.startsWith('chord(')) {
+          // This is a scale or chord - expand it
+          const generatedNotes = generateScaleChordNotes(trimmedContent, nRangeMin, nRangeMax);
+          
+          if (generatedNotes.length > 0) {
+            // Convert MIDI notes to note tokens (e.g., 61 -> "c#4")
+            const noteTokens = generatedNotes.map(item => {
+              const midi = item.value;
+              // Convert MIDI to note token
+              const octave = Math.floor(midi / 12) - 1;
+              const noteInOctave = midi % 12;
+              const noteNames = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
+              const noteName = noteNames[noteInOctave];
+              return `${noteName}${octave}`;
+            });
+            
+            // Create replacement: r.o{note1, note2, note3, ...}
+            const fullMatch = processedSequence.substring(rOIndex, contentEnd + 1);
+            const replacement = `r.o{${noteTokens.join(', ')}}`;
+            replacements.push({ from: fullMatch, to: replacement, index: rOIndex });
+          }
+        }
+      }
+      
+      searchIdx = contentEnd !== -1 ? contentEnd + 1 : rOIndex + 1;
+    }
+    
+    // Apply replacements (in reverse order to maintain indices)
+    replacements.sort((a, b) => b.index - a.index);
+    for (const replacement of replacements) {
+      processedSequence = processedSequence.substring(0, replacement.index) + 
+                         replacement.to + 
+                         processedSequence.substring(replacement.index + replacement.from.length);
+    }
+  }
+  
+  // Expand scale and chord syntax first (for sequences outside r.o{...})
+  // This handles standalone scale(...) or chord(...) in sequences
   
   // Expand scale syntax: scale(root-mode).q(quality) or scale(root-mode)
   // Handle nested parentheses properly
@@ -914,8 +1162,20 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           const maxMidi = noteTokenToMidi(parts[1]);
           if (minMidi !== null && maxMidi !== null && maxMidi >= minMidi) {
             nRange = [minMidi, maxMidi];
-            // Filter note array if it exists
+            // Expand scale/chord items in note array if it exists
             if (noteArray) {
+              const expandedArray = [];
+              for (const item of noteArray) {
+                if (item.type === 'scaleChord') {
+                  // Expand scale/chord to notes within range
+                  const scaleChordNotes = generateScaleChordNotes(item.value, minMidi, maxMidi);
+                  expandedArray.push(...scaleChordNotes);
+                } else {
+                  expandedArray.push(item);
+                }
+              }
+              noteArray = expandedArray;
+              // Filter note array by range
               noteArray = filterArrayByRange(noteArray, minMidi, maxMidi);
               randomizeNote = noteArray.length > 0;
             }
@@ -1045,6 +1305,33 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           arpMode = mode === 'random' ? null : mode; // null means random
         }
       }
+    }
+    
+    // Final expansion pass: expand any remaining scaleChord items in noteArray
+    // This handles cases where nRange was parsed before noteArray, or if scale/chord is used without nRange
+    if (noteArray && noteArray.some(item => item.type === 'scaleChord')) {
+      // Use nRange if available, otherwise use default range (C1 to C8)
+      const minMidi = nRange ? nRange[0] : 24; // C1
+      const maxMidi = nRange ? nRange[1] : 108; // C8
+      
+      const expandedArray = [];
+      for (const item of noteArray) {
+        if (item.type === 'scaleChord') {
+          // Expand scale/chord to notes within range
+          const scaleChordNotes = generateScaleChordNotes(item.value, minMidi, maxMidi);
+          expandedArray.push(...scaleChordNotes);
+        } else {
+          expandedArray.push(item);
+        }
+      }
+      noteArray = expandedArray;
+      
+      // If nRange was set, filter by range
+      if (nRange) {
+        noteArray = filterArrayByRange(noteArray, nRange[0], nRange[1]);
+      }
+      
+      randomizeNote = noteArray.length > 0;
     }
     
     // Apply sequence-level override only if note doesn't have its own setting
@@ -1543,7 +1830,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{c4, e4, g4})^8.nRange(c4, c5).arp(down-up)].c(1)");
+        playCycle("[n(r.o{scale(c-ionian).q(maj9)})^8.nRange(c4, c5).arp(up-down)].c(1)");
       }
     }
   } catch (error) {
