@@ -754,6 +754,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let velocity = 80;
     let duration = null; // if not provided, use defaultDurationMs
     let channel = 1; // user-facing 1-16
+    let channelArray = null; // Array of channels for randomization
     let muteProbability = null; // probability to mute (0-1)
     let removeProbability = null; // probability to remove note (0-1)
     // Track which parameters were explicitly set in the note
@@ -964,10 +965,30 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           randomizeChannel = true;
           hasNoteChannel = true;
         } else {
-          const ch = parseInt(raw, 10);
-          if (!isNaN(ch)) {
-            channel = Math.max(1, Math.min(16, ch));
-            hasNoteChannel = true;
+          // Check for array syntax: <1,2,3>
+          const arrayMatch = raw.match(/^<(.+)>$/);
+          if (arrayMatch) {
+            const items = arrayMatch[1].split(',').map(item => item.trim());
+            const channels = [];
+            for (const item of items) {
+              const ch = parseInt(item, 10);
+              if (!isNaN(ch)) {
+                const clampedCh = Math.max(1, Math.min(16, ch));
+                channels.push(clampedCh);
+              }
+            }
+            if (channels.length > 0) {
+              channelArray = channels;
+              hasNoteChannel = true;
+              // Set first channel as default (for backward compatibility)
+              channel = channels[0];
+            }
+          } else {
+            const ch = parseInt(raw, 10);
+            if (!isNaN(ch)) {
+              channel = Math.max(1, Math.min(16, ch));
+              hasNoteChannel = true;
+            }
           }
         }
       }
@@ -1209,9 +1230,17 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     
     // Apply sequence-level override only if note doesn't have its own setting
-    if (typeof channelOverride === 'number' && !hasNoteChannel) {
-      const coerced = Math.max(1, Math.min(16, channelOverride));
-      channel = coerced;
+    // channelOverride can be a number or an array
+    if (!hasNoteChannel && channelOverride !== null) {
+      if (Array.isArray(channelOverride)) {
+        // Sequence-level channel array - use all channels simultaneously
+        channelArray = channelOverride.map(ch => Math.max(1, Math.min(16, ch)));
+        channel = channelArray[0]; // Default to first (for backward compatibility)
+        hasNoteChannel = true;
+      } else if (typeof channelOverride === 'number') {
+        const coerced = Math.max(1, Math.min(16, channelOverride));
+        channel = coerced;
+      }
     }
     
     // If note doesn't have a channel and sequence doesn't have channel override, mute the note
@@ -1619,11 +1648,16 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
       
-      // Randomize channel (1-16) - uses default 0-1 range
-      if (randomizeChannel) {
+      // Determine which channels to use
+      let useChannels = [useChannel]; // Default to single channel
+      if (channelArray && channelArray.length > 0) {
+        // Use all channels from array simultaneously
+        useChannels = channelArray;
+      } else if (randomizeChannel) {
+        // Random channel from full range
         const random = Math.random();
-        useChannel = Math.round(1 + random * 15);
-        useChannel = Math.max(1, Math.min(16, useChannel));
+        const randomCh = Math.round(1 + random * 15);
+        useChannels = [Math.max(1, Math.min(16, randomCh))];
       }
       
       let shouldMute = false;
@@ -1670,14 +1704,17 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
       
-      const useZeroBasedChannel = useChannel - 1;
-      
       // Play all notes in the chord simultaneously (or single note)
-      // All notes use the same velocity, duration, and channel settings
+      // Play on all channels simultaneously if channelArray is used
       if (useMidiNotes.length > 0) {
-        const notePromises = useMidiNotes.map(note => 
-          sendNote(note, useVelocity, finalDuration, useZeroBasedChannel)
-        );
+        const notePromises = [];
+        // For each MIDI note, send to all channels simultaneously
+        for (const note of useMidiNotes) {
+          for (const ch of useChannels) {
+            const useZeroBasedChannel = ch - 1;
+            notePromises.push(sendNote(note, useVelocity, finalDuration, useZeroBasedChannel));
+          }
+        }
         await Promise.all(notePromises);
         
         // Update cumulative duration after playing (use actual duration used)
@@ -1733,8 +1770,25 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
         const t = rawVal.toLowerCase();
         if (t === 'fit' || t === 'beat' || t === 'bar') type = t;
       } else if (key === 'c') {
-        const ch = parseInt(rawVal, 10);
-        if (!isNaN(ch)) channelOverride = Math.max(1, Math.min(16, ch));
+        // Check for array syntax: <1,2,3>
+        const arrayMatch = rawVal.match(/^<(.+)>$/);
+        if (arrayMatch) {
+          const items = arrayMatch[1].split(',').map(item => item.trim());
+          const channels = [];
+          for (const item of items) {
+            const ch = parseInt(item, 10);
+            if (!isNaN(ch)) {
+              const clampedCh = Math.max(1, Math.min(16, ch));
+              channels.push(clampedCh);
+            }
+          }
+          if (channels.length > 0) {
+            channelOverride = channels;
+          }
+        } else {
+          const ch = parseInt(rawVal, 10);
+          if (!isNaN(ch)) channelOverride = Math.max(1, Math.min(16, ch));
+        }
       } else if (key === 'co') {
         // Pass through cutoff token for future use
         cutOff = rawVal;
