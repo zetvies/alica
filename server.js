@@ -1764,6 +1764,36 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
   if (plays.length > 0) await Promise.all(plays);
 }
 
+// Play a track in a cycle (repeatedly at bar intervals)
+// Returns interval ID that can be cleared with clearInterval()
+function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
+  if (!cycleStr || typeof cycleStr !== 'string') return null;
+  
+  // Capture global variables before parameter shadowing
+  const globalTempo = tempo;
+  const globalSignatureNumerator = signatureNumerator;
+  const globalSignatureDenominator = signatureDenominator;
+  
+  // Use provided parameters or fall back to server variables
+  const useTempo = tempoParam !== null ? tempoParam : globalTempo;
+  const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : globalSignatureNumerator;
+  const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : globalSignatureDenominator;
+  
+  // Calculate bar duration in milliseconds
+  const beatsPerBar = useSignatureNumerator;
+  const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
+  
+  // Call playTrack immediately, then set up interval
+  playTrack(cycleStr, tempoParam, signatureNumeratorParam, signatureDenominatorParam);
+  
+  // Set up interval to call playTrack at bar duration intervals
+  const intervalId = setInterval(() => {
+    playTrack(cycleStr, tempoParam, signatureNumeratorParam, signatureDenominatorParam);
+  }, barDurationMs);
+  
+  return intervalId;
+}
+
 // Function to calculate current bar and beat
 function calculateBarAndBeat() {
 
