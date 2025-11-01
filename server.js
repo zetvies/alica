@@ -419,7 +419,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
   let expandedSequence = processedSequence;
-  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|p|min|max)\([^)]*\))*)/g;
+  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|p|nRange|vRange|pRange|dRange)\([^)]*\))*)/g;
   let repeatMatch;
   let lastIndex = 0;
   let newSequence = '';
@@ -443,7 +443,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     expandedSequence = newSequence;
   }
   
-  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|c|p|min|max)\([^)]*\))*/g;
+  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|c|p|nRange|vRange|pRange|dRange)\([^)]*\))*/g;
   const allChunks = expandedSequence.match(chunkRegex) || [];
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
@@ -485,6 +485,18 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   const ev = Math.max(1, Math.round(barDurationMs / numNotes))
   const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar))
   const br = barDurationMs
+
+  // Check if any chunk uses dRange, and if so, override type to 'beat'
+  let usesDRange = false;
+  for (const chunk of chunks) {
+    if (chunk.includes('dRange(')) {
+      usesDRange = true;
+      break;
+    }
+  }
+  if (usesDRange) {
+    type = 'beat';
+  }
 
   let defaultDurationMs = null;
   if (type === "fit") {
@@ -540,14 +552,20 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let hasNoteVelocity = false;
     let hasNoteChannel = false;
     let hasNoteDuration = false;
-    // Randomization flags and min/max values
+    // Randomization flags and range values
     let randomizeNote = false;
     let randomizeVelocity = false;
     let randomizeProbability = false;
     let randomizeDuration = false;
     let randomizeChannel = false;
-    let minValue = 0;
-    let maxValue = 1;
+    // Note range (MIDI values: [minMidi, maxMidi] or null)
+    let nRange = null;
+    // Velocity range (0-1 float: [min, max], scales to 0-127)
+    let vRange = [0, 1];
+    // Probability range (0-1 float: [min, max])
+    let pRange = [0, 1];
+    // Duration range (duration tokens: [minToken, maxToken] or null)
+    let dRange = null;
     
     // Check if note argument is 'r' for randomization
     if (noteArg.toLowerCase() === 'r') {
@@ -557,7 +575,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     const midiNote = noteTokenToMidi(noteArg);
     if (midiNote === null && !randomizeNote) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
-    const paramRegex = /\.(d|v|c|p|min|max)\(([^)]+)\)/g;
+    const paramRegex = /\.(d|v|c|p|nRange|vRange|pRange|dRange)\(([^)]+)\)/g;
     let m;
     while ((m = paramRegex.exec(chunk)) !== null) {
       const key = m[1];
@@ -641,16 +659,72 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           }
         }
       }
-      if (key === 'min') {
-        const min = parseFloat(raw);
-        if (!isNaN(min) && min >= 0 && min <= 1) {
-          minValue = min;
+      if (key === 'nRange') {
+        // Parse note range: nRange(minNote, maxNote) - e.g. nRange(c3, c4)
+        const parts = raw.split(',').map(s => s.trim());
+        if (parts.length === 2) {
+          const minMidi = noteTokenToMidi(parts[0]);
+          const maxMidi = noteTokenToMidi(parts[1]);
+          if (minMidi !== null && maxMidi !== null && maxMidi > minMidi) {
+            nRange = [minMidi, maxMidi];
+          }
         }
       }
-      if (key === 'max') {
-        const max = parseFloat(raw);
-        if (!isNaN(max) && max >= 0 && max <= 1) {
-          maxValue = max;
+      if (key === 'vRange') {
+        // Parse velocity range: vRange(min, max) - e.g. vRange(0.5, 1.0)
+        const parts = raw.split(',').map(s => s.trim());
+        if (parts.length === 2) {
+          const min = parseFloat(parts[0]);
+          const max = parseFloat(parts[1]);
+          if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max > min) {
+            vRange = [min, max];
+          }
+        }
+      }
+      if (key === 'pRange') {
+        // Parse probability range: pRange(min, max) - e.g. pRange(0.2, 0.8)
+        const parts = raw.split(',').map(s => s.trim());
+        if (parts.length === 2) {
+          const min = parseFloat(parts[0]);
+          const max = parseFloat(parts[1]);
+          if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max > min) {
+            pRange = [min, max];
+          }
+        }
+      }
+      if (key === 'dRange') {
+        // Parse duration range: dRange(minToken, maxToken) - e.g. dRange(bt/16, bt/4) or dRange(bt/2, bt*2)
+        const parts = raw.split(',').map(s => s.trim());
+        if (parts.length === 2) {
+          // Helper to parse duration token
+          const parseDurationToken = (tokenStr) => {
+            const norm = tokenStr.replace(/\s+/g, '').toLowerCase();
+            // Special case: 'bt' means exactly 1 beat
+            if (norm === 'bt') {
+              return { type: 'unit', value: 1 };
+            }
+            // Patterns: bt/even or bt*even (even numbers only)
+            const mDiv = norm.match(/^bt\/(\d+)$/);
+            const mMul = norm.match(/^bt\*(\d+)$/);
+            if (mDiv && mDiv[1]) {
+              const divisor = parseInt(mDiv[1], 10);
+              if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
+                return { type: 'div', value: divisor };
+              }
+            } else if (mMul && mMul[1]) {
+              const multiplier = parseInt(mMul[1], 10);
+              if (!isNaN(multiplier) && multiplier > 0 && multiplier % 2 === 0) {
+                return { type: 'mul', value: multiplier };
+              }
+            }
+            return null;
+          };
+          
+          const minToken = parseDurationToken(parts[0]);
+          const maxToken = parseDurationToken(parts[1]);
+          if (minToken !== null && maxToken !== null) {
+            dRange = [minToken, maxToken];
+          }
         }
       }
       if (key === 'p') {
@@ -727,20 +801,21 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       let useMuteProbability = muteProbability;
       let useDurationValue = useDuration;
       
-      // Randomize note (C1=24 to 127=G9, playable MIDI range)
+      // Randomize note
       if (randomizeNote) {
+        // Use nRange if provided, otherwise use defaults
+        const minMidi = nRange !== null ? nRange[0] : 24; // C1 default
+        const maxMidi = nRange !== null ? nRange[1] : 108; // C8 default
+        // Randomly select within the MIDI range
         const random = Math.random();
-        const scaled = minValue + random * (maxValue - minValue);
-        const minMidi = 24; // C1
-        const maxMidi = 108; // C8
-        useMidiNote = Math.round(minMidi + scaled * (maxMidi - minMidi));
-        useMidiNote = Math.max(minMidi, Math.min(maxMidi, useMidiNote));
+        useMidiNote = Math.round(minMidi + random * (maxMidi - minMidi));
+        useMidiNote = Math.max(0, Math.min(127, useMidiNote));
       }
       
       // Randomize velocity (0-127)
       if (randomizeVelocity) {
         const random = Math.random();
-        const scaled = minValue + random * (maxValue - minValue);
+        const scaled = vRange[0] + random * (vRange[1] - vRange[0]);
         useVelocity = Math.round(scaled * 127);
         useVelocity = Math.max(0, Math.min(127, useVelocity));
       }
@@ -748,25 +823,87 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       // Randomize probability (0-1)
       if (randomizeProbability) {
         const random = Math.random();
-        useMuteProbability = minValue + random * (maxValue - minValue);
+        useMuteProbability = pRange[0] + random * (pRange[1] - pRange[0]);
         useMuteProbability = Math.max(0, Math.min(1, useMuteProbability));
       }
       
-      // Randomize duration (br/32 to br)
+      // Randomize duration
       if (randomizeDuration) {
-        const random = Math.random();
-        const scaled = minValue + random * (maxValue - minValue);
-        const minDuration = br / 32;
-        const maxDuration = br;
-        useDurationValue = Math.round(minDuration + scaled * (maxDuration - minDuration));
-        useDurationValue = Math.max(1, useDurationValue);
+        // Helper to calculate duration from token (bt/even or bt*even, or 'unit' for bt)
+        const durationFromToken = (token) => {
+          if (!token) return null;
+          if (token.type === 'div') {
+            return Math.round(bt / token.value);
+          } else if (token.type === 'mul') {
+            return Math.round(bt * token.value);
+          } else if (token.type === 'unit') {
+            return Math.round(bt * token.value); // bt * 1 = bt
+          }
+          return null;
+        };
+        
+        // If dRange is provided, use it
+        if (dRange !== null) {
+          const minDurationMs = durationFromToken(dRange[0]);
+          const maxDurationMs = durationFromToken(dRange[1]);
+          
+          if (minDurationMs !== null && maxDurationMs !== null && maxDurationMs > minDurationMs) {
+            // Generate all valid durations (bt/even or bt*even, or bt itself) between min and max
+            const validDurations = [];
+            const btDuration = Math.round(bt);
+            
+            // Check if bt itself (1 beat) is in range
+            if (btDuration >= minDurationMs && btDuration <= maxDurationMs) {
+              validDurations.push(btDuration);
+            }
+            
+            // Generate division durations (bt/2, bt/4, bt/6, ...)
+            for (let div = 2; div <= 128; div += 2) {
+              const dur = Math.round(bt / div);
+              if (dur >= minDurationMs && dur <= maxDurationMs) {
+                validDurations.push(dur);
+              }
+              if (dur < minDurationMs) break; // No point checking smaller divisions
+            }
+            
+            // Generate multiplication durations (bt*2, bt*4, bt*6, ...)
+            for (let mul = 2; mul <= 16; mul += 2) {
+              const dur = Math.round(bt * mul);
+              if (dur >= minDurationMs && dur <= maxDurationMs) {
+                validDurations.push(dur);
+              }
+              if (dur > maxDurationMs) break; // No point checking larger multiplications
+            }
+            
+            // Remove duplicates and sort
+            const uniqueDurations = [...new Set(validDurations)].sort((a, b) => a - b);
+            
+            if (uniqueDurations.length > 0) {
+              // Randomly select one valid duration
+              const randomIndex = Math.floor(Math.random() * uniqueDurations.length);
+              useDurationValue = uniqueDurations[randomIndex];
+            } else {
+              // Fallback to default if no valid durations found
+              useDurationValue = Math.max(1, defaultDurationMs || bt);
+            }
+          } else {
+            // Invalid minD/maxD, fall back to default
+            useDurationValue = Math.max(1, defaultDurationMs || bt);
+          }
+        } else {
+          // No minD/maxD, use default random behavior (br/32 to br)
+          const random = Math.random();
+          const minDuration = br / 32;
+          const maxDuration = br;
+          useDurationValue = Math.round(minDuration + random * (maxDuration - minDuration));
+          useDurationValue = Math.max(1, useDurationValue);
+        }
       }
       
-      // Randomize channel (1-16)
+      // Randomize channel (1-16) - uses default 0-1 range
       if (randomizeChannel) {
         const random = Math.random();
-        const scaled = minValue + random * (maxValue - minValue);
-        useChannel = Math.round(1 + scaled * 15);
+        useChannel = Math.round(1 + random * 15);
         useChannel = Math.max(1, Math.min(16, useChannel));
       }
       
@@ -906,7 +1043,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r)^8.min(0.4).max(0.8)].c(1)");
+        playCycle("[n(r)^8.nRange(c4, c5).d(r).dRange(bt, bt*2).p(r).pRange(0.6,0.1)].c(1)");
       }
     }
   } catch (error) {
