@@ -1797,6 +1797,32 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   
   // Set up interval to call playTrack at bar duration intervals
   const intervalId = setInterval(() => {
+    // Check if there's a pending update for this cycle by looking it up in activeCycle
+    const cycleEntry = activeCycle.find(c => c.intervalId === intervalId);
+    if (cycleEntry && cycleEntry.pendingUpdate) {
+      const update = cycleEntry.pendingUpdate;
+      // Clear this interval
+      clearInterval(intervalId);
+      // Start new cycle with updated parameters
+      const newIntervalId = playCycle(
+        update.cycleStr,
+        update.tempoParam,
+        update.signatureNumeratorParam,
+        update.signatureDenominatorParam
+      );
+      // Update activeCycle entry
+      cycleEntry.intervalId = newIntervalId;
+      cycleEntry.function = () => playCycle(
+        update.cycleStr,
+        update.tempoParam,
+        update.signatureNumeratorParam,
+        update.signatureDenominatorParam
+      );
+      // Clear the pending update
+      delete cycleEntry.pendingUpdate;
+      return; // Exit without playing current cycle
+    }
+    // Normal play
     playTrack(cycleStr, tempoParam, signatureNumeratorParam, signatureDenominatorParam);
   }, barDurationMs);
   
@@ -1821,6 +1847,36 @@ const exampleQueue = [
 ];
 
 queue.push(...exampleQueue);
+
+// Update an existing playCycle by id - waits for current interval to finish before switching
+function updateCycleById(id, cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
+  if (!id || typeof id !== 'string') {
+    console.log('[UPDATE CYCLE] Invalid id provided');
+    return false;
+  }
+  
+  // Find the cycle in activeCycle by id
+  const existingIndex = activeCycle.findIndex(cycle => cycle.id === id);
+  
+  if (existingIndex === -1) {
+    console.log(`[UPDATE CYCLE] Cycle with id '${id}' not found in activeCycle`);
+    return false;
+  }
+  
+  const cycleEntry = activeCycle[existingIndex];
+  
+  // Store pending update info on the cycle entry
+  // This will be checked on the next interval tick (after current interval completes)
+  cycleEntry.pendingUpdate = {
+    cycleStr: cycleStr,
+    tempoParam: tempoParam,
+    signatureNumeratorParam: signatureNumeratorParam,
+    signatureDenominatorParam: signatureDenominatorParam
+  };
+  
+  console.log(`[UPDATE CYCLE] Update queued for cycle '${id}' - will apply after current interval completes`);
+  return true;
+}
 
 // Process queue on bar change - run queued tracks/cycles
 function onBarChange() {
