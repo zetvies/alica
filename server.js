@@ -124,19 +124,307 @@ function noteTokenToMidi(value) {
   return midi;
 }
 
+// Scale definitions - intervals relative to root (0 = root, 1 = semitone up, etc.)
+const SCALE_DEFINITIONS = {
+  // Modes
+  'ionian': [0, 2, 4, 5, 7, 9, 11],
+  'dorian': [0, 2, 3, 5, 7, 9, 10],
+  'phrygian': [0, 1, 3, 5, 7, 8, 10],
+  'lydian': [0, 2, 4, 6, 7, 9, 11],
+  'mixolydian': [0, 2, 4, 5, 7, 9, 10],
+  'aeolian': [0, 2, 3, 5, 7, 8, 10],
+  'locrian': [0, 1, 3, 5, 6, 8, 10],
+  
+  // Pentatonic
+  'pentatonic-major': [0, 2, 4, 7, 9],
+  'pentatonic-minor': [0, 3, 5, 7, 10],
+  'pentatonic-blues': [0, 3, 5, 6, 7, 10],
+  
+  // Japanese scales
+  'iwato': [0, 1, 5, 6, 10],
+  'in': [0, 1, 5, 7, 10],  // also known as insen
+  'insen': [0, 1, 5, 7, 10],
+  'yo': [0, 2, 5, 7, 9],
+  
+  // Blues
+  'blues-major': [0, 2, 3, 4, 7, 9],
+  'blues-minor': [0, 3, 5, 6, 7, 10],
+  
+  // Harmonic/Melodic
+  'harmonic-minor': [0, 2, 3, 5, 7, 8, 11],
+  'melodic-minor': [0, 2, 3, 5, 7, 9, 11],
+  'double-harmonic': [0, 1, 4, 5, 7, 8, 11], // Byzantine/Flamenco
+  
+  // Synthetic
+  'whole-tone': [0, 2, 4, 6, 8, 10],
+  'diminished': [0, 1, 3, 4, 6, 7, 9, 10], // octatonic half-whole
+  'augmented': [0, 3, 4, 7, 8, 11],
+  
+  // Exotic
+  'enigmatic': [0, 1, 4, 6, 8, 10, 11],
+  'neapolitan': [0, 1, 3, 5, 7, 8, 10],
+  'hungarian-minor': [0, 2, 3, 6, 7, 8, 11],
+  'persian': [0, 1, 4, 5, 6, 8, 11],
+  'arabic': [0, 1, 4, 5, 7, 8, 10]
+};
+
+// Chord quality definitions - intervals relative to root
+const CHORD_QUALITIES = {
+  // Triads
+  'maj': [0, 4, 7],
+  'min': [0, 3, 7],
+  'dim': [0, 3, 6],
+  'aug': [0, 4, 8],
+  'sus2': [0, 2, 7],
+  'sus4': [0, 5, 7],
+  
+  // 7th chords
+  'maj7': [0, 4, 7, 11],
+  'min7': [0, 3, 7, 10],
+  '7': [0, 4, 7, 10],
+  'maj7#5': [0, 4, 8, 11],
+  'min7b5': [0, 3, 6, 10],
+  'dim7': [0, 3, 6, 9],
+  
+  // 9th chords
+  'maj9': [0, 4, 7, 11, 14],
+  'min9': [0, 3, 7, 10, 14],
+  '9': [0, 4, 7, 10, 14],
+  '9#5': [0, 4, 8, 10, 14],
+  'min9b5': [0, 3, 6, 10, 14],
+  'b9': [0, 4, 7, 10, 13],
+  '#9': [0, 4, 7, 10, 15],
+  
+  // 11th chords
+  'maj11': [0, 4, 7, 11, 14, 17],
+  'min11': [0, 3, 7, 10, 14, 17],
+  '11': [0, 4, 7, 10, 14, 17],
+  '#11': [0, 4, 7, 10, 14, 18],
+  
+  // 13th chords
+  'maj13': [0, 4, 7, 11, 14, 17, 21],
+  'min13': [0, 3, 7, 10, 14, 17, 21],
+  '13': [0, 4, 7, 10, 14, 17, 21],
+  '13b9': [0, 4, 7, 10, 13, 17, 21],
+  '13#9': [0, 4, 7, 10, 15, 17, 21],
+  '13#11': [0, 4, 7, 10, 14, 18, 21],
+  
+  // Add chords
+  'add9': [0, 4, 7, 14],
+  'add11': [0, 4, 7, 17],
+  '6': [0, 4, 7, 9],
+  '69': [0, 4, 7, 9, 14],
+  'min6': [0, 3, 7, 9],
+  'min69': [0, 3, 7, 9, 14],
+  
+  // Altered
+  'alt': [0, 4, 6, 8, 10, 13, 15],
+  '7alt': [0, 4, 6, 8, 10, 13, 15, 18],
+  'no3': [0, 7],
+  'no5': [0, 4, 10],
+  
+  // Sus chords
+  'sus9': [0, 5, 7, 10, 14],
+  '7sus4': [0, 5, 7, 10]
+};
+
+// Generate MIDI notes from scale intervals
+function scaleToMidiNotes(root, scaleName, octave = 4) {
+  const rootMidi = noteTokenToMidi(`${root}${octave}`);
+  if (rootMidi === null) return [];
+  
+  let scaleKey = scaleName.toLowerCase();
+  // Convenience aliases
+  if (scaleKey === 'major') scaleKey = 'ionian';
+  if (scaleKey === 'minor') scaleKey = 'aeolian';
+  
+  const intervals = SCALE_DEFINITIONS[scaleKey];
+  if (!intervals) return [];
+  
+  return intervals.map(interval => {
+    const midiNote = rootMidi + interval;
+    return Math.max(0, Math.min(127, midiNote));
+  });
+}
+
+// Generate MIDI notes from chord quality
+function chordToMidiNotes(root, quality, octave = 4) {
+  const rootMidi = noteTokenToMidi(`${root}${octave}`);
+  if (rootMidi === null) return [];
+  
+  const intervals = CHORD_QUALITIES[quality.toLowerCase()];
+  if (!intervals) return [];
+  
+  // Normalize intervals to single octave range, then add octaves for proper voicing
+  const normalized = intervals.map(interval => interval % 12);
+  const midiNotes = [];
+  
+  // For each interval, put in reasonable octave
+  intervals.forEach(interval => {
+    let note = rootMidi + interval;
+    // Keep within MIDI range but allow higher notes for extensions
+    if (note > 127) note -= 12;
+    if (note < 0) note += 12;
+    note = Math.max(0, Math.min(127, note));
+    midiNotes.push(note);
+  });
+  
+  return midiNotes;
+}
+
+// Expand scale syntax: scale(c-ionian).q(maj7) or scale(c-ionian)
+function expandScale(scaleStr) {
+  if (!scaleStr || typeof scaleStr !== 'string') return '';
+  
+  // Match scale(root-mode).q(quality) or scale(root-mode)
+  const scaleRegex = /scale\(([^)]+)\)(?:\.q\(([^)]+)\))?/i;
+  const match = scaleStr.match(scaleRegex);
+  if (!match) return scaleStr;
+  
+  const args = match[1].trim();
+  const quality = match[2] ? match[2].trim() : null;
+  
+  // Parse root-mode (e.g., "c-ionian" or "d-dorian")
+  const parts = args.split('-');
+  if (parts.length !== 2) return scaleStr;
+  
+  const root = parts[0].trim();
+  const mode = parts[1].trim().toLowerCase();
+  
+  // Get scale notes
+  const scaleNotes = scaleToMidiNotes(root, mode);
+  if (scaleNotes.length === 0) return scaleStr;
+  
+  // If quality specified, build chord on root using quality intervals
+  if (quality) {
+    const chordIntervals = CHORD_QUALITIES[quality.toLowerCase()];
+    if (chordIntervals) {
+      const rootMidi = noteTokenToMidi(`${root}4`);
+      if (rootMidi !== null) {
+        const chordNotes = chordIntervals.map(interval => {
+          const note = rootMidi + interval;
+          return Math.max(0, Math.min(127, note));
+        });
+        
+        return chordNotes.map(n => `n(${n})`).join(' ');
+      }
+    }
+  }
+  
+  // Return scale notes as note sequence
+  return scaleNotes.map(n => `n(${n})`).join(' ');
+}
+
+// Expand chord syntax: chord(c-maj7)
+function expandChord(chordStr) {
+  if (!chordStr || typeof chordStr !== 'string') return '';
+  
+  // Match chord(root-quality)
+  const chordRegex = /chord\(([^)]+)\)/i;
+  const match = chordStr.match(chordRegex);
+  if (!match) return chordStr;
+  
+  const args = match[1].trim();
+  
+  // Parse root-quality (e.g., "c-maj7" or "d-min7")
+  const parts = args.split('-');
+  if (parts.length !== 2) return chordStr;
+  
+  const root = parts[0].trim();
+  const quality = parts[1].trim();
+  
+  // Get chord notes
+  const chordNotes = chordToMidiNotes(root, quality);
+  if (chordNotes.length === 0) return chordStr;
+  
+  // Return chord notes as note sequence
+  return chordNotes.map(n => `n(${n})`).join(' ');
+}
+
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
   if (!sequence || typeof sequence !== 'string') return;
+  
+  // Expand scale and chord syntax first
+  let processedSequence = sequence;
+  
+  // Expand scale syntax: scale(root-mode).q(quality) or scale(root-mode)
+  // Handle nested parentheses properly
+  let tempSequence = '';
+  let i = 0;
+  while (i < processedSequence.length) {
+    const scaleIndex = processedSequence.toLowerCase().indexOf('scale(', i);
+    if (scaleIndex === -1) {
+      tempSequence += processedSequence.substring(i);
+      break;
+    }
+    tempSequence += processedSequence.substring(i, scaleIndex);
+    
+    // Find the matching closing parenthesis for scale(
+    let parenCount = 1;
+    let j = scaleIndex + 6; // "scale(".length
+    while (j < processedSequence.length && parenCount > 0) {
+      if (processedSequence[j] === '(') parenCount++;
+      if (processedSequence[j] === ')') parenCount--;
+      j++;
+    }
+    
+    // Now find optional .q() modifier after the closing paren
+    let modifierEnd = j;
+    while (modifierEnd < processedSequence.length) {
+      const modMatch = processedSequence.substring(modifierEnd).match(/^\s*\.q\([^)]*\)/);
+      if (modMatch) {
+        modifierEnd += modMatch[0].length;
+      } else {
+        break;
+      }
+    }
+    
+    const scaleStr = processedSequence.substring(scaleIndex, modifierEnd);
+    const expanded = expandScale(scaleStr);
+    tempSequence += expanded;
+    i = modifierEnd;
+  }
+  processedSequence = tempSequence;
+  
+  // Expand chord syntax: chord(root-quality)
+  // Handle nested parentheses properly
+  tempSequence = '';
+  i = 0;
+  while (i < processedSequence.length) {
+    const chordIndex = processedSequence.toLowerCase().indexOf('chord(', i);
+    if (chordIndex === -1) {
+      tempSequence += processedSequence.substring(i);
+      break;
+    }
+    tempSequence += processedSequence.substring(i, chordIndex);
+    
+    // Find the matching closing parenthesis for chord(
+    let parenCount = 1;
+    let j = chordIndex + 6; // "chord(".length
+    while (j < processedSequence.length && parenCount > 0) {
+      if (processedSequence[j] === '(') parenCount++;
+      if (processedSequence[j] === ')') parenCount--;
+      j++;
+    }
+    
+    const chordStr = processedSequence.substring(chordIndex, j);
+    const expanded = expandChord(chordStr);
+    tempSequence += expanded;
+    i = j;
+  }
+  processedSequence = tempSequence;
+  
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
-  let expandedSequence = sequence;
+  let expandedSequence = processedSequence;
   const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|p|min|max)\([^)]*\))*)/g;
   let repeatMatch;
   let lastIndex = 0;
   let newSequence = '';
-  while ((repeatMatch = repeatPattern.exec(sequence)) !== null) {
-    newSequence += sequence.substring(lastIndex, repeatMatch.index);
+  while ((repeatMatch = repeatPattern.exec(processedSequence)) !== null) {
+    newSequence += processedSequence.substring(lastIndex, repeatMatch.index);
     const notePattern = repeatMatch[0].replace(repeatMatch[1], ''); // Remove ^N
     const repeatCount = parseInt(repeatMatch[1].substring(1), 10); // Extract number from ^N
     if (!isNaN(repeatCount) && repeatCount > 0) {
@@ -148,8 +436,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     lastIndex = repeatMatch.index + repeatMatch[0].length;
   }
-  if (lastIndex < sequence.length) {
-    newSequence += sequence.substring(lastIndex);
+  if (lastIndex < processedSequence.length) {
+    newSequence += processedSequence.substring(lastIndex);
   }
   if (newSequence) {
     expandedSequence = newSequence;
