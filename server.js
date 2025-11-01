@@ -5,7 +5,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const easymidi = require('easymidi');
 const app = express();
-const HTTP_PORT = process.env.PORT || 3000;
+const HTTP_PORT = process.env.PORT || 4254;
 const UDP_PORT = 4254;
 
 
@@ -33,7 +33,6 @@ function checkInitialization() {
     initialized = true;
     console.log('[INITIALIZATION] Connected to Max4Live');
   }
-  console.log('[INITIALIZATION] Please add Max4Live effecct in Ableton');
 }
 
 // Store connected WebSocket clients (will be initialized later)
@@ -78,7 +77,7 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
   try {
     midiOutput.send('noteon', { note, velocity, channel });
     if (duration > 0) {
-      await sleep(duration-50);
+      await sleep(duration - 50);
       try { midiOutput.send('noteoff', { note, velocity: 0, channel }); } catch (e) { }
     } else {
       // If duration is 0 or negative, send immediate noteoff
@@ -338,7 +337,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c3)].c(2)  [n(e3)].c(2) [n(c3).d(br)].t(beat).c(1).co(2br)");
+        playCycle("[n(c3)].c(2)  [n(e3)].c(2) [n(f#3)].c(2) [n(c3).d(br)].t(beat).c(1).co(2br)");
       }
     }
   } catch (error) {
@@ -465,9 +464,8 @@ app.get('/', (req, res) => {
 // HTTP server
 const server = http.createServer(app);
 
-// Create WebSocket server on port 4254
-const wsServer = http.createServer();
-const wss = new WebSocketServer({ server: wsServer });
+// Create WebSocket server attached to the same HTTP server
+const wss = new WebSocketServer({ server });
 
 // Initialize clients Set
 clients = new Set();
@@ -492,20 +490,16 @@ wss.on('connection', (ws) => {
   ws.send(initMessage);
 });
 
-// Start HTTP server
+// Start HTTP and WebSocket server on the same port
 server.listen(HTTP_PORT, () => {
   console.log(`[HTTP] Server is running on http://localhost:${HTTP_PORT}`);
-});
-
-// Start WebSocket server on port 4254
-wsServer.listen(4254, () => {
-  console.log(`[WS] WebSocket server is running on ws://localhost:4254`);
+  console.log(`[WS] WebSocket server is running on ws://localhost:${HTTP_PORT}`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   udpServer.close();
-  wsServer.close();
+  server.close();
   try { if (midiOutput) midiOutput.close(); } catch (e) { }
   process.exit(0);
 });
