@@ -604,6 +604,39 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   const ev = Math.max(1, Math.round(barDurationMs / numNotes))
   const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar))
   const br = barDurationMs
+  
+  // Parse cutoff token and convert to milliseconds
+  // Supports: br, br*i, br/even, bt, bt*i, bt/even (where i is a number, even is even number)
+  let cutoffDurationMs = null;
+  if (cutOff) {
+    const cutoffNorm = cutOff.trim().toLowerCase();
+    const brMatch = cutoffNorm.match(/^br(?:\*(\d+(?:\.\d+)?))?$/);
+    const brDivMatch = cutoffNorm.match(/^br\/(\d+)$/);
+    const btMatch = cutoffNorm.match(/^bt(?:\*(\d+(?:\.\d+)?))?$/);
+    const btDivMatch = cutoffNorm.match(/^bt\/(\d+)$/);
+    
+    if (brMatch) {
+      const multiplier = brMatch[1] ? parseFloat(brMatch[1]) : 1;
+      if (!isNaN(multiplier) && multiplier > 0) {
+        cutoffDurationMs = Math.round(br * multiplier);
+      }
+    } else if (brDivMatch) {
+      const divisor = parseInt(brDivMatch[1], 10);
+      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
+        cutoffDurationMs = Math.round(br / divisor);
+      }
+    } else if (btMatch) {
+      const multiplier = btMatch[1] ? parseFloat(btMatch[1]) : 1;
+      if (!isNaN(multiplier) && multiplier > 0) {
+        cutoffDurationMs = Math.round(bt * multiplier);
+      }
+    } else if (btDivMatch) {
+      const divisor = parseInt(btDivMatch[1], 10);
+      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
+        cutoffDurationMs = Math.round(bt / divisor);
+      }
+    }
+  }
 
   // Check if any chunk uses duration settings (dRange, d(r), duration array, or explicit durations), 
   // and if so, override type to 'beat'
@@ -694,6 +727,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     if (!isFinite(totalWeight) || totalWeight <= 0) totalWeight = numNotes;
   }
 
+  // Track cumulative duration for cutoff
+  let cumulativeDurationMs = 0;
+  
   for (let idx = 0; idx < chunks.length; idx++) {
     const chunk = chunks[idx];
     const noteMatch = chunk.match(/n\(([^)]+)\)/);
@@ -1176,14 +1212,23 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     // Note: Remove probability is now handled per-repeat in the loop below
     const zeroBasedChannel = channel - 1;
-    let useDuration = null;
+    
+    // Calculate duration for this chunk (used for both playback and cutoff calculation)
+    // For "fit" type: calculate from weights
+    // For "beat"/"bar" type: use explicit duration or default
+    let chunkDurationPerRepeat = null;
     if (type === 'fit' && weights) {
       const weightedTotalForChunk = weights[idx] || 1;
       const perInstanceWeight = weightedTotalForChunk / repeatCount;
-      useDuration = Math.max(1, Math.round(barDurationMs * (perInstanceWeight / totalWeight)));
+      chunkDurationPerRepeat = Math.max(1, Math.round(barDurationMs * (perInstanceWeight / totalWeight)));
     } else {
-      useDuration = (duration === null) ? defaultDurationMs : duration;
+      // For beat/bar type, use explicit duration or default
+      // We'll calculate the actual duration after randomization in the repeat loop
+      // For cutoff, use the duration value or defaultDurationMs
+      chunkDurationPerRepeat = (duration === null) ? defaultDurationMs : duration;
     }
+    
+    let useDuration = chunkDurationPerRepeat;
     // Apply mute probability: if random < muteProbability, set velocity to 0
     // Note-level mute probability OR sequence-level mute probability can mute the note
     // Apply arp ordering to arrays if arp mode is set (each parameter has its own mode)
@@ -1594,16 +1639,47 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         useVelocity = 0;
       }
       
+      // Check cutoff: if note would exceed cutoff, truncate duration to end at cutoff
+      let finalDuration = useDurationValue || useDuration || defaultDurationMs || bt;
+      let shouldBreakAfterPlay = false;
+      
+      if (cutoffDurationMs !== null) {
+        const remainingTime = cutoffDurationMs - cumulativeDurationMs;
+        if (remainingTime <= 0) {
+          // Already at or past cutoff, don't play and break
+          break;
+        }
+        if (finalDuration > remainingTime) {
+          // Would exceed cutoff, truncate duration to end exactly at cutoff
+          finalDuration = remainingTime;
+          shouldBreakAfterPlay = true;
+        }
+      }
+      
       const useZeroBasedChannel = useChannel - 1;
       
       // Play all notes in the chord simultaneously (or single note)
       // All notes use the same velocity, duration, and channel settings
       if (useMidiNotes.length > 0) {
         const notePromises = useMidiNotes.map(note => 
-          sendNote(note, useVelocity, useDurationValue, useZeroBasedChannel)
+          sendNote(note, useVelocity, finalDuration, useZeroBasedChannel)
         );
         await Promise.all(notePromises);
+        
+        // Update cumulative duration after playing (use actual duration used)
+        cumulativeDurationMs += finalDuration;
+        
+        // If we truncated the note or reached/exceeded cutoff, stop processing
+        if (shouldBreakAfterPlay || (cutoffDurationMs !== null && cumulativeDurationMs >= cutoffDurationMs)) {
+          // Reached or exceeded cutoff, stop processing remaining chunks
+          break;
+        }
       }
+    }
+    
+    // If cutoff was exceeded in the inner loop, break from outer loop
+    if (cutoffDurationMs !== null && cumulativeDurationMs >= cutoffDurationMs) {
+      break;
     }
   }
 }
@@ -1710,7 +1786,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^2.nArp(up)].c(1)");
+        playCycle("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^2.d(br/2).nArp(up)].co(br/4).c(1)");
       }
     }
   } catch (error) {
