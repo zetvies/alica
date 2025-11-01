@@ -311,9 +311,9 @@ n(r.o{chord(c-maj7)})              // Random note from C major 7th chord
 - `locrian`
 
 **Pentatonic:**
-- `pentatonic-major`
-- `pentatonic-minor`
-- `pentatonic-blues`
+- `pentatonicMajor`
+- `pentatonicMinor`
+- `pentatonicBlues`
 
 **Japanese:**
 - `iwato`
@@ -321,12 +321,12 @@ n(r.o{chord(c-maj7)})              // Random note from C major 7th chord
 - `yo`
 
 **Blues:**
-- `blues-major`
-- `blues-minor`
+- `bluesMajor`
+- `bluesMinor`
 
 **Harmonic/Melodic:**
-- `harmonic-minor`
-- `melodic-minor`
+- `harmonicMinor`
+- `melodicMinor`
 - `double-harmonic`
 
 **Synthetic:**
@@ -337,7 +337,7 @@ n(r.o{chord(c-maj7)})              // Random note from C major 7th chord
 **Exotic:**
 - `enigmatic`
 - `neapolitan`
-- `hungarian-minor`
+- `hungarianMinor`
 - `persian`
 - `arabic`
 

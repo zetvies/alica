@@ -48,9 +48,9 @@ const SCALE_DEFINITIONS = {
   'locrian': [0, 1, 3, 5, 6, 8, 10],
   
   // Pentatonic
-  'pentatonic-major': [0, 2, 4, 7, 9],
-  'pentatonic-minor': [0, 3, 5, 7, 10],
-  'pentatonic-blues': [0, 3, 5, 6, 7, 10],
+  'pentatonicMajor': [0, 2, 4, 7, 9],
+  'pentatonicMinor': [0, 3, 5, 7, 10],
+  'pentatonicBlues': [0, 3, 5, 6, 7, 10],
   
   // Japanese scales
   'iwato': [0, 1, 5, 6, 10],
@@ -59,12 +59,12 @@ const SCALE_DEFINITIONS = {
   'yo': [0, 2, 5, 7, 9],
   
   // Blues
-  'blues-major': [0, 2, 3, 4, 7, 9],
-  'blues-minor': [0, 3, 5, 6, 7, 10],
+  'bluesMajor': [0, 2, 3, 4, 7, 9],
+  'bluesMinor': [0, 3, 5, 6, 7, 10],
   
   // Harmonic/Melodic
-  'harmonic-minor': [0, 2, 3, 5, 7, 8, 11],
-  'melodic-minor': [0, 2, 3, 5, 7, 9, 11],
+  'harmonicMinor': [0, 2, 3, 5, 7, 8, 11],
+  'melodicMinor': [0, 2, 3, 5, 7, 9, 11],
   'double-harmonic': [0, 1, 4, 5, 7, 8, 11], // Byzantine/Flamenco
   
   // Synthetic
@@ -75,10 +75,30 @@ const SCALE_DEFINITIONS = {
   // Exotic
   'enigmatic': [0, 1, 4, 6, 8, 10, 11],
   'neapolitan': [0, 1, 3, 5, 7, 8, 10],
-  'hungarian-minor': [0, 2, 3, 6, 7, 8, 11],
+  'hungarianMinor': [0, 2, 3, 6, 7, 8, 11],
   'persian': [0, 1, 4, 5, 6, 8, 11],
   'arabic': [0, 1, 4, 5, 7, 8, 10]
 };
+
+// Case-insensitive lookup for scale definitions
+function getScaleIntervals(scaleName) {
+  if (!scaleName || typeof scaleName !== 'string') return undefined;
+  
+  // Try direct lookup first (for exact matches)
+  if (SCALE_DEFINITIONS[scaleName]) {
+    return SCALE_DEFINITIONS[scaleName];
+  }
+  
+  // Try case-insensitive lookup
+  const scaleNameLower = scaleName.toLowerCase();
+  for (const key in SCALE_DEFINITIONS) {
+    if (key.toLowerCase() === scaleNameLower) {
+      return SCALE_DEFINITIONS[key];
+    }
+  }
+  
+  return undefined;
+}
 
 // Chord quality definitions - intervals relative to root
 const CHORD_QUALITIES = {
@@ -145,12 +165,13 @@ function scaleToMidiNotes(root, scaleName, octave = 4) {
   const rootMidi = noteTokenToMidi(`${root}${octave}`);
   if (rootMidi === null) return [];
   
-  let scaleKey = scaleName.toLowerCase();
-  // Convenience aliases
-  if (scaleKey === 'major') scaleKey = 'ionian';
-  if (scaleKey === 'minor') scaleKey = 'aeolian';
+  let scaleKey = scaleName;
+  // Convenience aliases (case-insensitive)
+  const scaleKeyLower = scaleKey.toLowerCase();
+  if (scaleKeyLower === 'major') scaleKey = 'ionian';
+  else if (scaleKeyLower === 'minor') scaleKey = 'aeolian';
   
-  const intervals = SCALE_DEFINITIONS[scaleKey];
+  const intervals = getScaleIntervals(scaleKey);
   if (!intervals) return [];
   
   return intervals.map(interval => {
@@ -234,13 +255,14 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
       const parts = args.split('-');
       if (parts.length === 2) {
         root = parts[0].trim();
-        scaleName = parts[1].trim().toLowerCase();
+        scaleName = parts[1].trim();
         quality = qualityPart ? qualityPart.trim() : null;
         
-        // Get scale intervals
-        if (scaleName === 'major') scaleName = 'ionian';
-        if (scaleName === 'minor') scaleName = 'aeolian';
-        intervals = SCALE_DEFINITIONS[scaleName];
+        // Get scale intervals (case-insensitive)
+        const scaleNameLower = scaleName.toLowerCase();
+        if (scaleNameLower === 'major') scaleName = 'ionian';
+        else if (scaleNameLower === 'minor') scaleName = 'aeolian';
+        intervals = getScaleIntervals(scaleName);
         
         // If quality specified, use chord intervals instead
         if (quality && CHORD_QUALITIES[quality]) {
@@ -335,6 +357,7 @@ module.exports = {
   CHORD_QUALITIES,
   scaleToMidiNotes,
   chordToMidiNotes,
-  generateScaleChordNotes
+  generateScaleChordNotes,
+  getScaleIntervals
 };
 
