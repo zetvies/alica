@@ -37,6 +37,15 @@ let previousBeat = null;
 // Initialization flag - becomes true once tempo, numerator, and denominator are set
 let initialized = false;
 
+// Queue for tracks/cycles to play on next bar change
+// Format: [{id: id, function: ()=> playTrack(params)}, ...]
+let queue = [];
+
+// Active cycles that are currently running
+// Format: [{id: id, function: ()=> playCycle(params), intervalId: intervalId}, ...]
+let activeCycle = [];
+
+
 function checkInitialization() {
   if (!initialized && tempo !== null && signatureNumerator !== null && signatureDenominator !== null) {
     initialized = true;
@@ -1794,6 +1803,66 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   return intervalId;
 }
 
+// Example queue items - add to queue to play on next bar change
+// Usage: queue.push(...exampleQueue);
+const exampleQueue = [
+  {
+    id: 'track1',
+    function: () => playTrack("[n(60)^2 n(65)^2].c(1)", 120, 4, 4)
+  },
+  {
+    id: 'cycle1',
+    function: () => playCycle("[n(70)^4].c(2)", 100, 4, 4)
+  },
+  {
+    id: 'cycle2',
+    function: () => playCycle("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^3.nArp(up)].c(3)", 80, 3, 4)
+  }
+];
+
+queue.push(...exampleQueue);
+
+// Process queue on bar change - run queued tracks/cycles
+function onBarChange() {
+  
+  // Process all items in queue (all items are removed as they're processed)
+  while (queue.length > 0) {
+    const item = queue.shift(); // Remove and get first item from queue
+    
+    if (item && item.function) {
+      // Execute the function
+      const result = item.function();
+      
+      // If it's a playCycle, it will return an interval ID (number)
+      // Cycles loop automatically via setInterval - no need to re-add to queue
+      // If it's a playTrack, it returns a Promise (async function)
+      // Tracks play once and don't loop
+      if (result !== null && result !== undefined && typeof result === 'number') {
+        // This is a playCycle - check if id already exists in activeCycle
+        const existingIndex = activeCycle.findIndex(cycle => cycle.id === item.id);
+        if (existingIndex !== -1) {
+          // If cycle with same id exists, clear the old interval and replace
+          clearInterval(activeCycle[existingIndex].intervalId);
+          activeCycle[existingIndex] = {
+            id: item.id,
+            function: item.function,
+            intervalId: result
+          };
+        } else {
+          // Add new cycle to activeCycle (id is unique)
+          // Cycle will loop by itself via setInterval
+          activeCycle.push({
+            id: item.id,
+            function: item.function,
+            intervalId: result
+          });
+        }
+      }
+      // playTrack runs once and completes - no special handling needed
+    }
+  }
+}
+
 // Function to calculate current bar and beat
 function calculateBarAndBeat() {
 
@@ -1831,7 +1900,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playTrack("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^3.nArp(up)].c(1)",80,3,4);
+        onBarChange();
       }
     }
   } catch (error) {
