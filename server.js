@@ -126,10 +126,42 @@ function noteTokenToMidi(value) {
 
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
-async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null) {
+async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
   if (!sequence || typeof sequence !== 'string') return;
-  const chunkRegex = /n\([^\)]+\)(?:\^\d+)?(?:\.(?:d|v|c)\([^)]*\))*/g;
-  const chunks = sequence.match(chunkRegex) || [];
+  const chunkRegex = /n\([^\)]+\)(?:\^\d+)?(?:\.(?:d|v|c|p)\([^)]*\))*/g;
+  const allChunks = sequence.match(chunkRegex) || [];
+  
+  // For type=fit, filter out removed chunks BEFORE calculating weights
+  let chunks = allChunks;
+  if (type === 'fit') {
+    chunks = allChunks.filter((chunk) => {
+      // Check if this chunk has remove probability
+      const paramRegex = /\.(p)\(([^)]+)\)/g;
+      let removeProbability = null;
+      let m;
+      while ((m = paramRegex.exec(chunk)) !== null) {
+        const raw = m[2].trim();
+        const norm = raw.replace(/\s+/g, '').toLowerCase();
+        const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
+        if (removeMatch) {
+          const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1);
+          const prob = parseFloat(probStr);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            removeProbability = prob;
+          }
+        }
+      }
+      // Apply remove probability: if random < removeProbability, remove this chunk
+      if (removeProbability !== null && removeProbability > 0) {
+        const random = Math.random();
+        if (random < removeProbability) {
+          return false; // Remove this chunk
+        }
+      }
+      return true; // Keep this chunk
+    });
+  }
+
   const numNotes = Math.max(1, chunks.length);
 
   const beatsPerBar = signatureNumerator;
@@ -190,7 +222,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let velocity = 80;
     let duration = null; // if not provided, use defaultDurationMs
     let channel = 1; // user-facing 1-16
-    const paramRegex = /\.(d|v|c)\(([^)]+)\)/g;
+    let muteProbability = null; // probability to mute (0-1)
+    let removeProbability = null; // probability to remove note (0-1)
+    const paramRegex = /\.(d|v|c|p)\(([^)]+)\)/g;
     let m;
     while ((m = paramRegex.exec(chunk)) !== null) {
       const key = m[1];
@@ -248,10 +282,42 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         const ch = parseInt(raw, 10);
         if (!isNaN(ch)) channel = Math.max(1, Math.min(16, ch));
       }
+      if (key === 'p') {
+        // Parse probability: m0.7 (mute) or r0.4 (remove)
+        const norm = raw.replace(/\s+/g, '').toLowerCase();
+        // Match m0.7, m.0.7, m1, m0, etc.
+        const muteMatch = norm.match(/^m(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
+        if (muteMatch) {
+          const probStr = muteMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'm' or 'm.' prefix
+          const prob = parseFloat(probStr);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            muteProbability = prob;
+          }
+        }
+        // Match r0.4, r.0.4, r1, r0, etc.
+        const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
+        if (removeMatch) {
+          const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'r' or 'r.' prefix
+          const prob = parseFloat(probStr);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            removeProbability = prob;
+          }
+        }
+      }
     }
     if (typeof channelOverride === 'number') {
       const coerced = Math.max(1, Math.min(16, channelOverride));
       channel = coerced;
+    }
+    // Apply remove probability: if random < removeProbability, skip this note entirely
+    // (For type=fit, this was already handled before weight calculation, but we check again for other types)
+    if (type !== 'fit') {
+      if (removeProbability !== null && removeProbability > 0) {
+        const random = Math.random();
+        if (random < removeProbability) {
+          continue; // Skip this note - it's removed from the sequence
+        }
+      }
     }
     const zeroBasedChannel = channel - 1;
     let useDuration = null;
@@ -262,8 +328,34 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     } else {
       useDuration = (duration === null) ? defaultDurationMs : duration;
     }
+    // Apply mute probability: if random < muteProbability, set velocity to 0
+    // Note-level mute probability OR sequence-level mute probability can mute the note
+    // Each repeat gets its own probability check
     for (let r = 0; r < repeatCount; r++) {
-      await sendNote(midiNote, velocity, useDuration, zeroBasedChannel);
+      let useVelocity = velocity;
+      let shouldMute = false;
+      
+      // Check note-level mute probability
+      if (muteProbability !== null && muteProbability > 0) {
+        const random = Math.random();
+        if (random < muteProbability) {
+          shouldMute = true;
+        }
+      }
+      
+      // Check sequence-level mute probability (if note wasn't already muted)
+      if (!shouldMute && sequenceMuteProbability !== null && sequenceMuteProbability > 0) {
+        const random = Math.random();
+        if (random < sequenceMuteProbability) {
+          shouldMute = true;
+        }
+      }
+      
+      if (shouldMute) {
+        useVelocity = 0;
+      }
+      
+      await sendNote(midiNote, useVelocity, useDuration, zeroBasedChannel);
     }
   }
 }
@@ -272,9 +364,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 // Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
 async function playCycle(cycleStr) {
   if (!cycleStr || typeof cycleStr !== 'string') return;
-  // Match blocks: [sequence] then optional .t(...).c(...).co(...)
-  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co)\([^)]*\))*)/g;
-  const modifierRegex = /\.(t|c|co)\(([^)]+)\)/g;
+  // Match blocks: [sequence] then optional .t(...).c(...).co(...).p(...)
+  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|p)\([^)]*\))*)/g;
+  const modifierRegex = /\.(t|c|co|p)\(([^)]+)\)/g;
   let m;
   const plays = [];
   while ((m = blockRegex.exec(cycleStr)) !== null) {
@@ -283,6 +375,8 @@ async function playCycle(cycleStr) {
     let type = 'fit';
     let channelOverride = null;
     let cutOff = null;
+    let removeProbability = null;
+    let sequenceMuteProbability = null;
     let mm;
     while ((mm = modifierRegex.exec(mods)) !== null) {
       const key = mm[1];
@@ -296,9 +390,37 @@ async function playCycle(cycleStr) {
       } else if (key === 'co') {
         // Pass through cutoff token for future use
         cutOff = rawVal;
+      } else if (key === 'p') {
+        // Parse remove probability: r0.4 or r.0.4
+        const norm = rawVal.replace(/\s+/g, '').toLowerCase();
+        // Match r0.4, r.0.4, r1, r0, etc.
+        const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
+        if (removeMatch) {
+          const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'r' or 'r.' prefix
+          const prob = parseFloat(probStr);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            removeProbability = prob;
+          }
+        }
+        // Parse mute probability: m0.7 or m.0.7
+        const muteMatch = norm.match(/^m(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
+        if (muteMatch) {
+          const probStr = muteMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'm' or 'm.' prefix
+          const prob = parseFloat(probStr);
+          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+            sequenceMuteProbability = prob;
+          }
+        }
       }
     }
-    plays.push(playSequence(seq, type, cutOff, channelOverride));
+    // Apply remove probability: if random < removeProbability, skip this sequence
+    if (removeProbability !== null && removeProbability > 0) {
+      const random = Math.random();
+      if (random < removeProbability) {
+        continue; // Skip this sequence
+      }
+    }
+    plays.push(playSequence(seq, type, cutOff, channelOverride, sequenceMuteProbability));
   }
   if (plays.length > 0) await Promise.all(plays);
 }
@@ -341,7 +463,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c4) n(d4)]");
+        playCycle("[n(c3).p(m0.6) n(e3).p(r0.7) n(f3) n(g3)].c(1) [n(c3)].p(r0.7).c(2)");
       }
     }
   } catch (error) {
