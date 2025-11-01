@@ -224,6 +224,10 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let channel = 1; // user-facing 1-16
     let muteProbability = null; // probability to mute (0-1)
     let removeProbability = null; // probability to remove note (0-1)
+    // Track which parameters were explicitly set in the note
+    let hasNoteVelocity = false;
+    let hasNoteChannel = false;
+    let hasNoteDuration = false;
     const paramRegex = /\.(d|v|c|p)\(([^)]+)\)/g;
     let m;
     while ((m = paramRegex.exec(chunk)) !== null) {
@@ -232,6 +236,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       if (key === 'd') {
         let f = null;
         const norm = raw.replace(/\s+/g, '').toLowerCase();
+        const prevDuration = duration; // Save previous state
 
         // Helpers to get base durations
         const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'br' ? br : null);
@@ -273,14 +278,25 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         } else {
           // Any other form is ignored per spec; leave duration as-is (null => defaults)
         }
+        
+        // Mark duration as set only if it was actually changed from null
+        if (duration !== prevDuration && duration !== null) {
+          hasNoteDuration = true;
+        }
       }
       if (key === 'v') {
         const v = parseInt(raw, 10);
-        if (!isNaN(v)) velocity = Math.max(0, Math.min(127, v));
+        if (!isNaN(v)) {
+          velocity = Math.max(0, Math.min(127, v));
+          hasNoteVelocity = true;
+        }
       }
       if (key === 'c') {
         const ch = parseInt(raw, 10);
-        if (!isNaN(ch)) channel = Math.max(1, Math.min(16, ch));
+        if (!isNaN(ch)) {
+          channel = Math.max(1, Math.min(16, ch));
+          hasNoteChannel = true;
+        }
       }
       if (key === 'p') {
         // Parse probability: m0.7 (mute) or r0.4 (remove)
@@ -305,9 +321,21 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
     }
-    if (typeof channelOverride === 'number') {
+    // Apply sequence-level override only if note doesn't have its own setting
+    if (typeof channelOverride === 'number' && !hasNoteChannel) {
       const coerced = Math.max(1, Math.min(16, channelOverride));
       channel = coerced;
+    }
+    
+    // If note doesn't have a channel and sequence doesn't have channel override, mute the note
+    // (Notes without channels in a sequence without a channel override are muted)
+    let shouldMuteNoChannel = false;
+    if (!hasNoteChannel && channelOverride === null) {
+      shouldMuteNoChannel = true;
+    }
+    // Also ensure we use a valid channel even if muted (default to 1)
+    if (shouldMuteNoChannel) {
+      channel = 1; // Use default channel for muted notes
     }
     // Apply remove probability: if random < removeProbability, skip this note entirely
     // (For type=fit, this was already handled before weight calculation, but we check again for other types)
@@ -349,6 +377,11 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         if (random < sequenceMuteProbability) {
           shouldMute = true;
         }
+      }
+      
+      // Mute note if it doesn't have a channel
+      if (shouldMuteNoChannel) {
+        shouldMute = true;
       }
       
       if (shouldMute) {
@@ -463,7 +496,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c3).p(m0.6) n(e3).p(r0.7) n(f3) n(g3)].c(1) [n(c3)].p(r0.7).c(2)");
+        playCycle("[n(c3).p(m0.6) n(e3).p(r0.7) n(f3) n(g3)].c(1) [n(c3)].p(m0).c(2)");
       }
     }
   } catch (error) {
