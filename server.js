@@ -383,7 +383,7 @@ function extractParameterValue(str, paramName) {
 
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
-async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
+async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
 
   if (!sequence || typeof sequence !== 'string') return;
   
@@ -598,8 +598,13 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 
   const numNotes = Math.max(1, chunks.length);
 
-  const beatsPerBar = signatureNumerator;
-  const barDurationMs = (typeof tempo === 'number' && tempo > 0) ? (60000 / tempo) * beatsPerBar : 500;
+  // Use provided parameters or fall back to server variables
+  const useTempo = tempoParam !== null ? tempoParam : tempo;
+  const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : signatureNumerator;
+  const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : signatureDenominator;
+
+  const beatsPerBar = useSignatureNumerator;
+  const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
 
   const ev = Math.max(1, Math.round(barDurationMs / numNotes))
   const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar))
@@ -1686,8 +1691,18 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 
 // Play multiple sequences in a cycle with per-block modifiers.
 // Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
-async function playTrack(cycleStr) {
+async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
   if (!cycleStr || typeof cycleStr !== 'string') return;
+  
+  // Capture global variables before parameter shadowing (using closure)
+  const globalTempo = tempo;
+  const globalSignatureNumerator = signatureNumerator;
+  const globalSignatureDenominator = signatureDenominator;
+  
+  // Use provided parameters or fall back to server variables
+  const useTempo = tempoParam !== null ? tempoParam : globalTempo;
+  const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : globalSignatureNumerator;
+  const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : globalSignatureDenominator;
   // Match blocks: [sequence] then optional .t(...).c(...).co(...).p(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|p)\([^)]*\))*)/g;
   const modifierRegex = /\.(t|c|co|p)\(([^)]+)\)/g;
@@ -1744,7 +1759,7 @@ async function playTrack(cycleStr) {
         continue; // Skip this sequence
       }
     }
-    plays.push(playSequence(seq, type, cutOff, channelOverride, sequenceMuteProbability));
+    plays.push(playSequence(seq, type, cutOff, channelOverride, sequenceMuteProbability, useTempo, useSignatureNumerator, useSignatureDenominator));
   }
   if (plays.length > 0) await Promise.all(plays);
 }
@@ -1786,7 +1801,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playTrack("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^2.d(br/2).nArp(up)].c(1)");
+        playTrack("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^3.nArp(up)].c(1)",80,3,4);
       }
     }
   } catch (error) {
