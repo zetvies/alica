@@ -128,8 +128,35 @@ function noteTokenToMidi(value) {
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
   if (!sequence || typeof sequence !== 'string') return;
-  const chunkRegex = /n\([^\)]+\)(?:\^\d+)?(?:\.(?:d|v|c|p)\([^)]*\))*/g;
-  const allChunks = sequence.match(chunkRegex) || [];
+  // Expand repeat syntax (^N) before matching chunks
+  // n(r)^4 becomes n(r) n(r) n(r) n(r)
+  let expandedSequence = sequence;
+  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|p|min|max)\([^)]*\))*)/g;
+  let repeatMatch;
+  let lastIndex = 0;
+  let newSequence = '';
+  while ((repeatMatch = repeatPattern.exec(sequence)) !== null) {
+    newSequence += sequence.substring(lastIndex, repeatMatch.index);
+    const notePattern = repeatMatch[0].replace(repeatMatch[1], ''); // Remove ^N
+    const repeatCount = parseInt(repeatMatch[1].substring(1), 10); // Extract number from ^N
+    if (!isNaN(repeatCount) && repeatCount > 0) {
+      // Repeat the note pattern N times
+      const repeated = Array(repeatCount).fill(notePattern).join(' ');
+      newSequence += repeated;
+    } else {
+      newSequence += repeatMatch[0];
+    }
+    lastIndex = repeatMatch.index + repeatMatch[0].length;
+  }
+  if (lastIndex < sequence.length) {
+    newSequence += sequence.substring(lastIndex);
+  }
+  if (newSequence) {
+    expandedSequence = newSequence;
+  }
+  
+  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|c|p|min|max)\([^)]*\))*/g;
+  const allChunks = expandedSequence.match(chunkRegex) || [];
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
   let chunks = allChunks;
@@ -202,9 +229,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           if (!isNaN(f) && f > 0) weight = 1 / f;
         }
       }
-      const repMatch = chunk.match(/n\(\d+\)\^(\d+)/);
-      const repeatCount = repMatch ? Math.max(1, parseInt(repMatch[1], 10)) : 1;
-      return weight * repeatCount;
+      // Repeat syntax already expanded, each chunk is weight 1
+      return weight;
     });
     totalWeight = weights.reduce((a, b) => a + b, 0);
     if (!isFinite(totalWeight) || totalWeight <= 0) totalWeight = numNotes;
@@ -215,10 +241,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     const noteMatch = chunk.match(/n\(([^)]+)\)/);
     if (!noteMatch) continue;
     const noteArg = noteMatch[1].trim();
-    const midiNote = noteTokenToMidi(noteArg);
-    if (midiNote === null) continue;
-    const repeatMatch = chunk.match(/\^(\d+)/);
-    const repeatCount = repeatMatch ? Math.max(1, parseInt(repeatMatch[1], 10)) : 1;
+    // Repeat syntax is already expanded at sequence level, so repeatCount is always 1
+    const repeatCount = 1;
     let velocity = 80;
     let duration = null; // if not provided, use defaultDurationMs
     let channel = 1; // user-facing 1-16
@@ -228,7 +252,24 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let hasNoteVelocity = false;
     let hasNoteChannel = false;
     let hasNoteDuration = false;
-    const paramRegex = /\.(d|v|c|p)\(([^)]+)\)/g;
+    // Randomization flags and min/max values
+    let randomizeNote = false;
+    let randomizeVelocity = false;
+    let randomizeProbability = false;
+    let randomizeDuration = false;
+    let randomizeChannel = false;
+    let minValue = 0;
+    let maxValue = 1;
+    
+    // Check if note argument is 'r' for randomization
+    if (noteArg.toLowerCase() === 'r') {
+      randomizeNote = true;
+    }
+    
+    const midiNote = noteTokenToMidi(noteArg);
+    if (midiNote === null && !randomizeNote) continue;
+    // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
+    const paramRegex = /\.(d|v|c|p|min|max)\(([^)]+)\)/g;
     let m;
     while ((m = paramRegex.exec(chunk)) !== null) {
       const key = m[1];
@@ -275,27 +316,53 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
             f = parseFloat(mTokDiv[2]);
             if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base / f));
           }
+        } else if (norm === 'r') {
+          // Random duration
+          randomizeDuration = true;
+          hasNoteDuration = true;
         } else {
           // Any other form is ignored per spec; leave duration as-is (null => defaults)
         }
         
         // Mark duration as set only if it was actually changed from null
-        if (duration !== prevDuration && duration !== null) {
+        if (duration !== prevDuration && duration !== null || randomizeDuration) {
           hasNoteDuration = true;
         }
       }
       if (key === 'v') {
-        const v = parseInt(raw, 10);
-        if (!isNaN(v)) {
-          velocity = Math.max(0, Math.min(127, v));
+        if (raw.toLowerCase() === 'r') {
+          randomizeVelocity = true;
           hasNoteVelocity = true;
+        } else {
+          const v = parseInt(raw, 10);
+          if (!isNaN(v)) {
+            velocity = Math.max(0, Math.min(127, v));
+            hasNoteVelocity = true;
+          }
         }
       }
       if (key === 'c') {
-        const ch = parseInt(raw, 10);
-        if (!isNaN(ch)) {
-          channel = Math.max(1, Math.min(16, ch));
+        if (raw.toLowerCase() === 'r') {
+          randomizeChannel = true;
           hasNoteChannel = true;
+        } else {
+          const ch = parseInt(raw, 10);
+          if (!isNaN(ch)) {
+            channel = Math.max(1, Math.min(16, ch));
+            hasNoteChannel = true;
+          }
+        }
+      }
+      if (key === 'min') {
+        const min = parseFloat(raw);
+        if (!isNaN(min) && min >= 0 && min <= 1) {
+          minValue = min;
+        }
+      }
+      if (key === 'max') {
+        const max = parseFloat(raw);
+        if (!isNaN(max) && max >= 0 && max <= 1) {
+          maxValue = max;
         }
       }
       if (key === 'p') {
@@ -310,13 +377,18 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
             muteProbability = prob;
           }
         }
-        // Match r0.4, r.0.4, r1, r0, etc.
-        const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
-        if (removeMatch) {
-          const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'r' or 'r.' prefix
-          const prob = parseFloat(probStr);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            removeProbability = prob;
+        // Check if it's just 'r' for randomization (before checking remove probability)
+        if (norm === 'r') {
+          randomizeProbability = true;
+        } else {
+          // Match r0.4, r.0.4, r1, r0, etc. (remove probability)
+          const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
+          if (removeMatch) {
+            const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'r' or 'r.' prefix
+            const prob = parseFloat(probStr);
+            if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+              removeProbability = prob;
+            }
           }
         }
       }
@@ -358,15 +430,64 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     // Apply mute probability: if random < muteProbability, set velocity to 0
     // Note-level mute probability OR sequence-level mute probability can mute the note
-    // Each repeat gets its own probability check
+    // Each repeat gets its own probability check and randomization
     for (let r = 0; r < repeatCount; r++) {
+      // Generate random values for this repeat if needed
+      let useMidiNote = midiNote;
       let useVelocity = velocity;
+      let useChannel = channel;
+      let useMuteProbability = muteProbability;
+      let useDurationValue = useDuration;
+      
+      // Randomize note (C1=24 to 127=G9, playable MIDI range)
+      if (randomizeNote) {
+        const random = Math.random();
+        const scaled = minValue + random * (maxValue - minValue);
+        const minMidi = 24; // C1
+        const maxMidi = 108; // C8
+        useMidiNote = Math.round(minMidi + scaled * (maxMidi - minMidi));
+        useMidiNote = Math.max(minMidi, Math.min(maxMidi, useMidiNote));
+      }
+      
+      // Randomize velocity (0-127)
+      if (randomizeVelocity) {
+        const random = Math.random();
+        const scaled = minValue + random * (maxValue - minValue);
+        useVelocity = Math.round(scaled * 127);
+        useVelocity = Math.max(0, Math.min(127, useVelocity));
+      }
+      
+      // Randomize probability (0-1)
+      if (randomizeProbability) {
+        const random = Math.random();
+        useMuteProbability = minValue + random * (maxValue - minValue);
+        useMuteProbability = Math.max(0, Math.min(1, useMuteProbability));
+      }
+      
+      // Randomize duration (br/32 to br)
+      if (randomizeDuration) {
+        const random = Math.random();
+        const scaled = minValue + random * (maxValue - minValue);
+        const minDuration = br / 32;
+        const maxDuration = br;
+        useDurationValue = Math.round(minDuration + scaled * (maxDuration - minDuration));
+        useDurationValue = Math.max(1, useDurationValue);
+      }
+      
+      // Randomize channel (1-16)
+      if (randomizeChannel) {
+        const random = Math.random();
+        const scaled = minValue + random * (maxValue - minValue);
+        useChannel = Math.round(1 + scaled * 15);
+        useChannel = Math.max(1, Math.min(16, useChannel));
+      }
+      
       let shouldMute = false;
       
-      // Check note-level mute probability
-      if (muteProbability !== null && muteProbability > 0) {
+      // Check note-level mute probability (randomized if applicable)
+      if (useMuteProbability !== null && useMuteProbability > 0) {
         const random = Math.random();
-        if (random < muteProbability) {
+        if (random < useMuteProbability) {
           shouldMute = true;
         }
       }
@@ -388,7 +509,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         useVelocity = 0;
       }
       
-      await sendNote(midiNote, useVelocity, useDuration, zeroBasedChannel);
+      const useZeroBasedChannel = useChannel - 1;
+      await sendNote(useMidiNote, useVelocity, useDurationValue, useZeroBasedChannel);
     }
   }
 }
@@ -496,7 +618,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(c3).p(m0.6) n(e3).p(r0.7) n(f3) n(g3)].c(1) [n(c3)].p(m0).c(2)");
+        playCycle("[n(r)^8.min(0.4).max(0.8)].c(1)");
       }
     }
   } catch (error) {
