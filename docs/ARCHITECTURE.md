@@ -112,11 +112,11 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 
 ### 4. Sequence Player
 
-**File:** `server.js` (playSequence, playCycle functions)
+**File:** `server.js` (playSequence, playTrack functions)
 
 **Functions:**
 - `playSequence(sequence, type, cutOff, channelOverride, sequenceMuteProbability)`: Plays a sequence
-- `playCycle(cycleStr)`: Plays multiple sequences in a cycle
+- `playTrack(cycleStr)`: Plays multiple sequences in a cycle
 
 **Types:**
 - `fit`: Fit all notes evenly into one bar
@@ -163,7 +163,7 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 1. Bar change detected
    │
    ▼
-2. playCycle() called with ALiCA sequence string
+2. playTrack() called with ALiCA sequence string
    │
    ▼
 3. Sequence parsed into chunks (note + parameters)
@@ -204,7 +204,7 @@ Ableton Live
                               Bar change?
                                    │
                                    ▼
-                              playCycle(...)
+                              playTrack(...)
 ```
 
 ## Sequence Syntax Processing

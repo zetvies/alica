@@ -1686,7 +1686,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 
 // Play multiple sequences in a cycle with per-block modifiers.
 // Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
-async function playCycle(cycleStr) {
+async function playTrack(cycleStr) {
   if (!cycleStr || typeof cycleStr !== 'string') return;
   // Match blocks: [sequence] then optional .t(...).c(...).co(...).p(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|p)\([^)]*\))*)/g;
@@ -1786,7 +1786,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^2.d(br/2).nArp(up)].co(br/4).c(1)");
+        playTrack("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^2.d(br/2).nArp(up)].c(1)");
       }
     }
   } catch (error) {

@@ -107,7 +107,7 @@ The following components remain in `server.js` and can be further modularized in
 
 **Sequence Player Functions:**
 - `playSequence()` - Plays a sequence
-- `playCycle()` - Plays multiple sequences in a cycle
+- `playTrack()` - Plays multiple sequences in a cycle
 
 **OSC Handler:**
 - UDP server setup
