@@ -341,9 +341,107 @@ function expandChord(chordStr) {
   return chordNotes.map(n => `n(${n})`).join(' ');
 }
 
+// Parse r.o{...} array syntax and return array of values
+// Examples: r.o{c4, d4, e4}, r.o{60, 64, 67}, r.o{0.25, 0.5, 0.75}, r.o{bt/4, bt, bt*2}
+// Duration tokens: bt, bt/even, or bt*even (even numbers only)
+function parseArrayRandomizer(str, context = {}) {
+  if (!str || typeof str !== 'string') return null;
+  
+  const match = str.match(/^r\.o\{([^\}]+)\}$/i);
+  if (!match) return null;
+  
+  const arrayStr = match[1].trim();
+  const items = arrayStr.split(',').map(s => s.trim());
+  const result = [];
+  
+  for (const item of items) {
+    // Handle duration tokens: bt, bt/even, or bt*even (even numbers only)
+    const normItem = item.replace(/\s+/g, '').toLowerCase();
+    
+    // Check for standalone bt first
+    if (normItem === 'bt') {
+      if (context.bt) {
+        result.push({ type: 'duration', value: Math.round(context.bt), token: 'bt' });
+      }
+    } else {
+      const mDiv = normItem.match(/^bt\/(\d+)$/);
+      const mMul = normItem.match(/^bt\*(\d+)$/);
+      
+      if (mDiv && mDiv[1]) {
+        const divisor = parseInt(mDiv[1], 10);
+        if (context.bt && !isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
+          result.push({ type: 'duration', value: Math.round(context.bt / divisor), token: `bt/${divisor}` });
+        }
+      } else if (mMul && mMul[1]) {
+        const multiplier = parseInt(mMul[1], 10);
+        if (context.bt && !isNaN(multiplier) && multiplier > 0 && multiplier % 2 === 0) {
+          result.push({ type: 'duration', value: Math.round(context.bt * multiplier), token: `bt*${multiplier}` });
+        }
+      } else {
+        // Try to parse as note token first (e.g., "c4", "c#3")
+        const noteMidi = noteTokenToMidi(item);
+        if (noteMidi !== null) {
+          result.push({ type: 'note', value: noteMidi });
+        } else {
+          // Try as MIDI note number (0-127)
+          const midiNum = parseInt(item, 10);
+          if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
+            result.push({ type: 'note', value: midiNum });
+          } else {
+            // Parse as regular number (for velocity, pan, etc.)
+            const num = parseFloat(item);
+            if (!isNaN(num)) {
+              result.push({ type: 'number', value: num });
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return result.length > 0 ? result : null;
+}
+
+// Filter array by range [min, max] and return filtered array
+function filterArrayByRange(array, min, max) {
+  if (!array || array.length === 0) return array;
+  
+  return array.filter(item => {
+    const value = item.value !== undefined ? item.value : item;
+    return value >= min && value <= max;
+  });
+}
+
+// Extract parameter value from string like "d(r.o{bt})" - handles nested braces
+function extractParameterValue(str, paramName) {
+  const regex = new RegExp(`\\.${paramName}\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)`, 'g');
+  const match = regex.exec(str);
+  if (match) {
+    return match[1];
+  }
+  // Fallback: try simple extraction with balanced parentheses
+  const startPattern = `.${paramName}(`;
+  const startIdx = str.indexOf(startPattern);
+  if (startIdx === -1) return null;
+  
+  let parenCount = 1;
+  let i = startIdx + startPattern.length;
+  let result = '';
+  
+  while (i < str.length && parenCount > 0) {
+    if (str[i] === '(') parenCount++;
+    else if (str[i] === ')') parenCount--;
+    else if (parenCount === 1) result += str[i];
+    i++;
+  }
+  
+  return parenCount === 0 ? result : null;
+}
+
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
+  console.log('[PLAY_SEQUENCE] Called with:', sequence);
   if (!sequence || typeof sequence !== 'string') return;
   
   // Expand scale and chord syntax first
@@ -419,7 +517,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
   let expandedSequence = processedSequence;
-  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|c|pm|pr|pmRange|prRange|nRange|vRange|dRange)\([^)]*\))*)/g;
+  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\([^)]*\))*)/g;
   let repeatMatch;
   let lastIndex = 0;
   let newSequence = '';
@@ -443,7 +541,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     expandedSequence = newSequence;
   }
   
-  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|c|pm|pr|pmRange|prRange|nRange|vRange|dRange)\([^)]*\))*/g;
+  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\([^)]*\))*/g;
   const allChunks = expandedSequence.match(chunkRegex) || [];
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
@@ -554,30 +652,92 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let randomizeRemoveProbability = false;
     let randomizeDuration = false;
     let randomizeChannel = false;
+    let randomizePan = false;
     // Note range (MIDI values: [minMidi, maxMidi] or null)
     let nRange = null;
     // Velocity range (0-1 float: [min, max], scales to 0-127)
     let vRange = [0, 1];
+    // Pan range (0-1 float: [min, max])
+    let pRange = null;
     // Mute probability range (0-1 float: [min, max])
     let pmRange = [0, 1];
     // Remove probability range (0-1 float: [min, max])
     let prRange = [0, 1];
     // Duration range (duration tokens: [minToken, maxToken] or null)
     let dRange = null;
+    // Array-based randomizers
+    let noteArray = null;
+    let velocityArray = null;
+    let panArray = null;
+    let durationArray = null;
+    let pan = 0.5; // Default pan (center)
     
-    // Check if note argument is 'r' for randomization
-    if (noteArg.toLowerCase() === 'r') {
+    // Check if note argument is 'r' or 'r.o{...}' for randomization
+    const noteArgLower = noteArg.toLowerCase();
+    if (noteArgLower === 'r') {
       randomizeNote = true;
+    } else {
+      const parsedArray = parseArrayRandomizer(noteArg, { bt, br });
+      if (parsedArray) {
+        noteArray = parsedArray.filter(item => item.type === 'note');
+        randomizeNote = noteArray.length > 0;
+      }
     }
     
     const midiNote = noteTokenToMidi(noteArg);
     if (midiNote === null && !randomizeNote) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
-    const paramRegex = /\.(d|v|c|pm|pr|pmRange|prRange|nRange|vRange|dRange)\(([^)]+)\)/g;
+    // Use a more sophisticated approach to handle nested brackets in parameters
+    const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\((.*?)\)/g;
+    let lastIndex = 0;
     let m;
+    const params = [];
+    
+    // First pass: extract all parameter matches
     while ((m = paramRegex.exec(chunk)) !== null) {
-      const key = m[1];
-      const raw = m[2].trim();
+      params.push({ key: m[1], raw: m[2], index: m.index });
+      lastIndex = paramRegex.lastIndex;
+    }
+    
+    // If regex didn't catch nested braces properly, manually parse
+    if (params.length === 0 || params.some(p => p.raw.includes('{') && !p.raw.match(/r\.o\{.+\}/))) {
+      // Try manual extraction for complex cases
+      let chunkPos = 0;
+      while (chunkPos < chunk.length) {
+        const dotPos = chunk.indexOf('.', chunkPos);
+        if (dotPos === -1) break;
+        
+        const paramMatch = chunk.substring(dotPos + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\(/);
+        if (paramMatch) {
+          const key = paramMatch[1];
+          const startPos = dotPos + 1 + key.length + 1;
+          let parenCount = 1;
+          let i = startPos;
+          let paramValue = '';
+          
+          while (i < chunk.length && parenCount > 0) {
+            if (chunk[i] === '(') parenCount++;
+            else if (chunk[i] === ')') parenCount--;
+            else if (parenCount === 1) paramValue += chunk[i];
+            i++;
+          }
+          
+          if (parenCount === 0) {
+            params.push({ key, raw: paramValue, index: dotPos });
+            chunkPos = i;
+          } else {
+            chunkPos = dotPos + 1;
+          }
+        } else {
+          chunkPos = dotPos + 1;
+        }
+      }
+    }
+    
+    // Process each parameter
+    for (const param of params) {
+      const key = param.key;
+      const raw = param.raw.trim();
       if (key === 'd') {
         let f = null;
         const norm = raw.replace(/\s+/g, '').toLowerCase();
@@ -625,6 +785,16 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           randomizeDuration = true;
           hasNoteDuration = true;
         } else {
+          // Check for array syntax: r.o{...}
+          console.log('[DURATION_PARSE] Parsing duration:', raw);
+          const parsedArray = parseArrayRandomizer(raw, { bt, br });
+          console.log('[DURATION_PARSE] Parsed array:', parsedArray);
+          if (parsedArray) {
+            durationArray = parsedArray.filter(item => item.type === 'duration');
+            console.log('[DURATION_PARSE] Duration array:', durationArray);
+            randomizeDuration = durationArray.length > 0;
+            hasNoteDuration = true;
+          }
           // Any other form is ignored per spec; leave duration as-is (null => defaults)
         }
         
@@ -634,14 +804,22 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
       if (key === 'v') {
-        if (raw.toLowerCase() === 'r') {
+        const rawLower = raw.toLowerCase();
+        if (rawLower === 'r') {
           randomizeVelocity = true;
           hasNoteVelocity = true;
         } else {
-          const v = parseInt(raw, 10);
-          if (!isNaN(v)) {
-            velocity = Math.max(0, Math.min(127, v));
+          const parsedArray = parseArrayRandomizer(raw, { bt, br });
+          if (parsedArray) {
+            velocityArray = parsedArray.filter(item => item.type === 'number');
+            randomizeVelocity = velocityArray.length > 0;
             hasNoteVelocity = true;
+          } else {
+            const v = parseInt(raw, 10);
+            if (!isNaN(v)) {
+              velocity = Math.max(0, Math.min(127, v));
+              hasNoteVelocity = true;
+            }
           }
         }
       }
@@ -657,25 +835,71 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           }
         }
       }
+      if (key === 'p') {
+        const rawLower = raw.toLowerCase();
+        if (rawLower === 'r') {
+          randomizePan = true;
+        } else {
+          const parsedArray = parseArrayRandomizer(raw, { bt, br });
+          if (parsedArray) {
+            panArray = parsedArray.filter(item => item.type === 'number');
+            randomizePan = panArray.length > 0;
+          } else {
+            const p = parseFloat(raw);
+            if (!isNaN(p)) {
+              pan = Math.max(0, Math.min(1, p));
+            }
+          }
+        }
+      }
       if (key === 'nRange') {
         // Parse note range: nRange(minNote, maxNote) - e.g. nRange(c3, c4)
+        // Used for filtering note arrays or continuous random range
         const parts = raw.split(',').map(s => s.trim());
         if (parts.length === 2) {
           const minMidi = noteTokenToMidi(parts[0]);
           const maxMidi = noteTokenToMidi(parts[1]);
-          if (minMidi !== null && maxMidi !== null && maxMidi > minMidi) {
+          if (minMidi !== null && maxMidi !== null && maxMidi >= minMidi) {
             nRange = [minMidi, maxMidi];
+            // Filter note array if it exists
+            if (noteArray) {
+              noteArray = filterArrayByRange(noteArray, minMidi, maxMidi);
+              randomizeNote = noteArray.length > 0;
+            }
           }
         }
       }
       if (key === 'vRange') {
         // Parse velocity range: vRange(min, max) - e.g. vRange(0.5, 1.0)
+        // Used for filtering velocity arrays or continuous random range
         const parts = raw.split(',').map(s => s.trim());
         if (parts.length === 2) {
           const min = parseFloat(parts[0]);
           const max = parseFloat(parts[1]);
-          if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max > min) {
+          if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max >= min) {
             vRange = [min, max];
+            // Filter velocity array if it exists
+            if (velocityArray) {
+              velocityArray = filterArrayByRange(velocityArray, min, max);
+              randomizeVelocity = velocityArray.length > 0;
+            }
+          }
+        }
+      }
+      if (key === 'pRange') {
+        // Parse pan range: pRange(min, max) - e.g. pRange(0.4, 0.8)
+        // Used for filtering pan arrays
+        const parts = raw.split(',').map(s => s.trim());
+        if (parts.length === 2) {
+          const min = parseFloat(parts[0]);
+          const max = parseFloat(parts[1]);
+          if (!isNaN(min) && !isNaN(max) && min >= 0 && min <= 1 && max >= 0 && max <= 1 && max >= min) {
+            pRange = [min, max];
+            // Filter pan array if it exists
+            if (panArray) {
+              panArray = filterArrayByRange(panArray, min, max);
+              randomizePan = panArray.length > 0;
+            }
           }
         }
       }
@@ -761,6 +985,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
     }
+    
     // Apply sequence-level override only if note doesn't have its own setting
     if (typeof channelOverride === 'number' && !hasNoteChannel) {
       const coerced = Math.max(1, Math.min(16, channelOverride));
@@ -816,21 +1041,53 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize note
       if (randomizeNote) {
-        // Use nRange if provided, otherwise use defaults
-        const minMidi = nRange !== null ? nRange[0] : 24; // C1 default
-        const maxMidi = nRange !== null ? nRange[1] : 108; // C8 default
-        // Randomly select within the MIDI range
-        const random = Math.random();
-        useMidiNote = Math.round(minMidi + random * (maxMidi - minMidi));
-        useMidiNote = Math.max(0, Math.min(127, useMidiNote));
+        if (noteArray && noteArray.length > 0) {
+          // Use array-based randomization: randomly select from array
+          const randomIndex = Math.floor(Math.random() * noteArray.length);
+          useMidiNote = noteArray[randomIndex].value;
+        } else {
+          // Use continuous randomization with range
+          // Use nRange if provided, otherwise use defaults
+          const minMidi = nRange !== null ? nRange[0] : 24; // C1 default
+          const maxMidi = nRange !== null ? nRange[1] : 108; // C8 default
+          // Randomly select within the MIDI range
+          const random = Math.random();
+          useMidiNote = Math.round(minMidi + random * (maxMidi - minMidi));
+          useMidiNote = Math.max(0, Math.min(127, useMidiNote));
+        }
       }
       
       // Randomize velocity (0-127)
       if (randomizeVelocity) {
-        const random = Math.random();
-        const scaled = vRange[0] + random * (vRange[1] - vRange[0]);
-        useVelocity = Math.round(scaled * 127);
-        useVelocity = Math.max(0, Math.min(127, useVelocity));
+        if (velocityArray && velocityArray.length > 0) {
+          // Use array-based randomization: randomly select from array
+          const randomIndex = Math.floor(Math.random() * velocityArray.length);
+          const scaled = velocityArray[randomIndex].value;
+          useVelocity = Math.round(scaled * 127);
+          useVelocity = Math.max(0, Math.min(127, useVelocity));
+        } else {
+          // Use continuous randomization with range
+          const random = Math.random();
+          const scaled = vRange[0] + random * (vRange[1] - vRange[0]);
+          useVelocity = Math.round(scaled * 127);
+          useVelocity = Math.max(0, Math.min(127, useVelocity));
+        }
+      }
+      
+      // Randomize pan (0-1)
+      if (randomizePan) {
+        if (panArray && panArray.length > 0) {
+          // Use array-based randomization: randomly select from array
+          const randomIndex = Math.floor(Math.random() * panArray.length);
+          pan = Math.max(0, Math.min(1, panArray[randomIndex].value));
+        } else {
+          // Use continuous randomization with range
+          const random = Math.random();
+          const minPan = pRange !== null ? pRange[0] : 0;
+          const maxPan = pRange !== null ? pRange[1] : 1;
+          pan = minPan + random * (maxPan - minPan);
+          pan = Math.max(0, Math.min(1, pan));
+        }
       }
       
       // Randomize mute probability (0-1)
@@ -842,6 +1099,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize duration
       if (randomizeDuration) {
+        console.log('[DURATION_RAND] randomizeDuration is true');
         // Helper to calculate duration from token (bt/even or bt*even, or 'unit' for bt)
         const durationFromToken = (token) => {
           if (!token) return null;
@@ -855,8 +1113,111 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           return null;
         };
         
-        // If dRange is provided, use it
-        if (dRange !== null) {
+        // Check if we have a duration array
+        if (durationArray && durationArray.length > 0) {
+          console.log('[DURATION_RAND] Duration array found, length:', durationArray.length);
+          // Create canonical array of all valid durations from bt/64 to bt*64
+          // This includes: bt/64, bt/32, ..., bt/4, bt/2, bt, bt*2, bt*4, ..., bt*64
+          // Store as { token: "bt", value: ms, index: idx }
+          const canonicalDurations = [];
+          
+          // Generate division durations (bt/64, bt/32, ..., bt/4, bt/2) - even numbers only
+          for (let div = 64; div >= 2; div -= 2) {
+            const dur = Math.round(bt / div);
+            if (dur >= 1) { // Only add if duration is at least 1ms
+              canonicalDurations.push({ token: `bt/${div}`, value: dur });
+            }
+          }
+          
+          // Add bt itself
+          canonicalDurations.push({ token: 'bt', value: Math.round(bt) });
+          
+          // Generate multiplication durations (bt*2, bt*4, ..., bt*64) - even numbers only
+          for (let mul = 2; mul <= 64; mul += 2) {
+            const dur = Math.round(bt * mul);
+            canonicalDurations.push({ token: `bt*${mul}`, value: dur });
+          }
+          
+          // Remove duplicates based on token and sort by value
+          const seen = new Set();
+          const uniqueCanonical = canonicalDurations
+            .filter(item => {
+              if (seen.has(item.token)) return false;
+              seen.add(item.token);
+              return true;
+            })
+            .sort((a, b) => a.value - b.value);
+          
+          // Map duration array tokens to indices in canonical array (by string matching)
+          const arrayIndices = [];
+          durationArray.forEach(item => {
+            const token = item.token;
+            if (token) {
+              // Find index by token string match
+              const index = uniqueCanonical.findIndex(canon => canon.token === token);
+              if (index !== -1) {
+                arrayIndices.push(index);
+              }
+            }
+          });
+          
+          console.log('[DURATION_ARRAY] Array indices:', arrayIndices);
+          console.log('[DURATION_ARRAY] Array tokens:', durationArray.map(item => item.token));
+          console.log('[DURATION_ARRAY] Array values:', durationArray.map(item => item.value));
+          console.log('[DURATION_ARRAY] Canonical array length:', uniqueCanonical.length);
+          
+          // If dRange is provided, filter by range
+          let validIndices = arrayIndices;
+          if (dRange !== null && arrayIndices.length > 0) {
+            const minDurationMs = durationFromToken(dRange[0]);
+            const maxDurationMs = durationFromToken(dRange[1]);
+            
+            console.log('[DURATION_ARRAY] dRange:', { minDurationMs, maxDurationMs });
+            
+            if (minDurationMs !== null && maxDurationMs !== null && maxDurationMs >= minDurationMs) {
+              // Find range indices in canonical array
+              // minIndex: first index where value >= minDurationMs
+              let minIndex = uniqueCanonical.findIndex(canon => canon.value >= minDurationMs);
+              // maxIndex: first index where value > maxDurationMs, then subtract 1 for <= comparison
+              let maxIndex = uniqueCanonical.findIndex(canon => canon.value > maxDurationMs);
+              const rangeMaxIndex = maxIndex === -1 ? uniqueCanonical.length - 1 : maxIndex - 1;
+              
+              console.log('[DURATION_ARRAY] minIndex:', minIndex, 'rangeMaxIndex:', rangeMaxIndex);
+              
+              if (minIndex !== -1 && rangeMaxIndex >= minIndex) {
+                // Filter array indices - only include indices that are within the range
+                validIndices = arrayIndices.filter(idx => {
+                  return idx >= minIndex && idx <= rangeMaxIndex;
+                });
+                console.log('[DURATION_ARRAY] Array indices:', arrayIndices);
+                console.log('[DURATION_ARRAY] Valid indices after filter:', validIndices);
+              } else {
+                validIndices = [];
+              }
+            }
+          }
+          
+          // Randomly select from valid indices
+          if (validIndices.length > 0) {
+            const randomIndex = Math.floor(Math.random() * validIndices.length);
+            const selectedCanonicalIndex = validIndices[randomIndex];
+            useDurationValue = uniqueCanonical[selectedCanonicalIndex].value;
+          } else if (arrayIndices.length > 0) {
+            // If range filtering eliminated all, but we had array indices, use them without range
+            // (This shouldn't happen with correct range, but safety fallback)
+            const randomIndex = Math.floor(Math.random() * arrayIndices.length);
+            const selectedCanonicalIndex = arrayIndices[randomIndex];
+            useDurationValue = uniqueCanonical[selectedCanonicalIndex].value;
+          } else if (durationArray.length > 0) {
+            // If canonical matching failed, use array values directly
+            const randomIndex = Math.floor(Math.random() * durationArray.length);
+            useDurationValue = durationArray[randomIndex].value;
+          } else {
+            // Fallback to default if no valid durations found
+            useDurationValue = Math.max(1, defaultDurationMs || bt);
+          }
+        } else if (dRange !== null) {
+          // If dRange is provided, use it (original behavior)
           const minDurationMs = durationFromToken(dRange[0]);
           const maxDurationMs = durationFromToken(dRange[1]);
           
@@ -956,6 +1317,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 // Play multiple sequences in a cycle with per-block modifiers.
 // Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
 async function playCycle(cycleStr) {
+  console.log('[PLAY_CYCLE] Called with:', cycleStr);
   if (!cycleStr || typeof cycleStr !== 'string') return;
   // Match blocks: [sequence] then optional .t(...).c(...).co(...).p(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|p)\([^)]*\))*)/g;
@@ -1056,7 +1418,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r)^3.nRange(c4, c5).d(r).dRange(bt, bt*2).pm(r).pmRange(0,0.4)].c(1)");
+        playCycle("[n(r.o{d4, e4})^3.nRange(c4, c5).d(r.o{bt*2}).dRange(bt, bt*2)].c(1)");
       }
     }
   } catch (error) {
