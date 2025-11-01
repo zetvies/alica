@@ -61,7 +61,7 @@ f5     // F in octave 5 (MIDI 77)
 Notes can be modified with various parameters using dot notation:
 
 ```
-n(value).d(duration).v(velocity).c(channel).p(pan)
+n(value).d(duration).v(velocity).c(channel)
 ```
 
 ### Duration (`.d(...)`)
@@ -140,29 +140,6 @@ n(60).c(16)         // Channel 16
 n(60).c(r)          // Random channel
 ```
 
-### Pan (`.p(...)`)
-
-Controls pan position (0-1).
-
-**Syntax:**
-```
-.p(value)
-```
-
-**Values:**
-- Number: Pan value (0-1, where 0.5 is center)
-- `r`: Random pan (0-1)
-- `r.o{...}`: Random from pan array
-
-**Examples:**
-```
-n(60).p(0.5)        // Center pan
-n(60).p(0.0)        // Hard left
-n(60).p(1.0)        // Hard right
-n(60).p(r)          // Random pan
-n(60).p(r.o{0.2,0.5,0.8}) // Random from array
-```
-
 ---
 
 ## Randomization
@@ -190,7 +167,6 @@ r.o{item1, item2, item3, ...}
 n(r.o{c4,d4,e4})                    // Random note from array
 n(60).v(r.o{60,80,100,127})        // Random velocity from array
 n(60).d(r.o{bt/4,bt/2,bt})         // Random duration from array
-n(60).p(r.o{0.2,0.5,0.8})          // Random pan from array
 n(r.o{scale(c-ionian)})            // Random note from scale
 n(r.o{chord(c-maj7)})              // Random note from chord
 ```
@@ -219,17 +195,6 @@ n(r.o{c4,d4,e4}).nRange(c3,c5)     // Random from array, filtered by range
 **Examples:**
 ```
 n(60).v(r).vRange(0.5, 1.0)        // Random velocity between 50% and 100%
-```
-
-#### Pan Range (`.pRange(...)`)
-```
-.pRange(min, max)
-```
-- `min`, `max`: Pan values (0-1)
-
-**Examples:**
-```
-n(60).p(r).pRange(0.2, 0.8)        // Random pan between 20% and 80%
 ```
 
 #### Duration Range (`.dRange(...)`)
@@ -312,8 +277,8 @@ n(r.o{chord(c-maj7)})              // Random note from C major 7th chord
 
 **Pentatonic:**
 - `pentatonicMajor`
-- `pentatonicMinor`
-- `pentatonicBlues`
+- `pentatonic-minor`
+- `pentatonic-blues`
 
 **Japanese:**
 - `iwato`
@@ -322,11 +287,11 @@ n(r.o{chord(c-maj7)})              // Random note from C major 7th chord
 
 **Blues:**
 - `bluesMajor`
-- `bluesMinor`
+- `blues-minor`
 
 **Harmonic/Melodic:**
-- `harmonicMinor`
-- `melodicMinor`
+- `harmonic-minor`
+- `melodic-minor`
 - `double-harmonic`
 
 **Synthetic:**
@@ -337,7 +302,7 @@ n(r.o{chord(c-maj7)})              // Random note from C major 7th chord
 **Exotic:**
 - `enigmatic`
 - `neapolitan`
-- `hungarianMinor`
+- `hungarian-minor`
 - `persian`
 - `arabic`
 
@@ -462,7 +427,6 @@ Each parameter can have its own arpeggiator:
 .nArp(mode)    // Note arpeggiator
 .dArp(mode)    // Duration arpeggiator
 .vArp(mode)    // Velocity arpeggiator
-.pArp(mode)    // Pan arpeggiator
 ```
 
 **Modes:**
@@ -477,7 +441,6 @@ Each parameter can have its own arpeggiator:
 - **`.nArp(mode)`**: Controls note arrays `n(r.o{...})`
 - **`.dArp(mode)`**: Controls duration arrays `.d(r.o{...})`
 - **`.vArp(mode)`**: Controls velocity arrays `.v(r.o{...})`
-- **`.pArp(mode)`**: Controls pan arrays `.p(r.o{...})`
 
 Each arpeggiator operates independently, allowing different patterns for each parameter.
 
@@ -489,15 +452,12 @@ n(r.o{c4,e4,g4}).nArp(up)           // Play C-E-G ascending, repeat
 // Velocity arpeggio only
 n(60).v(r.o{0.2,0.5,0.8}).vArp(up) // Velocity ascending through array
 
-// Pan arpeggio only
-n(60).p(r.o{0.0,0.5,1.0}).pArp(up-down) // Pan sweeps left-center-right-center
-
 // Duration arpeggio only
 n(60).d(r.o{bt/4,bt/2,bt}).dArp(down) // Duration decreases through array
 
 // Multiple independent arpeggiators
-n(r.o{c4,e4,g4}).nArp(up).v(r.o{0.3,0.6,0.9}).vArp(down).p(r.o{0.0,0.5,1.0}).pArp(up-down)
-// Notes go up, velocity goes down, pan goes up-down - all independently
+n(r.o{c4,e4,g4}).nArp(up).v(r.o{0.3,0.6,0.9}).vArp(down)
+// Notes go up, velocity goes down - all independently
 ```
 
 ---
