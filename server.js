@@ -1846,7 +1846,7 @@ const exampleQueue = [
   }
 ];
 
-queue.push(...exampleQueue);
+// queue.push(...exampleQueue);
 
 // Update an existing playCycle by id - waits for current interval to finish before switching
 function updateCycleById(id, cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
@@ -1876,6 +1876,55 @@ function updateCycleById(id, cycleStr, tempoParam = null, signatureNumeratorPara
   
   console.log(`[UPDATE CYCLE] Update queued for cycle '${id}' - will apply after current interval completes`);
   return true;
+}
+
+// Clear a cycle by id - stops the interval and removes from activeCycle
+function clearCycleById(id) {
+  if (!id || typeof id !== 'string') {
+    console.log('[CLEAR CYCLE] Invalid id provided');
+    return false;
+  }
+  
+  // Find the cycle in activeCycle by id
+  const existingIndex = activeCycle.findIndex(cycle => cycle.id === id);
+  
+  if (existingIndex === -1) {
+    console.log(`[CLEAR CYCLE] Cycle with id '${id}' not found in activeCycle`);
+    return false;
+  }
+  
+  const cycleEntry = activeCycle[existingIndex];
+  
+  // Clear the interval
+  clearInterval(cycleEntry.intervalId);
+  
+  // Remove from activeCycle
+  activeCycle.splice(existingIndex, 1);
+  
+  console.log(`[CLEAR CYCLE] Successfully cleared cycle with id '${id}'`);
+  return true;
+}
+
+// Clear all active cycles - stops all intervals and clears activeCycle array
+function clearAllCycles() {
+  if (activeCycle.length === 0) {
+    console.log('[CLEAR ALL CYCLES] No active cycles to clear');
+    return 0;
+  }
+  
+  // Clear all intervals
+  activeCycle.forEach(cycle => {
+    clearInterval(cycle.intervalId);
+  });
+  
+  // Count how many were cleared
+  const count = activeCycle.length;
+  
+  // Clear the activeCycle array
+  activeCycle = [];
+  
+  console.log(`[CLEAR ALL CYCLES] Successfully cleared ${count} active cycle(s)`);
+  return count;
 }
 
 // Process queue on bar change - run queued tracks/cycles
