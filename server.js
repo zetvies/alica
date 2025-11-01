@@ -814,7 +814,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
   let expandedSequence = processedSequence;
-  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|arp)\([^)]*\))*)/g;
+  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\([^)]*\))*)/g;
   let repeatMatch;
   let lastIndex = 0;
   let newSequence = '';
@@ -838,7 +838,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     expandedSequence = newSequence;
   }
   
-  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|arp)\([^)]*\))*/g;
+  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\([^)]*\))*/g;
   const allChunks = expandedSequence.match(chunkRegex) || [];
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
@@ -1006,9 +1006,15 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let velocityArray = null;
     let panArray = null;
     let durationArray = null;
+    let muteProbabilityArray = null;
+    let removeProbabilityArray = null;
     let pan = 0.5; // Default pan (center)
-    // Arpeggiator mode (null = random, 'up', 'down', 'up-down', 'down-up')
-    let arpMode = null;
+    // Arpeggiator modes (null = random, 'up', 'down', 'up-down', 'down-up')
+    let nArpMode = null; // Note arpeggiator mode
+    let dArpMode = null; // Duration arpeggiator mode
+    let vArpMode = null; // Velocity arpeggiator mode
+    let pmArpMode = null; // Mute probability arpeggiator mode
+    let prArpMode = null; // Remove probability arpeggiator mode
     // Track arp position per chunk (for ordered selection)
     let arpPosition = 0;
     
@@ -1028,7 +1034,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     if (midiNote === null && !randomizeNote) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
     // Use a more sophisticated approach to handle nested brackets in parameters
-    const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|arp)\((.*?)\)/g;
+      const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\((.*?)\)/g;
     let lastIndex = 0;
     let m;
     const params = [];
@@ -1047,7 +1053,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         const dotPos = chunk.indexOf('.', chunkPos);
         if (dotPos === -1) break;
         
-        const paramMatch = chunk.substring(dotPos + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\(/);
+        const paramMatch = chunk.substring(dotPos + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\(/);
         if (paramMatch) {
           const key = paramMatch[1];
           const startPos = dotPos + 1 + key.length + 1;
@@ -1256,26 +1262,38 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
       if (key === 'pm') {
-        // Parse mute probability: pm(value) or pm(r) for randomization
+        // Parse mute probability: pm(value), pm(r), or pm(r.o{...}) for array randomization
         const norm = raw.replace(/\s+/g, '').toLowerCase();
         if (norm === 'r') {
           randomizeMuteProbability = true;
         } else {
-          const prob = parseFloat(raw);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            muteProbability = prob;
+          const parsedArray = parseArrayRandomizer(raw, { bt, br });
+          if (parsedArray) {
+            muteProbabilityArray = parsedArray.filter(item => item.type === 'number');
+            randomizeMuteProbability = muteProbabilityArray.length > 0;
+          } else {
+            const prob = parseFloat(raw);
+            if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+              muteProbability = prob;
+            }
           }
         }
       }
       if (key === 'pr') {
-        // Parse remove probability: pr(value) or pr(r) for randomization
+        // Parse remove probability: pr(value), pr(r), or pr(r.o{...}) for array randomization
         const norm = raw.replace(/\s+/g, '').toLowerCase();
         if (norm === 'r') {
           randomizeRemoveProbability = true;
         } else {
-          const prob = parseFloat(raw);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            removeProbability = prob;
+          const parsedArray = parseArrayRandomizer(raw, { bt, br });
+          if (parsedArray) {
+            removeProbabilityArray = parsedArray.filter(item => item.type === 'number');
+            randomizeRemoveProbability = removeProbabilityArray.length > 0;
+          } else {
+            const prob = parseFloat(raw);
+            if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+              removeProbability = prob;
+            }
           }
         }
       }
@@ -1336,12 +1354,39 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           }
         }
       }
-      if (key === 'arp') {
-        // Parse arpeggiator mode: arp(up), arp(down), arp(up-down), arp(down-up), arp(random)
-        // Default to random if not specified
+      if (key === 'nArp') {
+        // Parse note arpeggiator mode: nArp(up), nArp(down), nArp(up-down), nArp(down-up), nArp(random)
         const mode = raw.toLowerCase().trim();
         if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
-          arpMode = mode === 'random' ? null : mode; // null means random
+          nArpMode = mode === 'random' ? null : mode; // null means random
+        }
+      }
+      if (key === 'dArp') {
+        // Parse duration arpeggiator mode: dArp(up), dArp(down), dArp(up-down), dArp(down-up), dArp(random)
+        const mode = raw.toLowerCase().trim();
+        if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
+          dArpMode = mode === 'random' ? null : mode; // null means random
+        }
+      }
+      if (key === 'vArp') {
+        // Parse velocity arpeggiator mode: vArp(up), vArp(down), vArp(up-down), vArp(down-up), vArp(random)
+        const mode = raw.toLowerCase().trim();
+        if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
+          vArpMode = mode === 'random' ? null : mode; // null means random
+        }
+      }
+      if (key === 'pmArp') {
+        // Parse mute probability arpeggiator mode: pmArp(up), pmArp(down), pmArp(up-down), pmArp(down-up), pmArp(random)
+        const mode = raw.toLowerCase().trim();
+        if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
+          pmArpMode = mode === 'random' ? null : mode; // null means random
+        }
+      }
+      if (key === 'prArp') {
+        // Parse remove probability arpeggiator mode: prArp(up), prArp(down), prArp(up-down), prArp(down-up), prArp(random)
+        const mode = raw.toLowerCase().trim();
+        if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
+          prArpMode = mode === 'random' ? null : mode; // null means random
         }
       }
     }
@@ -1401,17 +1446,28 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     // Apply mute probability: if random < muteProbability, set velocity to 0
     // Note-level mute probability OR sequence-level mute probability can mute the note
-    // Apply arp ordering to arrays if arp mode is set
+    // Apply arp ordering to arrays if arp mode is set (each parameter has its own mode)
     let orderedNoteArray = noteArray;
     let orderedVelocityArray = velocityArray;
     let orderedPanArray = panArray;
     let orderedDurationArray = durationArray;
+    let orderedMuteProbabilityArray = muteProbabilityArray;
+    let orderedRemoveProbabilityArray = removeProbabilityArray;
     
-    if (arpMode !== null) {
-      if (noteArray) orderedNoteArray = orderArrayByArp(noteArray, arpMode);
-      if (velocityArray) orderedVelocityArray = orderArrayByArp(velocityArray, arpMode);
-      if (panArray) orderedPanArray = orderArrayByArp(panArray, arpMode);
-      if (durationArray) orderedDurationArray = orderArrayByArp(durationArray, arpMode);
+    if (nArpMode !== null && noteArray) {
+      orderedNoteArray = orderArrayByArp(noteArray, nArpMode);
+    }
+    if (vArpMode !== null && velocityArray) {
+      orderedVelocityArray = orderArrayByArp(velocityArray, vArpMode);
+    }
+    if (dArpMode !== null && durationArray) {
+      orderedDurationArray = orderArrayByArp(durationArray, dArpMode);
+    }
+    if (pmArpMode !== null && muteProbabilityArray) {
+      orderedMuteProbabilityArray = orderArrayByArp(muteProbabilityArray, pmArpMode);
+    }
+    if (prArpMode !== null && removeProbabilityArray) {
+      orderedRemoveProbabilityArray = orderArrayByArp(removeProbabilityArray, prArpMode);
     }
     
     // Each repeat gets its own probability check and randomization
@@ -1429,9 +1485,21 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize remove probability (0-1) - must be done first as it can skip the note
       if (randomizeRemoveProbability) {
-        const random = Math.random();
-        useRemoveProbability = prRange[0] + random * (prRange[1] - prRange[0]);
-        useRemoveProbability = Math.max(0, Math.min(1, useRemoveProbability));
+        if (orderedRemoveProbabilityArray && orderedRemoveProbabilityArray.length > 0) {
+          // Use array-based selection: arp ordered or random
+          if (prArpMode !== null) {
+            const arpItem = getArpValue(orderedRemoveProbabilityArray, currentArpPosition);
+            useRemoveProbability = arpItem ? Math.max(0, Math.min(1, arpItem.value)) : removeProbabilityArray[0].value;
+          } else {
+            const randomIndex = Math.floor(Math.random() * removeProbabilityArray.length);
+            useRemoveProbability = Math.max(0, Math.min(1, removeProbabilityArray[randomIndex].value));
+          }
+        } else {
+          // Use continuous randomization with range
+          const random = Math.random();
+          useRemoveProbability = prRange[0] + random * (prRange[1] - prRange[0]);
+          useRemoveProbability = Math.max(0, Math.min(1, useRemoveProbability));
+        }
       }
       
       // Apply remove probability: if random < useRemoveProbability, skip this note instance
@@ -1446,7 +1514,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       if (randomizeNote) {
         if (orderedNoteArray && orderedNoteArray.length > 0) {
           // Use array-based selection: arp ordered or random
-          if (arpMode !== null) {
+          if (nArpMode !== null) {
             const arpItem = getArpValue(orderedNoteArray, currentArpPosition);
             useMidiNote = arpItem ? arpItem.value : noteArray[0].value;
           } else {
@@ -1470,7 +1538,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         if (orderedVelocityArray && orderedVelocityArray.length > 0) {
           // Use array-based selection: arp ordered or random
           let scaled;
-          if (arpMode !== null) {
+          if (vArpMode !== null) {
             const arpItem = getArpValue(orderedVelocityArray, currentArpPosition);
             scaled = arpItem ? arpItem.value : velocityArray[0].value;
           } else {
@@ -1491,14 +1559,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       // Randomize pan (0-1)
       if (randomizePan) {
         if (orderedPanArray && orderedPanArray.length > 0) {
-          // Use array-based selection: arp ordered or random
-          if (arpMode !== null) {
-            const arpItem = getArpValue(orderedPanArray, currentArpPosition);
-            pan = arpItem ? Math.max(0, Math.min(1, arpItem.value)) : Math.max(0, Math.min(1, panArray[0].value));
-          } else {
-            const randomIndex = Math.floor(Math.random() * panArray.length);
-            pan = Math.max(0, Math.min(1, panArray[randomIndex].value));
-          }
+          // Use array-based selection: random only (no arpeggiator for pan)
+          const randomIndex = Math.floor(Math.random() * panArray.length);
+          pan = Math.max(0, Math.min(1, panArray[randomIndex].value));
         } else {
           // Use continuous randomization with range
           const random = Math.random();
@@ -1511,9 +1574,21 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize mute probability (0-1)
       if (randomizeMuteProbability) {
-        const random = Math.random();
-        useMuteProbability = pmRange[0] + random * (pmRange[1] - pmRange[0]);
-        useMuteProbability = Math.max(0, Math.min(1, useMuteProbability));
+        if (orderedMuteProbabilityArray && orderedMuteProbabilityArray.length > 0) {
+          // Use array-based selection: arp ordered or random
+          if (pmArpMode !== null) {
+            const arpItem = getArpValue(orderedMuteProbabilityArray, currentArpPosition);
+            useMuteProbability = arpItem ? Math.max(0, Math.min(1, arpItem.value)) : muteProbabilityArray[0].value;
+          } else {
+            const randomIndex = Math.floor(Math.random() * muteProbabilityArray.length);
+            useMuteProbability = Math.max(0, Math.min(1, muteProbabilityArray[randomIndex].value));
+          }
+        } else {
+          // Use continuous randomization with range
+          const random = Math.random();
+          useMuteProbability = pmRange[0] + random * (pmRange[1] - pmRange[0]);
+          useMuteProbability = Math.max(0, Math.min(1, useMuteProbability));
+        }
       }
       
       // Randomize duration
@@ -1619,7 +1694,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           // Select from valid indices (arp ordered or random)
           if (validIndices.length > 0) {
             let selectedCanonicalIndex;
-            if (arpMode !== null && orderedDurationArray) {
+            if (dArpMode !== null && orderedDurationArray) {
               // Get the duration value from ordered array at current position
               const arpItem = getArpValue(orderedDurationArray, currentArpPosition);
               if (arpItem) {
@@ -1643,7 +1718,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
             // If range filtering eliminated all, but we had array indices, use them without range
             // (This shouldn't happen with correct range, but safety fallback)
             let selectedCanonicalIndex;
-            if (arpMode !== null && orderedDurationArray) {
+            if (dArpMode !== null && orderedDurationArray) {
               const arpItem = getArpValue(orderedDurationArray, currentArpPosition);
               if (arpItem) {
                 const valueIndex = uniqueCanonical.findIndex(canon => Math.abs(canon.value - arpItem.value) <= 1);
@@ -1658,7 +1733,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
             useDurationValue = uniqueCanonical[selectedCanonicalIndex].value;
           } else if (durationArray.length > 0) {
             // If canonical matching failed, use array values directly
-            if (arpMode !== null && orderedDurationArray) {
+            if (dArpMode !== null && orderedDurationArray) {
               const arpItem = getArpValue(orderedDurationArray, currentArpPosition);
               useDurationValue = arpItem ? arpItem.value : durationArray[0].value;
             } else {
@@ -1869,7 +1944,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle(" [n(r.o{scale(c-ionian)})^6.nRange(c3, c4)].c(1) [n(r.o{scale(c-iwato)})^16.nRange(c4, c5).v(r).vRange(0,1).d(r.o{bt/4, bt/2}).pm(r).pmRange(0,0.3).dRange(bt/8,bt*2).arp(up-down)].c(1)");
+        playCycle(" [n(r.o{scale(c-iwato)})^12.nRange(c4, c5).nArp(up-down)].c(1)");
       }
     }
   } catch (error) {

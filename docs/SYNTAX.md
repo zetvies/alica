@@ -452,12 +452,17 @@ bt*4                // Four beats
 
 ## Arpeggiators
 
-Control how array values are selected when using `r.o{...}`. The arpeggiator can modulate **any array-based parameter**: notes, velocity, pan, and duration.
+Control how array values are selected when using `r.o{...}`. Each parameter has its own independent arpeggiator.
 
 ### Arpeggiator Syntax
 
+Each parameter can have its own arpeggiator:
+
 ```
-.arp(mode)
+.nArp(mode)    // Note arpeggiator
+.dArp(mode)    // Duration arpeggiator
+.vArp(mode)    // Velocity arpeggiator
+.pArp(mode)    // Pan arpeggiator
 ```
 
 **Modes:**
@@ -467,33 +472,32 @@ Control how array values are selected when using `r.o{...}`. The arpeggiator can
 - `up-down`: Ascending then descending (cyclic)
 - `down-up`: Descending then ascending (cyclic)
 
-**What It Modulates:**
+**What Each Modulates:**
 
-The arpeggiator affects **all** array randomizers (`r.o{...}`) in a note, including:
-- **Notes**: `n(r.o{...})`
-- **Velocity**: `.v(r.o{...})`
-- **Pan**: `.p(r.o{...})`
-- **Duration**: `.d(r.o{...})`
+- **`.nArp(mode)`**: Controls note arrays `n(r.o{...})`
+- **`.dArp(mode)`**: Controls duration arrays `.d(r.o{...})`
+- **`.vArp(mode)`**: Controls velocity arrays `.v(r.o{...})`
+- **`.pArp(mode)`**: Controls pan arrays `.p(r.o{...})`
 
-All arrays are ordered according to the same arp mode and cycle together using the same position counter.
+Each arpeggiator operates independently, allowing different patterns for each parameter.
 
 **Examples:**
 ```
-// Note arpeggio
-n(r.o{c4,e4,g4}).arp(up)           // Play C-E-G ascending, repeat
+// Note arpeggio only
+n(r.o{c4,e4,g4}).nArp(up)           // Play C-E-G ascending, repeat
 
-// Velocity arpeggio
-n(60).v(r.o{0.2,0.5,0.8}).arp(up) // Velocity ascending through array
+// Velocity arpeggio only
+n(60).v(r.o{0.2,0.5,0.8}).vArp(up) // Velocity ascending through array
 
-// Pan arpeggio
-n(60).p(r.o{0.0,0.5,1.0}).arp(up-down) // Pan sweeps left-center-right-center
+// Pan arpeggio only
+n(60).p(r.o{0.0,0.5,1.0}).pArp(up-down) // Pan sweeps left-center-right-center
 
-// Duration arpeggio
-n(60).d(r.o{bt/4,bt/2,bt}).arp(down) // Duration decreases through array
+// Duration arpeggio only
+n(60).d(r.o{bt/4,bt/2,bt}).dArp(down) // Duration decreases through array
 
-// Multiple parameters arpeggiated together
-n(r.o{c4,e4,g4}).v(r.o{0.3,0.6,0.9}).p(r.o{0.0,0.5,1.0}).arp(up)
-// Notes, velocity, and pan all cycle together in ascending order
+// Multiple independent arpeggiators
+n(r.o{c4,e4,g4}).nArp(up).v(r.o{0.3,0.6,0.9}).vArp(down).p(r.o{0.0,0.5,1.0}).pArp(up-down)
+// Notes go up, velocity goes down, pan goes up-down - all independently
 ```
 
 ---
@@ -571,14 +575,14 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).v(80).d(bt/4)^16
 ### Chord Arpeggio
 
 ```
-n(r.o{chord(c-maj7)}).arp(up-down).d(bt/8)^8
+n(r.o{chord(c-maj7)}).nArp(up-down).d(bt/8)^8
 ```
 
 ### Complex Cycle
 
 ```
 [n(r.o{scale(c-ionian)})^6.nRange(c3,c4)].c(1) 
-[n(r.o{scale(c-iwato)})^16.nRange(c4,c5).v(r).vRange(0,1).d(r.o{bt/4,bt/2}).pm(r).pmRange(0,0.3).dRange(bt/8,bt*2).arp(up-down)].c(1)
+[n(r.o{scale(c-iwato)})^16.nRange(c4,c5).v(r).vRange(0,1).d(r.o{bt/4,bt/2}).pm(r).pmRange(0,0.3).dRange(bt/8,bt*2).nArp(up-down)].c(1)
 ```
 
 ### Probability-Based Sequence

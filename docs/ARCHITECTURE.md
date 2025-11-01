@@ -128,7 +128,7 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 - Weighted durations: `.d(*2)`, `.d(/4)`
 - Randomization: `r`, `r.o{...}`
 - Probability: `.pm(...)`, `.pr(...)`
-- Arpeggiators: `.arp(up|down|up-down|down-up)`
+- Arpeggiators: `.nArp(...)`, `.dArp(...)`, `.vArp(...)`, `.pArp(...)` (independent per parameter)
 - Ranges: `.nRange(...)`, `.vRange(...)`, `.pRange(...)`, `.dRange(...)`
 
 ### 5. MIDI Handler
@@ -249,7 +249,7 @@ Ableton Live
 
 ### Array-Based Random (`r.o{...}`)
 - Selects randomly from array
-- Can be ordered with `.arp(...)`
+- Can be ordered with `.nArp(...)`, `.dArp(...)`, `.vArp(...)`, or `.pArp(...)` (each parameter independently)
 - Supports notes, velocities, pans, durations
 - Can contain scale/chord syntax
 

@@ -61,7 +61,7 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
 
 // Complex sequence with probability
 [n(r.o{scale(c-ionian)})^6.nRange(c3,c4)].c(1) 
-[n(r.o{scale(c-iwato)})^16.v(r).pm(r).arp(up-down)].c(1)
+[n(r.o{scale(c-iwato)})^16.v(r).pm(r).nArp(up-down)].c(1)
 ```
 
 **Full syntax documentation**: See [docs/SYNTAX.md](docs/SYNTAX.md)
@@ -196,7 +196,7 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).d(bt/4).v(80)^16
 ### Chord Arpeggio
 
 ```javascript
-n(r.o{chord(c-maj7)}).arp(up-down).d(bt/8).v(r).vRange(0.5,1.0)^8
+n(r.o{chord(c-maj7)}).nArp(up-down).d(bt/8).v(r).vRange(0.5,1.0)^8
 ```
 
 ### Probability-Based Pattern
