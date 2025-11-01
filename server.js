@@ -141,10 +141,37 @@ function expandChord(chordStr) {
 
 // generateScaleChordNotes is imported from ./src/modules/musicTheory
 
+// Parse chord syntax: <c4,e4,g6> returns array of MIDI note numbers
+function parseChord(chordStr) {
+  if (!chordStr || typeof chordStr !== 'string') return null;
+  
+  const match = chordStr.match(/^<([^>]+)>$/);
+  if (!match) return null;
+  
+  const notesStr = match[1].trim();
+  const noteItems = notesStr.split(',').map(s => s.trim());
+  const midiNotes = [];
+  
+  for (const item of noteItems) {
+    const midiNote = noteTokenToMidi(item);
+    if (midiNote !== null) {
+      midiNotes.push(midiNote);
+    } else {
+      // Try as MIDI note number
+      const midiNum = parseInt(item, 10);
+      if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
+        midiNotes.push(midiNum);
+      }
+    }
+  }
+  
+  return midiNotes.length > 0 ? midiNotes : null;
+}
+
 // Parse r.o{...} array syntax and return array of values
 // Examples: r.o{c4, d4, e4}, r.o{60, 64, 67}, r.o{0.25, 0.5, 0.75}, r.o{bt/4, bt, bt*2}
 // Duration tokens: bt, bt/even, or bt*even (even numbers only)
-// Also supports: r.o{scale(...)}, r.o{chord(...)}
+// Also supports: r.o{scale(...)}, r.o{chord(...)}, r.o{<c4,e4,g4>,<f4,a4,c5>} (chords)
 function parseArrayRandomizer(str, context = {}) {
   if (!str || typeof str !== 'string') return null;
   
@@ -162,10 +189,41 @@ function parseArrayRandomizer(str, context = {}) {
     return [{ type: 'scaleChord', value: arrayStr, original: arrayStr }];
   }
   
-  const items = arrayStr.split(',').map(s => s.trim());
+  // Handle comma-separated items, but be careful with nested angle brackets
+  // Parse items by splitting on commas, but preserve chord syntax <...>
+  const items = [];
+  let currentItem = '';
+  let angleBracketDepth = 0;
+  
+  for (let i = 0; i < arrayStr.length; i++) {
+    const char = arrayStr[i];
+    if (char === '<') {
+      angleBracketDepth++;
+      currentItem += char;
+    } else if (char === '>') {
+      angleBracketDepth--;
+      currentItem += char;
+    } else if (char === ',' && angleBracketDepth === 0) {
+      items.push(currentItem.trim());
+      currentItem = '';
+    } else {
+      currentItem += char;
+    }
+  }
+  if (currentItem.trim()) {
+    items.push(currentItem.trim());
+  }
+  
   const result = [];
   
   for (const item of items) {
+    // Check for chord syntax: <c4,e4,g6>
+    const chord = parseChord(item);
+    if (chord) {
+      result.push({ type: 'chord', value: chord, original: item });
+      continue;
+    }
+    
     // Check for scale/chord syntax in individual items
     const scaleChordItemMatch = item.match(/^(scale\(.+?\)(?:\.q\(.+?\))?|chord\(.+?\))$/i);
     if (scaleChordItemMatch) {
@@ -222,11 +280,20 @@ function parseArrayRandomizer(str, context = {}) {
 }
 
 // Filter array by range [min, max] and return filtered array
+// For chords, include if any note in the chord is within the range
 function filterArrayByRange(array, min, max) {
   if (!array || array.length === 0) return array;
   
   return array.filter(item => {
     const value = item.value !== undefined ? item.value : item;
+    
+    // Handle chord type (array of MIDI notes)
+    if (item.type === 'chord' && Array.isArray(value)) {
+      // Include chord if ANY note is within range
+      return value.some(note => note >= min && note <= max);
+    }
+    
+    // Handle single note (number)
     return value >= min && value <= max;
   });
 }
@@ -240,9 +307,17 @@ function orderArrayByArp(array, mode) {
   const ordered = [...array];
   
   // Sort by value (for numbers) or keep as is (for objects with value property)
+  // For chords, sort by the lowest note in the chord
   const getValue = (item) => {
     if (typeof item === 'number') return item;
-    if (item.value !== undefined) return item.value;
+    if (item.value !== undefined) {
+      // Handle chord type (array of MIDI notes)
+      if (item.type === 'chord' && Array.isArray(item.value)) {
+        // Sort by lowest note in chord
+        return Math.min(...item.value);
+      }
+      return item.value;
+    }
     return item;
   };
   
@@ -672,20 +747,31 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     // Track arp position per chunk (for ordered selection)
     let arpPosition = 0;
     
+    // Check for chord syntax: n(<c4,e4,g6>)
+    let isDirectChord = false;
+    let directChordNotes = null;
+    const chordMatch = parseChord(noteArg);
+    if (chordMatch) {
+      isDirectChord = true;
+      directChordNotes = chordMatch;
+    }
+    
     // Check if note argument is 'r' or 'r.o{...}' for randomization
     const noteArgLower = noteArg.toLowerCase();
     if (noteArgLower === 'r') {
       randomizeNote = true;
-    } else {
+    } else if (!isDirectChord) {
       const parsedArray = parseArrayRandomizer(noteArg, { bt, br });
       if (parsedArray) {
-        noteArray = parsedArray.filter(item => item.type === 'note');
+        // Handle both single notes and chords in the array
+        noteArray = parsedArray.filter(item => item.type === 'note' || item.type === 'chord');
         randomizeNote = noteArray.length > 0;
       }
     }
     
-    const midiNote = noteTokenToMidi(noteArg);
-    if (midiNote === null && !randomizeNote) continue;
+    // For direct chord or single note, check if it's valid
+    const midiNote = isDirectChord ? null : noteTokenToMidi(noteArg);
+    if (midiNote === null && !randomizeNote && !isDirectChord) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
     // Use a more sophisticated approach to handle nested brackets in parameters
       const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\((.*?)\)/g;
@@ -1127,12 +1213,22 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     // Each repeat gets its own probability check and randomization
     for (let r = 0; r < repeatCount; r++) {
       // Generate random values for this repeat if needed
-      let useMidiNote = midiNote;
+      // Determine which notes to play (can be a single note or a chord)
+      let useMidiNotes = []; // Array of MIDI notes to play simultaneously
       let useVelocity = velocity;
       let useChannel = channel;
       let useMuteProbability = muteProbability;
       let useRemoveProbability = removeProbability;
       let useDurationValue = useDuration;
+      
+      // Handle direct chord: n(<c4,e4,g6>)
+      if (isDirectChord && directChordNotes) {
+        useMidiNotes = [...directChordNotes];
+      }
+      // Handle single note (non-randomized)
+      else if (midiNote !== null) {
+        useMidiNotes = [midiNote];
+      }
       
       // Calculate arp position (chunk index * repeat count + repeat index)
       const currentArpPosition = idx * repeatCount + r;
@@ -1164,16 +1260,24 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         }
       }
       
-      // Randomize note
+      // Randomize note (including chords)
       if (randomizeNote) {
-        if (orderedNoteArray && orderedNoteArray.length > 0) {
+        if (noteArray && noteArray.length > 0) {
           // Use array-based selection: arp ordered or random
-          if (nArpMode !== null) {
+          let selectedItem;
+          if (nArpMode !== null && orderedNoteArray) {
             const arpItem = getArpValue(orderedNoteArray, currentArpPosition);
-            useMidiNote = arpItem ? arpItem.value : noteArray[0].value;
+            selectedItem = arpItem || noteArray[0];
           } else {
             const randomIndex = Math.floor(Math.random() * noteArray.length);
-            useMidiNote = noteArray[randomIndex].value;
+            selectedItem = noteArray[randomIndex];
+          }
+          
+          // Check if selected item is a chord or single note
+          if (selectedItem.type === 'chord') {
+            useMidiNotes = [...selectedItem.value]; // Array of MIDI notes
+          } else {
+            useMidiNotes = [selectedItem.value]; // Single MIDI note
           }
         } else {
           // Use continuous randomization with range
@@ -1182,8 +1286,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           const maxMidi = nRange !== null ? nRange[1] : 108; // C8 default
           // Randomly select within the MIDI range
           const random = Math.random();
-          useMidiNote = Math.round(minMidi + random * (maxMidi - minMidi));
-          useMidiNote = Math.max(0, Math.min(127, useMidiNote));
+          const singleNote = Math.round(minMidi + random * (maxMidi - minMidi));
+          useMidiNotes = [Math.max(0, Math.min(127, singleNote))];
         }
       }
       
@@ -1491,7 +1595,15 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       }
       
       const useZeroBasedChannel = useChannel - 1;
-      await sendNote(useMidiNote, useVelocity, useDurationValue, useZeroBasedChannel);
+      
+      // Play all notes in the chord simultaneously (or single note)
+      // All notes use the same velocity, duration, and channel settings
+      if (useMidiNotes.length > 0) {
+        const notePromises = useMidiNotes.map(note => 
+          sendNote(note, useVelocity, useDurationValue, useZeroBasedChannel)
+        );
+        await Promise.all(notePromises);
+      }
     }
   }
 }
@@ -1598,7 +1710,7 @@ function calculateBarAndBeat() {
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle(" [n(r.o{scale(c-in)})^11.nRange(c4, g4).nArp(down-up)].c(1)");
+        playCycle("[n(r.o{<c4,e4,g4>,<f4,a4,c5>})^2.nArp(up)].c(1)");
       }
     }
   } catch (error) {
