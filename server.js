@@ -1749,9 +1749,9 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
   const useTempo = tempoParam !== null ? tempoParam : globalTempo;
   const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : globalSignatureNumerator;
   const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : globalSignatureDenominator;
-  // Match blocks: [sequence] then optional .t(...).c(...).co(...).p(...)
-  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|p)\([^)]*\))*)/g;
-  const modifierRegex = /\.(t|c|co|p)\(([^)]+)\)/g;
+  // Match blocks: [sequence] then optional .t(...).c(...).co(...).pm(...)
+  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|pm)\([^)]*\))*)/g;
+  const modifierRegex = /\.(t|c|co|pm)\(([^)]+)\)/g;
   let m;
   const plays = [];
   while ((m = blockRegex.exec(cycleStr)) !== null) {
@@ -1760,7 +1760,6 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
     let type = 'fit';
     let channelOverride = null;
     let cutOff = null;
-    let removeProbability = null;
     let sequenceMuteProbability = null;
     let mm;
     while ((mm = modifierRegex.exec(mods)) !== null) {
@@ -1792,34 +1791,12 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
       } else if (key === 'co') {
         // Pass through cutoff token for future use
         cutOff = rawVal;
-      } else if (key === 'p') {
-        // Parse remove probability: r0.4 or r.0.4
-        const norm = rawVal.replace(/\s+/g, '').toLowerCase();
-        // Match r0.4, r.0.4, r1, r0, etc.
-        const removeMatch = norm.match(/^r(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
-        if (removeMatch) {
-          const probStr = removeMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'r' or 'r.' prefix
-          const prob = parseFloat(probStr);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            removeProbability = prob;
-          }
+      } else if (key === 'pm') {
+        // Parse mute probability: pm(value) for sequence level
+        const prob = parseFloat(rawVal);
+        if (!isNaN(prob) && prob >= 0 && prob <= 1) {
+          sequenceMuteProbability = prob;
         }
-        // Parse mute probability: m0.7 or m.0.7
-        const muteMatch = norm.match(/^m(\.)?(0?\.\d+|1(?:\.0+)?|0)$/);
-        if (muteMatch) {
-          const probStr = muteMatch[1] ? norm.substring(2) : norm.substring(1); // Remove 'm' or 'm.' prefix
-          const prob = parseFloat(probStr);
-          if (!isNaN(prob) && prob >= 0 && prob <= 1) {
-            sequenceMuteProbability = prob;
-          }
-        }
-      }
-    }
-    // Apply remove probability: if random < removeProbability, skip this sequence
-    if (removeProbability !== null && removeProbability > 0) {
-      const random = Math.random();
-      if (random < removeProbability) {
-        continue; // Skip this sequence
       }
     }
     plays.push(playSequence(seq, type, cutOff, channelOverride, sequenceMuteProbability, useTempo, useSignatureNumerator, useSignatureDenominator));
