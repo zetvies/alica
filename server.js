@@ -412,6 +412,55 @@ function filterArrayByRange(array, min, max) {
   });
 }
 
+// Order array based on arpeggiator mode
+function orderArrayByArp(array, mode) {
+  if (!array || array.length === 0) return array;
+  if (mode === null) return array; // random - return as is
+  
+  // Create a copy to avoid mutating original
+  const ordered = [...array];
+  
+  // Sort by value (for numbers) or keep as is (for objects with value property)
+  const getValue = (item) => {
+    if (typeof item === 'number') return item;
+    if (item.value !== undefined) return item.value;
+    return item;
+  };
+  
+  ordered.sort((a, b) => getValue(a) - getValue(b));
+  
+  if (mode === 'up') {
+    // start to end (already sorted ascending)
+    return ordered;
+  } else if (mode === 'down') {
+    // end to start (reverse)
+    return ordered.reverse();
+  } else if (mode === 'up-down') {
+    // up-down pattern: up, then down excluding both start and end to avoid duplicates
+    // Example: [c4, e4, g4] -> [c4, e4, g4, e4] which cycles as: c4, e4, g4, e4, c4, e4, g4, e4...
+    // This ensures seamless cycling: each cycle goes up then back down, meeting at the start
+    const up = [...ordered];
+    const down = [...ordered].reverse().slice(1, -1); // reverse and exclude first and last
+    return up.concat(down);
+  } else if (mode === 'down-up') {
+    // down-up pattern: down, then up excluding both start and end to avoid duplicates
+    // Example: [c4, e4, g4] -> [g4, e4, c4, e4] which cycles as: g4, e4, c4, e4, g4, e4, c4...
+    // This ensures seamless cycling: each cycle goes down then back up, meeting at the end
+    const down = [...ordered].reverse();
+    const up = ordered.slice(1, -1); // exclude first (start) and last (end) elements
+    return down.concat(up);
+  }
+  
+  return array; // fallback
+}
+
+// Get next value from ordered array based on arp position
+function getArpValue(orderedArray, position) {
+  if (!orderedArray || orderedArray.length === 0) return null;
+  const index = position % orderedArray.length;
+  return orderedArray[index];
+}
+
 // Extract parameter value from string like "d(r.o{bt})" - handles nested braces
 function extractParameterValue(str, paramName) {
   const regex = new RegExp(`\\.${paramName}\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)`, 'g');
@@ -441,7 +490,7 @@ function extractParameterValue(str, paramName) {
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null) {
-  console.log('[PLAY_SEQUENCE] Called with:', sequence);
+
   if (!sequence || typeof sequence !== 'string') return;
   
   // Expand scale and chord syntax first
@@ -517,7 +566,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
   let expandedSequence = processedSequence;
-  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\([^)]*\))*)/g;
+  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|arp)\([^)]*\))*)/g;
   let repeatMatch;
   let lastIndex = 0;
   let newSequence = '';
@@ -541,7 +590,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     expandedSequence = newSequence;
   }
   
-  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\([^)]*\))*/g;
+  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|arp)\([^)]*\))*/g;
   const allChunks = expandedSequence.match(chunkRegex) || [];
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
@@ -671,6 +720,10 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let panArray = null;
     let durationArray = null;
     let pan = 0.5; // Default pan (center)
+    // Arpeggiator mode (null = random, 'up', 'down', 'up-down', 'down-up')
+    let arpMode = null;
+    // Track arp position per chunk (for ordered selection)
+    let arpPosition = 0;
     
     // Check if note argument is 'r' or 'r.o{...}' for randomization
     const noteArgLower = noteArg.toLowerCase();
@@ -688,7 +741,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     if (midiNote === null && !randomizeNote) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
     // Use a more sophisticated approach to handle nested brackets in parameters
-    const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange)\((.*?)\)/g;
+    const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|arp)\((.*?)\)/g;
     let lastIndex = 0;
     let m;
     const params = [];
@@ -984,6 +1037,14 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           }
         }
       }
+      if (key === 'arp') {
+        // Parse arpeggiator mode: arp(up), arp(down), arp(up-down), arp(down-up), arp(random)
+        // Default to random if not specified
+        const mode = raw.toLowerCase().trim();
+        if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
+          arpMode = mode === 'random' ? null : mode; // null means random
+        }
+      }
     }
     
     // Apply sequence-level override only if note doesn't have its own setting
@@ -1014,6 +1075,19 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     // Apply mute probability: if random < muteProbability, set velocity to 0
     // Note-level mute probability OR sequence-level mute probability can mute the note
+    // Apply arp ordering to arrays if arp mode is set
+    let orderedNoteArray = noteArray;
+    let orderedVelocityArray = velocityArray;
+    let orderedPanArray = panArray;
+    let orderedDurationArray = durationArray;
+    
+    if (arpMode !== null) {
+      if (noteArray) orderedNoteArray = orderArrayByArp(noteArray, arpMode);
+      if (velocityArray) orderedVelocityArray = orderArrayByArp(velocityArray, arpMode);
+      if (panArray) orderedPanArray = orderArrayByArp(panArray, arpMode);
+      if (durationArray) orderedDurationArray = orderArrayByArp(durationArray, arpMode);
+    }
+    
     // Each repeat gets its own probability check and randomization
     for (let r = 0; r < repeatCount; r++) {
       // Generate random values for this repeat if needed
@@ -1023,6 +1097,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       let useMuteProbability = muteProbability;
       let useRemoveProbability = removeProbability;
       let useDurationValue = useDuration;
+      
+      // Calculate arp position (chunk index * repeat count + repeat index)
+      const currentArpPosition = idx * repeatCount + r;
       
       // Randomize remove probability (0-1) - must be done first as it can skip the note
       if (randomizeRemoveProbability) {
@@ -1041,10 +1118,15 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize note
       if (randomizeNote) {
-        if (noteArray && noteArray.length > 0) {
-          // Use array-based randomization: randomly select from array
-          const randomIndex = Math.floor(Math.random() * noteArray.length);
-          useMidiNote = noteArray[randomIndex].value;
+        if (orderedNoteArray && orderedNoteArray.length > 0) {
+          // Use array-based selection: arp ordered or random
+          if (arpMode !== null) {
+            const arpItem = getArpValue(orderedNoteArray, currentArpPosition);
+            useMidiNote = arpItem ? arpItem.value : noteArray[0].value;
+          } else {
+            const randomIndex = Math.floor(Math.random() * noteArray.length);
+            useMidiNote = noteArray[randomIndex].value;
+          }
         } else {
           // Use continuous randomization with range
           // Use nRange if provided, otherwise use defaults
@@ -1059,10 +1141,16 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize velocity (0-127)
       if (randomizeVelocity) {
-        if (velocityArray && velocityArray.length > 0) {
-          // Use array-based randomization: randomly select from array
-          const randomIndex = Math.floor(Math.random() * velocityArray.length);
-          const scaled = velocityArray[randomIndex].value;
+        if (orderedVelocityArray && orderedVelocityArray.length > 0) {
+          // Use array-based selection: arp ordered or random
+          let scaled;
+          if (arpMode !== null) {
+            const arpItem = getArpValue(orderedVelocityArray, currentArpPosition);
+            scaled = arpItem ? arpItem.value : velocityArray[0].value;
+          } else {
+            const randomIndex = Math.floor(Math.random() * velocityArray.length);
+            scaled = velocityArray[randomIndex].value;
+          }
           useVelocity = Math.round(scaled * 127);
           useVelocity = Math.max(0, Math.min(127, useVelocity));
         } else {
@@ -1076,10 +1164,15 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Randomize pan (0-1)
       if (randomizePan) {
-        if (panArray && panArray.length > 0) {
-          // Use array-based randomization: randomly select from array
-          const randomIndex = Math.floor(Math.random() * panArray.length);
-          pan = Math.max(0, Math.min(1, panArray[randomIndex].value));
+        if (orderedPanArray && orderedPanArray.length > 0) {
+          // Use array-based selection: arp ordered or random
+          if (arpMode !== null) {
+            const arpItem = getArpValue(orderedPanArray, currentArpPosition);
+            pan = arpItem ? Math.max(0, Math.min(1, arpItem.value)) : Math.max(0, Math.min(1, panArray[0].value));
+          } else {
+            const randomIndex = Math.floor(Math.random() * panArray.length);
+            pan = Math.max(0, Math.min(1, panArray[randomIndex].value));
+          }
         } else {
           // Use continuous randomization with range
           const random = Math.random();
@@ -1197,21 +1290,55 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
             }
           }
           
-          // Randomly select from valid indices
+          // Select from valid indices (arp ordered or random)
           if (validIndices.length > 0) {
-            const randomIndex = Math.floor(Math.random() * validIndices.length);
-            const selectedCanonicalIndex = validIndices[randomIndex];
+            let selectedCanonicalIndex;
+            if (arpMode !== null && orderedDurationArray) {
+              // Get the duration value from ordered array at current position
+              const arpItem = getArpValue(orderedDurationArray, currentArpPosition);
+              if (arpItem) {
+                // Find the canonical index for this duration value
+                const valueIndex = uniqueCanonical.findIndex(canon => Math.abs(canon.value - arpItem.value) <= 1);
+                if (valueIndex !== -1 && validIndices.includes(valueIndex)) {
+                  selectedCanonicalIndex = valueIndex;
+                } else {
+                  // Fallback to first valid index
+                  selectedCanonicalIndex = validIndices[0];
+                }
+              } else {
+                selectedCanonicalIndex = validIndices[0];
+              }
+            } else {
+              const randomIndex = Math.floor(Math.random() * validIndices.length);
+              selectedCanonicalIndex = validIndices[randomIndex];
+            }
             useDurationValue = uniqueCanonical[selectedCanonicalIndex].value;
           } else if (arrayIndices.length > 0) {
             // If range filtering eliminated all, but we had array indices, use them without range
             // (This shouldn't happen with correct range, but safety fallback)
-            const randomIndex = Math.floor(Math.random() * arrayIndices.length);
-            const selectedCanonicalIndex = arrayIndices[randomIndex];
+            let selectedCanonicalIndex;
+            if (arpMode !== null && orderedDurationArray) {
+              const arpItem = getArpValue(orderedDurationArray, currentArpPosition);
+              if (arpItem) {
+                const valueIndex = uniqueCanonical.findIndex(canon => Math.abs(canon.value - arpItem.value) <= 1);
+                selectedCanonicalIndex = valueIndex !== -1 && arrayIndices.includes(valueIndex) ? valueIndex : arrayIndices[0];
+              } else {
+                selectedCanonicalIndex = arrayIndices[0];
+              }
+            } else {
+              const randomIndex = Math.floor(Math.random() * arrayIndices.length);
+              selectedCanonicalIndex = arrayIndices[randomIndex];
+            }
             useDurationValue = uniqueCanonical[selectedCanonicalIndex].value;
           } else if (durationArray.length > 0) {
             // If canonical matching failed, use array values directly
-            const randomIndex = Math.floor(Math.random() * durationArray.length);
-            useDurationValue = durationArray[randomIndex].value;
+            if (arpMode !== null && orderedDurationArray) {
+              const arpItem = getArpValue(orderedDurationArray, currentArpPosition);
+              useDurationValue = arpItem ? arpItem.value : durationArray[0].value;
+            } else {
+              const randomIndex = Math.floor(Math.random() * durationArray.length);
+              useDurationValue = durationArray[randomIndex].value;
+            }
           } else {
             // Fallback to default if no valid durations found
             useDurationValue = Math.max(1, defaultDurationMs || bt);
@@ -1317,7 +1444,6 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 // Play multiple sequences in a cycle with per-block modifiers.
 // Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
 async function playCycle(cycleStr) {
-  console.log('[PLAY_CYCLE] Called with:', cycleStr);
   if (!cycleStr || typeof cycleStr !== 'string') return;
   // Match blocks: [sequence] then optional .t(...).c(...).co(...).p(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|p)\([^)]*\))*)/g;
@@ -1392,11 +1518,9 @@ function calculateBarAndBeat() {
     const beatsPerBar = signatureNumerator;
     const beatValue = signatureDenominator;
 
-    // Calculate beats per second
-    const beatsPerSecond = beatValue / beatsPerBar;
 
     // Calculate total beats elapsed
-    const totalBeats = currentSongTime * beatsPerSecond;
+    const totalBeats = currentSongTime ;
 
     // Calculate current bar (1-indexed)
     const newBar = Math.floor(totalBeats / beatsPerBar) + 1;
@@ -1415,10 +1539,11 @@ function calculateBarAndBeat() {
       previousBar = newBar;
       previousBeat = beatString;
 
+
       // Detect when the bar changes
       if (currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
-        playCycle("[n(r.o{d4, e4})^3.nRange(c4, c5).d(r.o{bt*2}).dRange(bt, bt*2)].c(1)");
+        playCycle("[n(r.o{c4, e4, g4})^8.nRange(c4, c5).arp(down-up)].c(1)");
       }
     }
   } catch (error) {
