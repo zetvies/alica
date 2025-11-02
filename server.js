@@ -2183,8 +2183,23 @@ function parseMethodChainSyntax(inputStr) {
     }
     if (depth === 0) {
       const bpmStr = trimmed.substring(start, currentPos - 1).trim();
-      const bpmVal = parseFloat(bpmStr);
-      if (!isNaN(bpmVal) && bpmVal > 0) bpm = bpmVal;
+      // Support tmp*f syntax where tmp is Ableton tempo
+      if (bpmStr.toLowerCase().startsWith('tmp')) {
+        const multiplierMatch = bpmStr.match(/^tmp\*([0-9.]+)$/i);
+        if (multiplierMatch) {
+          const multiplier = parseFloat(multiplierMatch[1]);
+          if (!isNaN(multiplier) && multiplier > 0 && tempo !== null) {
+            bpm = tempo * multiplier;
+          }
+        } else if (bpmStr.toLowerCase() === 'tmp' && tempo !== null) {
+          // Just 'tmp' means use Ableton tempo as-is
+          bpm = tempo;
+        }
+      } else {
+        // Regular number
+        const bpmVal = parseFloat(bpmStr);
+        if (!isNaN(bpmVal) && bpmVal > 0) bpm = bpmVal;
+      }
     }
   }
   
@@ -2200,8 +2215,29 @@ function parseMethodChainSyntax(inputStr) {
     }
     if (depth === 0) {
       const snStr = trimmed.substring(start, currentPos - 1).trim();
-      const snVal = parseFloat(snStr);
-      if (!isNaN(snVal) && snVal > 0) sn = Math.round(snVal);
+      // Support sn*f or sn/f syntax where sn is Ableton signature numerator
+      if (snStr.toLowerCase().startsWith('sn')) {
+        const multiplierMatch = snStr.match(/^sn\*([0-9.]+)$/i);
+        const divisorMatch = snStr.match(/^sn\/([0-9.]+)$/i);
+        if (multiplierMatch) {
+          const multiplier = parseFloat(multiplierMatch[1]);
+          if (!isNaN(multiplier) && multiplier > 0 && signatureNumerator !== null) {
+            sn = Math.round(signatureNumerator * multiplier);
+          }
+        } else if (divisorMatch) {
+          const divisor = parseFloat(divisorMatch[1]);
+          if (!isNaN(divisor) && divisor > 0 && signatureNumerator !== null) {
+            sn = Math.round(signatureNumerator / divisor);
+          }
+        } else if (snStr.toLowerCase() === 'sn' && signatureNumerator !== null) {
+          // Just 'sn' means use Ableton signature numerator as-is
+          sn = signatureNumerator;
+        }
+      } else {
+        // Regular number
+        const snVal = parseFloat(snStr);
+        if (!isNaN(snVal) && snVal > 0) sn = Math.round(snVal);
+      }
     }
   }
   
@@ -2217,8 +2253,29 @@ function parseMethodChainSyntax(inputStr) {
     }
     if (depth === 0) {
       const sdStr = trimmed.substring(start, currentPos - 1).trim();
-      const sdVal = parseFloat(sdStr);
-      if (!isNaN(sdVal) && sdVal > 0) sd = Math.round(sdVal);
+      // Support sd*f or sd/f syntax where sd is Ableton signature denominator
+      if (sdStr.toLowerCase().startsWith('sd')) {
+        const multiplierMatch = sdStr.match(/^sd\*([0-9.]+)$/i);
+        const divisorMatch = sdStr.match(/^sd\/([0-9.]+)$/i);
+        if (multiplierMatch) {
+          const multiplier = parseFloat(multiplierMatch[1]);
+          if (!isNaN(multiplier) && multiplier > 0 && signatureDenominator !== null) {
+            sd = Math.round(signatureDenominator * multiplier);
+          }
+        } else if (divisorMatch) {
+          const divisor = parseFloat(divisorMatch[1]);
+          if (!isNaN(divisor) && divisor > 0 && signatureDenominator !== null) {
+            sd = Math.round(signatureDenominator / divisor);
+          }
+        } else if (sdStr.toLowerCase() === 'sd' && signatureDenominator !== null) {
+          // Just 'sd' means use Ableton signature denominator as-is
+          sd = signatureDenominator;
+        }
+      } else {
+        // Regular number
+        const sdVal = parseFloat(sdStr);
+        if (!isNaN(sdVal) && sdVal > 0) sd = Math.round(sdVal);
+      }
     }
   }
   

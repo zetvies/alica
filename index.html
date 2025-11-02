@@ -666,22 +666,82 @@
             // Parse .bpm(...)
             const bpmMatch = str.match(/\.bpm\(([^)]+)\)/);
             if (bpmMatch) {
-                const val = parseFloat(bpmMatch[1]);
-                if (!isNaN(val) && val > 0) bpm = val;
+                const bpmStr = bpmMatch[1].trim();
+                // Support tmp*f syntax where tmp is Ableton tempo
+                if (bpmStr.toLowerCase().startsWith('tmp')) {
+                    const multiplierMatch = bpmStr.match(/^tmp\*([0-9.]+)$/i);
+                    if (multiplierMatch && currentAbletonTempo !== null) {
+                        const multiplier = parseFloat(multiplierMatch[1]);
+                        if (!isNaN(multiplier) && multiplier > 0) {
+                            bpm = currentAbletonTempo * multiplier;
+                        }
+                    } else if (bpmStr.toLowerCase() === 'tmp' && currentAbletonTempo !== null) {
+                        // Just 'tmp' means use Ableton tempo as-is
+                        bpm = currentAbletonTempo;
+                    }
+                } else {
+                    // Regular number
+                    const val = parseFloat(bpmStr);
+                    if (!isNaN(val) && val > 0) bpm = val;
+                }
             }
             
             // Parse .sn(...)
             const snMatch = str.match(/\.sn\(([^)]+)\)/);
             if (snMatch) {
-                const val = parseFloat(snMatch[1]);
-                if (!isNaN(val) && val > 0) sn = Math.round(val);
+                const snStr = snMatch[1].trim();
+                // Support sn*f or sn/f syntax where sn is Ableton signature numerator
+                if (snStr.toLowerCase().startsWith('sn')) {
+                    const multiplierMatch = snStr.match(/^sn\*([0-9.]+)$/i);
+                    const divisorMatch = snStr.match(/^sn\/([0-9.]+)$/i);
+                    if (multiplierMatch && currentAbletonSignatureNumerator !== null) {
+                        const multiplier = parseFloat(multiplierMatch[1]);
+                        if (!isNaN(multiplier) && multiplier > 0) {
+                            sn = Math.round(currentAbletonSignatureNumerator * multiplier);
+                        }
+                    } else if (divisorMatch && currentAbletonSignatureNumerator !== null) {
+                        const divisor = parseFloat(divisorMatch[1]);
+                        if (!isNaN(divisor) && divisor > 0) {
+                            sn = Math.round(currentAbletonSignatureNumerator / divisor);
+                        }
+                    } else if (snStr.toLowerCase() === 'sn' && currentAbletonSignatureNumerator !== null) {
+                        // Just 'sn' means use Ableton signature numerator as-is
+                        sn = currentAbletonSignatureNumerator;
+                    }
+                } else {
+                    // Regular number
+                    const val = parseFloat(snStr);
+                    if (!isNaN(val) && val > 0) sn = Math.round(val);
+                }
             }
             
             // Parse .sd(...)
             const sdMatch = str.match(/\.sd\(([^)]+)\)/);
             if (sdMatch) {
-                const val = parseFloat(sdMatch[1]);
-                if (!isNaN(val) && val > 0) sd = Math.round(val);
+                const sdStr = sdMatch[1].trim();
+                // Support sd*f or sd/f syntax where sd is Ableton signature denominator
+                if (sdStr.toLowerCase().startsWith('sd')) {
+                    const multiplierMatch = sdStr.match(/^sd\*([0-9.]+)$/i);
+                    const divisorMatch = sdStr.match(/^sd\/([0-9.]+)$/i);
+                    if (multiplierMatch && currentAbletonSignatureDenominator !== null) {
+                        const multiplier = parseFloat(multiplierMatch[1]);
+                        if (!isNaN(multiplier) && multiplier > 0) {
+                            sd = Math.round(currentAbletonSignatureDenominator * multiplier);
+                        }
+                    } else if (divisorMatch && currentAbletonSignatureDenominator !== null) {
+                        const divisor = parseFloat(divisorMatch[1]);
+                        if (!isNaN(divisor) && divisor > 0) {
+                            sd = Math.round(currentAbletonSignatureDenominator / divisor);
+                        }
+                    } else if (sdStr.toLowerCase() === 'sd' && currentAbletonSignatureDenominator !== null) {
+                        // Just 'sd' means use Ableton signature denominator as-is
+                        sd = currentAbletonSignatureDenominator;
+                    }
+                } else {
+                    // Regular number
+                    const val = parseFloat(sdStr);
+                    if (!isNaN(val) && val > 0) sd = Math.round(val);
+                }
             }
             
             return { cycleId, tempo: bpm, sn, sd };
@@ -690,8 +750,22 @@
         // Update Ableton info display
         let currentBeatNumber = 0;
         let currentBarNumber = 0;
+        let currentAbletonTempo = null; // Store current Ableton tempo for tmp*f syntax
+        let currentAbletonSignatureNumerator = null; // Store for sn*f syntax
+        let currentAbletonSignatureDenominator = null; // Store for sd*f syntax
         
         function updateAbletonInfo(bpm, numerator, denominator) {
+            // Store tempo for tmp*f syntax support
+            if (bpm !== null && bpm !== undefined) {
+                currentAbletonTempo = bpm;
+            }
+            // Store signature for sn*f and sd*f syntax support
+            if (numerator !== null && numerator !== undefined) {
+                currentAbletonSignatureNumerator = numerator;
+            }
+            if (denominator !== null && denominator !== undefined) {
+                currentAbletonSignatureDenominator = denominator;
+            }
             const bpmDisplay = document.getElementById('bpmDisplay');
             const signatureDisplay = document.getElementById('signatureDisplay');
             
