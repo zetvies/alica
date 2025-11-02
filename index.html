@@ -705,6 +705,23 @@
             const isShift = e.shiftKey;
             const isAlt = e.altKey;
             
+            // Tab = insert 3 spaces
+            if (!isCtrl && !isAlt && e.key === 'Tab') {
+                e.preventDefault();
+                const start = commandArea.selectionStart;
+                const end = commandArea.selectionEnd;
+                const text = commandArea.value;
+                const spaces = '   '; // 3 spaces
+                
+                // Insert spaces at cursor position
+                commandArea.value = text.substring(0, start) + spaces + text.substring(end);
+                // Set cursor position after inserted spaces
+                commandArea.selectionStart = commandArea.selectionEnd = start + spaces.length;
+                // Trigger input event for highlighting
+                commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                return;
+            }
+            
             // Ctrl + Shift + S = playCycle for current track immediately
             // Check this FIRST to catch it before browser intercepts
             if (isCtrl && !isAlt && isShift && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
