@@ -442,20 +442,20 @@ function parseArrayRandomizer(str, context = {}) {
     }
     
     // If not a duration token, try parsing as note/number
-    // Try to parse as note token first (e.g., "c4", "c#3")
-    const noteMidi = noteTokenToMidi(item);
-    if (noteMidi !== null) {
-      result.push({ type: 'note', value: noteMidi });
-    } else {
-      // Try as MIDI note number (0-127)
-      const midiNum = parseInt(item, 10);
-      if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
-        result.push({ type: 'note', value: midiNum });
-      } else {
-        // Parse as regular number (for velocity, pan, etc.)
-        const num = parseFloat(item);
-        if (!isNaN(num)) {
-          result.push({ type: 'number', value: num });
+        // Try to parse as note token first (e.g., "c4", "c#3")
+        const noteMidi = noteTokenToMidi(item);
+        if (noteMidi !== null) {
+          result.push({ type: 'note', value: noteMidi });
+        } else {
+          // Try as MIDI note number (0-127)
+          const midiNum = parseInt(item, 10);
+          if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
+            result.push({ type: 'note', value: midiNum });
+          } else {
+            // Parse as regular number (for velocity, pan, etc.)
+            const num = parseFloat(item);
+            if (!isNaN(num)) {
+              result.push({ type: 'number', value: num });
         }
       }
     }
@@ -1131,7 +1131,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         
         // Try to evaluate as expression: bt, br, bt*2/3*4, br*2/3*4, or number*2/3*4
         const exprResult = evaluateExpression(norm, { bt, br });
-        
+
         if (mMul && mMul[1] !== '') {
           f = parseFloat(mMul[1]);
           if (type !== 'fit' && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs * f));
@@ -2501,13 +2501,13 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
       );
       // Update activeCycle entry
       if (newIntervalId) {
-        cycleEntry.intervalId = newIntervalId;
-        cycleEntry.function = () => playCycle(
-          update.cycleStr,
-          update.tempoParam,
-          update.signatureNumeratorParam,
-          update.signatureDenominatorParam
-        );
+      cycleEntry.intervalId = newIntervalId;
+      cycleEntry.function = () => playCycle(
+        update.cycleStr,
+        update.tempoParam,
+        update.signatureNumeratorParam,
+        update.signatureDenominatorParam
+      );
       }
       // Clear the pending update
       delete cycleEntry.pendingUpdate;
@@ -2686,7 +2686,7 @@ function onBarChange() {
           // Verify the intervalId matches (should always match since playCycle just returned it)
           if (playCycleEntry.intervalId === result) {
             console.log(`[QUEUE] Cycle '${item.id}' is active with intervalId ${result} (managed by playCycle)`);
-          } else {
+        } else {
             console.warn(`[QUEUE] Cycle '${item.id}' intervalId mismatch! Entry has ${playCycleEntry.intervalId}, playCycle returned ${result}`);
           }
         } else {
@@ -2958,10 +2958,10 @@ wss.on('connection', (ws) => {
             const updateResult = updateCycleById(
               playCycleId,
               cycleStrInput,
-              data.tempo || null,
-              data.signatureNumerator || null,
-              data.signatureDenominator || null
-            );
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null
+          );
             if (updateResult) {
               console.log(`[WS] playCycle called - updated existing cycle '${playCycleId}'`);
             } else {
@@ -2971,14 +2971,14 @@ wss.on('connection', (ws) => {
             // Cycle doesn't exist - create new one
             const playCycleIntervalId = playCycle(
               cycleStrInput,
-              data.tempo || null,
-              data.signatureNumerator || null,
-              data.signatureDenominator || null
+                  data.tempo || null,
+                  data.signatureNumerator || null,
+                  data.signatureDenominator || null
             );
             
             if (playCycleIntervalId !== null) {
               console.log(`[WS] playCycle called - created new cycle '${playCycleId}' (from ${parsedCycle ? 'new syntax' : 'provided/generated'})`);
-            } else {
+          } else {
               console.log('[WS] playCycle called - failed to create cycle');
             }
           }

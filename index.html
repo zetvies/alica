@@ -133,8 +133,8 @@
         <span id="signatureDisplay">Signature: --/--</span>
         <div id="beatSequencer"></div>
         </div>
-    <div id="hint">
-        <strong>Shortcuts:</strong> Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
+        <div id="hint">
+        <strong>Shortcuts:</strong> Ctrl+/ (toggle comment), Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
         For Enter: no Shift = current track, + Shift = selected lines
         </div>
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
@@ -241,8 +241,13 @@
             const isShift = e.shiftKey;
             const isAlt = e.altKey;
             
+            // Ctrl + / = toggle comment on selected lines
+            if (isCtrl && !isAlt && !isShift && (e.key === '/' || e.key === '?')) {
+                e.preventDefault();
+                toggleComment();
+            }
             // Ctrl + S = save whole track (queue playCycle for current track)
-            if (isCtrl && !isAlt && !isShift && e.key === 's') {
+            else if (isCtrl && !isAlt && !isShift && e.key === 's') {
                 e.preventDefault();
                 queuePlayCycleForCurrentTrack();
             }
@@ -284,6 +289,78 @@
             const end = commandArea.selectionEnd;
             if (start === end) return null; // No selection
             return commandArea.value.substring(start, end);
+        }
+        
+        // Toggle comment on selected lines
+        function toggleComment() {
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            
+            // Find the lines that contain the selection
+            let lineStart = start;
+            let lineEnd = end;
+            
+            // Find start of first line containing selection
+            while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
+                lineStart--;
+            }
+            
+            // Find end of last line containing selection
+            while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
+                lineEnd++;
+            }
+            
+            // Get all lines in the selection
+            const selectedText = fullText.substring(lineStart, lineEnd);
+            const lines = selectedText.split('\n');
+            
+            // Determine if all selected lines are commented (to decide toggle direction)
+            let allCommented = true;
+            let someCommented = false;
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed && !trimmed.startsWith('//')) {
+                    allCommented = false;
+                } else if (trimmed && trimmed.startsWith('//')) {
+                    someCommented = true;
+                }
+            }
+            
+            // Process each line
+            const processedLines = lines.map(line => {
+                const trimmed = line.trim();
+                
+                // Empty line - return as-is
+                if (!trimmed) return line;
+                
+                // If line starts with //, remove comment
+                if (trimmed.startsWith('//')) {
+                    // Remove // and any space after it, but preserve indentation
+                    const commentIndex = line.indexOf('//');
+                    const afterComment = line.substring(commentIndex + 2).trimStart();
+                    const beforeComment = line.substring(0, commentIndex);
+                    return beforeComment + afterComment;
+                } else {
+                    // Add // at the start (preserve indentation)
+                    const leadingWhitespace = line.match(/^\s*/)[0];
+                    const restOfLine = line.substring(leadingWhitespace.length);
+                    return leadingWhitespace + '//' + restOfLine;
+                }
+            });
+            
+            // Replace the selected lines
+            const newText = fullText.substring(0, lineStart) + 
+                          processedLines.join('\n') + 
+                          fullText.substring(lineEnd);
+            
+            // Update textarea
+            commandArea.value = newText;
+            
+            // Restore selection (adjust for length changes)
+            const lengthDiff = newText.length - fullText.length;
+            commandArea.selectionStart = lineStart;
+            commandArea.selectionEnd = lineEnd + lengthDiff;
         }
         
         // Get selected lines or line containing cursor
@@ -343,6 +420,23 @@
             }
         }
         
+        // Remove comments (lines starting with //) from text
+        function removeComments(text) {
+            if (!text) return text;
+            const lines = text.split('\n');
+            const filteredLines = lines.map(line => {
+                // Find // on the line and remove everything from // to end of line
+                const commentIndex = line.indexOf('//');
+                if (commentIndex !== -1) {
+                    // Check if // is not inside quotes or within another token
+                    // Simple check: if // appears, remove from that position to end of line
+                    return line.substring(0, commentIndex);
+                }
+                return line;
+            });
+            return filteredLines.join('\n');
+        }
+        
         // Find the t(...).play(...) wrapper that contains the cursor/selection
         function findCurrentTrack() {
             const fullText = commandArea.value;
@@ -393,6 +487,11 @@
                 searchStart = tIndex + 2;
             }
             
+            // Remove comments from the found track
+            if (bestMatch) {
+                bestMatch = removeComments(bestMatch);
+            }
+            
             return bestMatch;
         }
         
@@ -430,12 +529,13 @@
             
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
-            const parsed = parseMethodChain(fullCommand);
+            const cleanCommand = removeComments(fullCommand);
+            const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
                 action: 'addCycleToQueue',
                 id: null,
-                cycleStr: fullCommand,
+                cycleStr: cleanCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -450,11 +550,12 @@
                 return;
             }
             
-            const parsed = parseMethodChain(track);
+            const cleanTrack = removeComments(track);
+            const parsed = parseMethodChain(cleanTrack);
             sendToServer({
                 action: 'addCycleToQueue',
                 id: null,
-                cycleStr: track,
+                cycleStr: cleanTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -471,12 +572,13 @@
             
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
-            const parsed = parseMethodChain(fullCommand);
+            const cleanCommand = removeComments(fullCommand);
+            const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
                 action: 'addTrackToQueue',
                 id: null,
-                cycleStr: fullCommand,
+                cycleStr: cleanCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -491,11 +593,12 @@
                 return;
             }
             
-            const parsed = parseMethodChain(track);
+            const cleanTrack = removeComments(track);
+            const parsed = parseMethodChain(cleanTrack);
             sendToServer({
                 action: 'addTrackToQueue',
                 id: null,
-                cycleStr: track,
+                cycleStr: cleanTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -512,12 +615,13 @@
             
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
-            const parsed = parseMethodChain(fullCommand);
+            const cleanCommand = removeComments(fullCommand);
+            const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
                 action: 'playCycle',
                 id: null,
-                cycleStr: fullCommand,
+                cycleStr: cleanCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -532,11 +636,12 @@
                 return;
             }
             
-            const parsed = parseMethodChain(track);
+            const cleanTrack = removeComments(track);
+            const parsed = parseMethodChain(cleanTrack);
             sendToServer({
                 action: 'playCycle',
                 id: null,
-                cycleStr: track,
+                cycleStr: cleanTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -553,12 +658,13 @@
             
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
-            const parsed = parseMethodChain(fullCommand);
+            const cleanCommand = removeComments(fullCommand);
+            const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
                 action: 'playTrack',
                 id: null,
-                cycleStr: fullCommand,
+                cycleStr: cleanCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -573,11 +679,12 @@
                 return;
             }
             
-            const parsed = parseMethodChain(track);
+            const cleanTrack = removeComments(track);
+            const parsed = parseMethodChain(cleanTrack);
             sendToServer({
                 action: 'playTrack',
                 id: null,
-                cycleStr: track,
+                cycleStr: cleanTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
