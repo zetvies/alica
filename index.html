@@ -490,28 +490,29 @@
                     <div class="syntaxSectionTitle">Syntax:</div>
                     <div id="hintSyntax">
                         <div class="syntaxSection">
-                            <div class="syntaxChain">t(cycleId).bpm(bpm).sn(num).sd(den).play([...])</div>
+                            <div class="syntaxChain">t(cycleId).bpm(bpm).sn(num).sd(den).ds(delay).play([...])</div>
                             <div class="syntaxDesc">
                                 <strong>t(cycleId):</strong> Track identifier (alphanumeric with _/-)<br>
                                 <strong>.bpm(bpm):</strong> Override tempo (number or tmp*2/3*4)<br>
                                 <strong>.sn(num):</strong> Time signature numerator (number or sn*2/3*4)<br>
                                 <strong>.sd(den):</strong> Time signature denominator (number or sd*2/3*4)<br>
+                                <strong>.ds(delay):</strong> Delay start - wait before starting cycle (bt, br, bt*2, br*2, etc. or milliseconds). Can also come after .play()<br>
                                 <strong>.play([...]):</strong> Sequence/automation blocks to play
                             </div>
-                            <div class="syntaxExample">t(main).bpm(120).sn(4).sd(4).play([n(60)^4])</div>
+                            <div class="syntaxExample">t(main).bpm(120).sn(4).sd(4).ds(bt*2).play([n(60)^4])</div>
+                            <div class="syntaxExample">t(automation).play([n(60) n(65)].c(2)).ds(bt*2)</div>
                         </div>
                         
                         <div class="syntaxSection">
-                            <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).ds(delay).pm(prob)</div>
+                            <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).pm(prob)</div>
                             <div class="syntaxDesc">
                                 <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
                                 <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat)<br>
                                 <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
                                 <strong>.co(cutoff):</strong> Duration token for cutoff: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
-                                <strong>.ds(delay):</strong> Delay start - duration in ms or tokens: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
                                 <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence
                             </div>
-                            <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).ds(bt/2).pm(0.2)</div>
+                            <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).pm(0.2)</div>
                         </div>
                         
                         <div class="syntaxSection">

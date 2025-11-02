@@ -384,6 +384,66 @@ Play multiple sequences in a cycle with block modifiers:
 [n(r).v(r).nRange(c3,c5)]^16.t(fit).c(1).p(m0.3)
 ```
 
+### Track-Level Delay Start (`.ds(...)`)
+
+Delay the start of a track or cycle by a specified duration. The delay is applied at the track/cycle level, meaning the entire track waits before starting to play.
+
+**Syntax:**
+```
+t(cycleId).ds(delay).play([...])
+// or
+t(cycleId).play([...]).ds(delay)
+```
+
+**Delay Values:**
+- Number: Duration in milliseconds (e.g., `ds(500)`)
+- `bt`: One beat delay
+- `br`: One bar delay
+- `bt*n`: Beat delay multiplied by number (e.g., `bt*2`, `bt*3`)
+- `bt/n`: Beat delay divided by number (e.g., `bt/2`, `bt/4`)
+- `br*n`: Bar delay multiplied by number (e.g., `br*2`, `br*3`)
+- `br/n`: Bar delay divided by number (e.g., `br/2`, `br/4`)
+- Complex expressions: `bt*2/3*4` (supports chained operations)
+
+**How It Works:**
+- For cycles: The delay is calculated from the start of each bar (beat 1)
+- `ds(bt*2)` means: wait 2 beats, so the cycle starts at beat 3
+- `ds(bt)` means: wait 1 beat, so the cycle starts at beat 2
+- The delay applies to each cycle iteration
+
+**Examples:**
+```
+// Start cycle at beat 3 (wait 2 beats)
+t(automation).ds(bt*2).play(
+  [n(60) n(65)].c(2)
+)
+
+// Start cycle after one bar delay
+t(melody).ds(br).play(
+  [n(60) n(62) n(64) n(65)].c(1)
+)
+
+// Start cycle at beat 2 (wait 1 beat)
+t(bass).ds(bt).play(
+  [n(48) n(52)].c(3)
+)
+
+// Delay with method chaining syntax (ds can come before or after .play)
+t(lead).play(
+  [n(67) n(69) n(71)]
+).ds(bt*2)
+
+// Complex delay expression
+t(pad).ds(bt*2/3*4).play([n(60) n(64) n(67)].c(4))
+```
+
+**Important Notes:**
+- Delay is calculated relative to the start of each bar (beat 1)
+- For cycles, each iteration applies the delay
+- When updating a cycle with `ds()`, the old cycle is cleared immediately (not at the end of the current iteration)
+- Delay tokens (`bt`, `br`) support multipliers and complex expressions
+- The delay happens before any sequences are played
+
 ---
 
 ## Duration Tokens
