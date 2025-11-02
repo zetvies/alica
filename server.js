@@ -700,6 +700,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   processedSequence = tempSequence;
   
   // Expand chord syntax: chord(root-quality)
+  // BUT skip chords inside angle brackets (they should be parsed by parseChord instead)
   // Handle nested parentheses properly
   tempSequence = '';
   i = 0;
@@ -709,6 +710,32 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       tempSequence += processedSequence.substring(i);
       break;
     }
+    
+    // Check if this chord is inside angle brackets - if so, skip expansion
+    // Need to check from the start to properly track nested angle brackets
+    let angleDepth = 0;
+    for (let k = 0; k < chordIndex; k++) {
+      if (processedSequence[k] === '<') angleDepth++;
+      else if (processedSequence[k] === '>') angleDepth--;
+    }
+    console.log('[EXPAND] Found chord at', chordIndex, 'angleDepth:', angleDepth, 'context:', processedSequence.substring(Math.max(0, chordIndex - 20), Math.min(processedSequence.length, chordIndex + 30)));
+    if (angleDepth > 0) {
+      // Inside angle brackets, don't expand - let parseChord handle it
+      // Find the matching closing parenthesis for chord(...) first
+      let parenCount = 1;
+      let j = chordIndex + 6; // "chord(".length
+      while (j < processedSequence.length && parenCount > 0) {
+        if (processedSequence[j] === '(') parenCount++;
+        if (processedSequence[j] === ')') parenCount--;
+        j++;
+      }
+      // Include the full chord(...) without expansion
+      console.log('[EXPAND] Skipping expansion, preserving:', processedSequence.substring(i, j));
+      tempSequence += processedSequence.substring(i, j);
+      i = j;
+      continue;
+    }
+    
     tempSequence += processedSequence.substring(i, chordIndex);
     
     // Find the matching closing parenthesis for chord(
@@ -763,6 +790,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     
     // Find the matching closing parenthesis for n(...)
     let parenCount = 0;
+    let angleCount = 0;
     let chunkEnd = nIndex + 2; // After "n("
     let i = chunkEnd;
     
@@ -770,12 +798,13 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     while (i < expandedSequence.length) {
       if (expandedSequence[i] === '(') parenCount++;
       else if (expandedSequence[i] === ')') {
-        if (parenCount === 0) {
+        if (parenCount === 0 && angleCount === 0) {
           chunkEnd = i + 1;
           break;
         }
         parenCount--;
-      }
+      } else if (expandedSequence[i] === '<') angleCount++;
+      else if (expandedSequence[i] === '>') angleCount--;
       i++;
     }
     
@@ -971,22 +1000,24 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   
   for (let idx = 0; idx < chunks.length; idx++) {
     const chunk = chunks[idx];
-    // Extract note argument, handling nested parentheses (e.g., n(<chord(c-maj9)>))
+    // Extract note argument, handling nested parentheses and angle brackets (e.g., n(<chord(c-maj9)>))
     let noteArg = null;
     const nIndex = chunk.indexOf('n(');
     if (nIndex !== -1) {
       let parenCount = 0;
+      let angleCount = 0;
       let startIdx = nIndex + 2; // After "n("
       let i = startIdx;
       while (i < chunk.length) {
         if (chunk[i] === '(') parenCount++;
         else if (chunk[i] === ')') {
-          if (parenCount === 0) {
+          if (parenCount === 0 && angleCount === 0) {
             noteArg = chunk.substring(startIdx, i).trim();
             break;
           }
           parenCount--;
-        }
+        } else if (chunk[i] === '<') angleCount++;
+        else if (chunk[i] === '>') angleCount--;
         i++;
       }
     }
@@ -1045,10 +1076,13 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     // Check for chord syntax: n(<c4,e4,g6>)
     let isDirectChord = false;
     let directChordNotes = null;
+    console.log('[PARSE] Extracted noteArg:', JSON.stringify(noteArg), 'from chunk:', chunk.substring(0, 50));
     const chordMatch = parseChord(noteArg);
+    console.log('[PARSE] parseChord result:', chordMatch);
     if (chordMatch) {
       isDirectChord = true;
       directChordNotes = chordMatch;
+      console.log('[CHORD] Direct chord detected, noteArg:', noteArg, 'chordNotes:', directChordNotes);
     }
     
     // Check if note argument is 'r' or 'r.o{...}' for randomization
@@ -1557,6 +1591,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       // Handle direct chord: n(<c4,e4,g6>)
       if (isDirectChord && directChordNotes) {
         useMidiNotes = [...directChordNotes];
+        console.log('[CHORD] Setting useMidiNotes from direct chord:', useMidiNotes);
       }
       // Handle single note (non-randomized)
       else if (midiNote !== null) {
@@ -1956,6 +1991,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       
       // Play all notes in the chord simultaneously (or single note)
       // Play on all channels simultaneously if channelArray is used
+      console.log('[PLAY] useMidiNotes.length:', useMidiNotes.length, 'useMidiNotes:', useMidiNotes, 'isDirectChord:', isDirectChord, 'directChordNotes:', directChordNotes);
       if (useMidiNotes.length > 0) {
         const notePromises = [];
         // For each MIDI note, send to all channels simultaneously
