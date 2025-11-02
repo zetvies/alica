@@ -2087,10 +2087,141 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
 }
 
 
+// Parse new method chaining syntax: t(cycleId).bpm(80).sn(4).sd(8).play([...])
+// Returns: { cycleId, tempo, signatureNumerator, signatureDenominator, playContent } or null if doesn't match
+function parseMethodChainSyntax(inputStr) {
+  if (!inputStr || typeof inputStr !== 'string') return null;
+  
+  const trimmed = inputStr.trim();
+  
+  // Must start with t(
+  if (!trimmed.startsWith('t(')) return null;
+  
+  // Find the end of t(...)
+  let pos = 2; // After 't('
+  let depth = 1;
+  while (pos < trimmed.length && depth > 0) {
+    if (trimmed[pos] === '(') depth++;
+    else if (trimmed[pos] === ')') depth--;
+    pos++;
+  }
+  if (depth !== 0) return null; // Unmatched parentheses
+  
+  const cycleId = trimmed.substring(2, pos - 1).trim();
+  
+  // Validate cycleId is alphanumeric (and allow underscores/hyphens)
+  if (!/^[a-zA-Z0-9_-]+$/.test(cycleId)) {
+    console.warn(`[PARSE] Invalid cycleId '${cycleId}': must be alphanumeric with underscores/hyphens`);
+    return null;
+  }
+  
+  // Parse optional parameters: .bpm(...).sn(...).sd(...)
+  let bpm = null, sn = null, sd = null;
+  let currentPos = pos;
+  
+  // Parse .bpm(...)
+  if (trimmed.substring(currentPos).startsWith('.bpm(')) {
+    currentPos += 5; // Skip '.bpm('
+    depth = 1;
+    let start = currentPos;
+    while (currentPos < trimmed.length && depth > 0) {
+      if (trimmed[currentPos] === '(') depth++;
+      else if (trimmed[currentPos] === ')') depth--;
+      currentPos++;
+    }
+    if (depth === 0) {
+      const bpmStr = trimmed.substring(start, currentPos - 1).trim();
+      const bpmVal = parseFloat(bpmStr);
+      if (!isNaN(bpmVal) && bpmVal > 0) bpm = bpmVal;
+    }
+  }
+  
+  // Parse .sn(...)
+  if (trimmed.substring(currentPos).startsWith('.sn(')) {
+    currentPos += 4; // Skip '.sn('
+    depth = 1;
+    let start = currentPos;
+    while (currentPos < trimmed.length && depth > 0) {
+      if (trimmed[currentPos] === '(') depth++;
+      else if (trimmed[currentPos] === ')') depth--;
+      currentPos++;
+    }
+    if (depth === 0) {
+      const snStr = trimmed.substring(start, currentPos - 1).trim();
+      const snVal = parseFloat(snStr);
+      if (!isNaN(snVal) && snVal > 0) sn = Math.round(snVal);
+    }
+  }
+  
+  // Parse .sd(...)
+  if (trimmed.substring(currentPos).startsWith('.sd(')) {
+    currentPos += 4; // Skip '.sd('
+    depth = 1;
+    let start = currentPos;
+    while (currentPos < trimmed.length && depth > 0) {
+      if (trimmed[currentPos] === '(') depth++;
+      else if (trimmed[currentPos] === ')') depth--;
+      currentPos++;
+    }
+    if (depth === 0) {
+      const sdStr = trimmed.substring(start, currentPos - 1).trim();
+      const sdVal = parseFloat(sdStr);
+      if (!isNaN(sdVal) && sdVal > 0) sd = Math.round(sdVal);
+    }
+  }
+  
+  // Must end with .play(...)
+  if (!trimmed.substring(currentPos).startsWith('.play(')) return null;
+  currentPos += 6; // Skip '.play('
+  
+  // Extract play content - everything until the final closing paren
+  // Count parentheses to find the matching closing paren for .play(
+  depth = 1;
+  let start = currentPos;
+  while (currentPos < trimmed.length && depth > 0) {
+    if (trimmed[currentPos] === '(') depth++;
+    else if (trimmed[currentPos] === ')') depth--;
+    currentPos++;
+  }
+  if (depth !== 0) return null; // Unmatched parentheses
+  
+  const playContent = trimmed.substring(start, currentPos - 1).trim();
+  
+  // Must be at end of string (or only whitespace)
+  if (currentPos < trimmed.length && trimmed.substring(currentPos).trim().length > 0) {
+    return null; // Extra content after .play(...)
+  }
+  
+  return {
+    cycleId: cycleId,
+    tempo: bpm,
+    signatureNumerator: sn,
+    signatureDenominator: sd,
+    playContent: playContent
+  };
+}
+
 // Play multiple sequences/automation in a cycle with per-block modifiers.
-// Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [a(7).from(0).to(127)].t(beat).c(1)
+// Supports two formats:
+// 1. New: t(cycleId).bpm(80).sn(4).sd(8).play([...])
+// 2. Legacy: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [a(7).from(0).to(127)].t(beat).c(1)
 async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
   if (!cycleStr || typeof cycleStr !== 'string') return;
+  
+  // Try to parse as new method chaining syntax
+  const parsed = parseMethodChainSyntax(cycleStr);
+  let useCycleStr = cycleStr;
+  let useTempo = tempoParam;
+  let useSignatureNumerator = signatureNumeratorParam;
+  let useSignatureDenominator = signatureDenominatorParam;
+  
+  if (parsed) {
+    // New syntax detected
+    useCycleStr = parsed.playContent;
+    useTempo = parsed.tempo !== null ? parsed.tempo : tempoParam;
+    useSignatureNumerator = parsed.signatureNumerator !== null ? parsed.signatureNumerator : signatureNumeratorParam;
+    useSignatureDenominator = parsed.signatureDenominator !== null ? parsed.signatureDenominator : signatureDenominatorParam;
+  }
   
   // Capture global variables before parameter shadowing (using closure)
   const globalTempo = tempo;
@@ -2098,15 +2229,15 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
   const globalSignatureDenominator = signatureDenominator;
   
   // Use provided parameters or fall back to server variables
-  const useTempo = tempoParam !== null ? tempoParam : globalTempo;
-  const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : globalSignatureNumerator;
-  const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : globalSignatureDenominator;
+  useTempo = useTempo !== null ? useTempo : globalTempo;
+  useSignatureNumerator = useSignatureNumerator !== null ? useSignatureNumerator : globalSignatureNumerator;
+  useSignatureDenominator = useSignatureDenominator !== null ? useSignatureDenominator : globalSignatureDenominator;
   // Match blocks: [sequence or automation] then optional .t(...).c(...).co(...).pm(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|pm)\([^)]*\))*)/g;
   const modifierRegex = /\.(t|c|co|pm)\(([^)]+)\)/g;
   let m;
   const plays = [];
-  while ((m = blockRegex.exec(cycleStr)) !== null) {
+  while ((m = blockRegex.exec(useCycleStr)) !== null) {
     const content = m[1].trim();
     const mods = m[2] || '';
     let type = 'fit';
@@ -2168,9 +2299,29 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
 }
 
 // Play a track in a cycle (repeatedly at bar intervals)
+// Supports two formats:
+// 1. New: t(cycleId).bpm(80).sn(4).sd(8).play([...])
+// 2. Legacy: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [a(7).from(0).to(127)].t(beat).c(1)
 // Returns interval ID that can be cleared with clearInterval()
 function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
   if (!cycleStr || typeof cycleStr !== 'string') return null;
+  
+  // Try to parse as new method chaining syntax
+  const parsed = parseMethodChainSyntax(cycleStr);
+  let useCycleStr = cycleStr;
+  let useCycleId = null;
+  let useTempo = tempoParam;
+  let useSignatureNumerator = signatureNumeratorParam;
+  let useSignatureDenominator = signatureDenominatorParam;
+  
+  if (parsed) {
+    // New syntax detected
+    useCycleStr = parsed.playContent;
+    useCycleId = parsed.cycleId;
+    useTempo = parsed.tempo !== null ? parsed.tempo : tempoParam;
+    useSignatureNumerator = parsed.signatureNumerator !== null ? parsed.signatureNumerator : signatureNumeratorParam;
+    useSignatureDenominator = parsed.signatureDenominator !== null ? parsed.signatureDenominator : signatureDenominatorParam;
+  }
   
   // Capture global variables before parameter shadowing
   const globalTempo = tempo;
@@ -2178,16 +2329,19 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   const globalSignatureDenominator = signatureDenominator;
   
   // Use provided parameters or fall back to server variables
-  const useTempo = tempoParam !== null ? tempoParam : globalTempo;
-  const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : globalSignatureNumerator;
-  const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : globalSignatureDenominator;
+  useTempo = useTempo !== null ? useTempo : globalTempo;
+  useSignatureNumerator = useSignatureNumerator !== null ? useSignatureNumerator : globalSignatureNumerator;
+  useSignatureDenominator = useSignatureDenominator !== null ? useSignatureDenominator : globalSignatureDenominator;
   
   // Calculate bar duration in milliseconds
   const beatsPerBar = useSignatureNumerator;
   const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
   
+  // Use parsed cycleId if available, otherwise use provided id or generate one
+  const finalCycleId = useCycleId || (tempoParam !== null ? 'cycle_' + Date.now() : null);
+  
   // Call playTrack immediately, then set up interval
-  playTrack(cycleStr, tempoParam, signatureNumeratorParam, signatureDenominatorParam);
+  playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
   
   // Set up interval to call playTrack at bar duration intervals
   const intervalId = setInterval(() => {
@@ -2217,8 +2371,21 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
       return; // Exit without playing current cycle
     }
     // Normal play
-    playTrack(cycleStr, tempoParam, signatureNumeratorParam, signatureDenominatorParam);
+    playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
   }, barDurationMs);
+  
+  // If we have a cycleId from new syntax, return it with the intervalId for tracking
+  if (finalCycleId && intervalId) {
+    // Store the cycleId in activeCycle if not already there
+    const existingIndex = activeCycle.findIndex(c => c.id === finalCycleId);
+    if (existingIndex === -1) {
+      activeCycle.push({
+        id: finalCycleId,
+        function: () => playCycle(cycleStr, useTempo, useSignatureNumerator, useSignatureDenominator),
+        intervalId: intervalId
+      });
+    }
+  }
   
   return intervalId;
 }
@@ -2570,9 +2737,19 @@ wss.on('connection', (ws) => {
           break;
           
         case 'playCycle':
-          const playCycleId = data.id || 'cycle_' + Date.now();
+          // Try to extract cycleId from new syntax or use provided id
+          let playCycleId = data.id;
+          const cycleStrInput = data.cycleStr || "[n(70)^4].c(2)";
+          const parsedCycle = parseMethodChainSyntax(cycleStrInput);
+          if (parsedCycle) {
+            playCycleId = parsedCycle.cycleId;
+          }
+          if (!playCycleId) {
+            playCycleId = 'cycle_' + Date.now();
+          }
+          
           const playCycleIntervalId = playCycle(
-            data.cycleStr || "[n(70)^4].c(2)",
+            cycleStrInput,
             data.tempo || null,
             data.signatureNumerator || null,
             data.signatureDenominator || null
@@ -2586,7 +2763,7 @@ wss.on('connection', (ws) => {
               activeCycle[existingIndex] = {
                 id: playCycleId,
                 function: () => playCycle(
-                  data.cycleStr || "[n(70)^4].c(2)",
+                  cycleStrInput,
                   data.tempo || null,
                   data.signatureNumerator || null,
                   data.signatureDenominator || null
@@ -2594,17 +2771,20 @@ wss.on('connection', (ws) => {
                 intervalId: playCycleIntervalId
               };
             } else {
-              // Add new cycle to activeCycle
-              activeCycle.push({
-                id: playCycleId,
-                function: () => playCycle(
-                  data.cycleStr || "[n(70)^4].c(2)",
-                  data.tempo || null,
-                  data.signatureNumerator || null,
-                  data.signatureDenominator || null
-                ),
-                intervalId: playCycleIntervalId
-              });
+              // Add new cycle to activeCycle (if not already added by playCycle)
+              const alreadyAdded = activeCycle.find(c => c.id === playCycleId);
+              if (!alreadyAdded) {
+                activeCycle.push({
+                  id: playCycleId,
+                  function: () => playCycle(
+                    cycleStrInput,
+                    data.tempo || null,
+                    data.signatureNumerator || null,
+                    data.signatureDenominator || null
+                  ),
+                  intervalId: playCycleIntervalId
+                });
+              }
             }
             console.log(`[WS] playCycle called - added to activeCycle with id '${playCycleId}'`);
           } else {
@@ -2613,11 +2793,20 @@ wss.on('connection', (ws) => {
           break;
           
         case 'addTrackToQueue':
-          const trackId = data.id || 'track_' + Date.now();
+          // Try to extract cycleId from new syntax or use provided id
+          let trackId = data.id;
+          const trackStrInput = data.cycleStr || "[n(60)^2 n(65)^2].c(1)";
+          const parsedTrack = parseMethodChainSyntax(trackStrInput);
+          if (parsedTrack) {
+            trackId = parsedTrack.cycleId;
+          }
+          if (!trackId) {
+            trackId = 'track_' + Date.now();
+          }
           queue.push({
             id: trackId,
             function: () => playTrack(
-              data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
+              trackStrInput,
               data.tempo || null,
               data.signatureNumerator || null,
               data.signatureDenominator || null
@@ -2627,17 +2816,26 @@ wss.on('connection', (ws) => {
           break;
           
         case 'addCycleToQueue':
-          const cycleId = data.id || 'cycle_' + Date.now();
+          // Try to extract cycleId from new syntax or use provided id
+          let cycleQueueId = data.id;
+          const cycleQueueStrInput = data.cycleStr || "[n(70)^4].c(2)";
+          const parsedCycleQueue = parseMethodChainSyntax(cycleQueueStrInput);
+          if (parsedCycleQueue) {
+            cycleQueueId = parsedCycleQueue.cycleId;
+          }
+          if (!cycleQueueId) {
+            cycleQueueId = 'cycle_' + Date.now();
+          }
           queue.push({
-            id: cycleId,
+            id: cycleQueueId,
             function: () => playCycle(
-              data.cycleStr || "[n(70)^4].c(2)",
+              cycleQueueStrInput,
               data.tempo || null,
               data.signatureNumerator || null,
               data.signatureDenominator || null
             )
           });
-          console.log(`[WS] Added cycle '${cycleId}' to queue`);
+          console.log(`[WS] Added cycle '${cycleQueueId}' to queue`);
           break;
           
         case 'updateCycleById':

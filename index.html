@@ -77,10 +77,11 @@
         <div class="status disconnected" id="status">Disconnected</div>
         
         <div class="input-group">
-            <label for="cycleStr">Sequence/Automation String:</label>
-            <input type="text" id="cycleStr" placeholder='e.g., "[n(60)^2 n(65)^2].c(1)"' value='[n(60)^2 n(65)^2].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2)].c(1)'>
+            <label for="cycleStr">Track String (New Syntax or Legacy):</label>
+            <input type="text" id="cycleStr" placeholder='t(cycleId).bpm(80).sn(4).sd(8).play([...])' value='t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1) [a(9).from(127).to(0).e(easeInOut)].c(1) [a(8).from(0).to(127).e(easeInOut)].c(1))'>
             <small style="color: #888; font-size: 11px;">
-              <strong>Example:</strong> Mix sequences and automation: <code style="background: #333; padding: 2px 4px; border-radius: 2px;">[n(c3) n(c3)].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2).e(easeInOut)].c(1)</code>
+              <strong>New Syntax:</strong> <code style="background: #333; padding: 2px 4px; border-radius: 2px;">t(cycleId).bpm(80).sn(4).sd(8).play([n(...)].c(1) [a(...)].c(1))</code><br>
+              <strong>Legacy:</strong> <code style="background: #333; padding: 2px 4px; border-radius: 2px;">[n(c3) n(c3)].c(1) [a(7).from(0).to(127)].c(1)</code>
             </small>
         </div>
         
@@ -115,9 +116,10 @@
         <hr style="margin: 20px 0; border-color: #4a4a4a;">
         
         <h3 style="margin-top: 0;">Example Cycles</h3>
-        <button onclick="loadExample1()" style="background-color: #9c27b0;">📝 Example 1: Notes + Volume Fade</button>
-        <button onclick="loadExample2()" style="background-color: #9c27b0;">📝 Example 2: Automation Only</button>
-        <button onclick="loadExample3()" style="background-color: #9c27b0;">📝 Example 3: Complex Mix</button>
+        <button onclick="loadExample1()" style="background-color: #9c27b0;">📝 Example 1: Notes + Volume Fade (New Syntax)</button>
+        <button onclick="loadExample2()" style="background-color: #9c27b0;">📝 Example 2: Automation Only (New Syntax)</button>
+        <button onclick="loadExample3()" style="background-color: #9c27b0;">📝 Example 3: Complex Mix (New Syntax)</button>
+        <button onclick="loadExample4()" style="background-color: #607d8b;">📝 Example 4: Legacy Syntax</button>
         
         <hr style="margin: 20px 0; border-color: #4a4a4a;">
         
@@ -246,7 +248,18 @@
         
         function sendAddTrackToQueue() {
             const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
-            const cycleId = document.getElementById('cycleId').value || 'track_' + Date.now();
+            // Try to extract cycleId from new syntax
+            let cycleId = document.getElementById('cycleId').value;
+            if (cycleStr.trim().startsWith('t(')) {
+                // New syntax detected - extract cycleId from t(...)
+                const match = cycleStr.match(/^t\(([^)]+)\)/);
+                if (match) {
+                    cycleId = match[1].trim();
+                }
+            }
+            if (!cycleId) {
+                cycleId = 'track_' + Date.now();
+            }
             ws.send(JSON.stringify({
                 action: 'addTrackToQueue',
                 id: cycleId,
@@ -259,7 +272,18 @@
         
         function sendAddCycleToQueue() {
             const { cycleStr, tempo, signatureNum, signatureDen } = getParams();
-            const cycleId = document.getElementById('cycleId').value || 'cycle_' + Date.now();
+            // Try to extract cycleId from new syntax
+            let cycleId = document.getElementById('cycleId').value;
+            if (cycleStr.trim().startsWith('t(')) {
+                // New syntax detected - extract cycleId from t(...)
+                const match = cycleStr.match(/^t\(([^)]+)\)/);
+                if (match) {
+                    cycleId = match[1].trim();
+                }
+            }
+            if (!cycleId) {
+                cycleId = 'cycle_' + Date.now();
+            }
             ws.send(JSON.stringify({
                 action: 'addCycleToQueue',
                 id: cycleId,
@@ -299,24 +323,31 @@
         
         // Example cycles
         function loadExample1() {
-            // Simple: Notes with volume fade in/out
-            const example = '[n(c3) n(c3)].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2).e(easeInOut)].c(1)';
+            // Simple: Notes with volume fade in/out (new syntax)
+            const example = 't(example1).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2).e(easeInOut)].c(1))';
             document.getElementById('cycleStr').value = example;
-            console.log('Loaded Example 1: Notes with volume fade');
+            console.log('Loaded Example 1: Notes with volume fade (new syntax)');
         }
         
         function loadExample2() {
-            // Automation only: Filter sweep
-            const example = '[a(74).from(0).to(127).d(bt).e(easeInOut) a(74).from(127).to(0).d(bt).e(easeInOut)].c(1)';
+            // Automation only: Filter sweep (new syntax)
+            const example = 't(filterSweep).bpm(100).sn(4).sd(4).play([a(74).from(0).to(127).d(bt).e(easeInOut) a(74).from(127).to(0).d(bt).e(easeInOut)].c(1))';
             document.getElementById('cycleStr').value = example;
-            console.log('Loaded Example 2: Filter sweep automation');
+            console.log('Loaded Example 2: Filter sweep automation (new syntax)');
         }
         
         function loadExample3() {
-            // Complex: Multiple sequences with different automations
-            const example = '[n(60) n(64) n(67)].c(1) [a(7).from(0).to(127).d(bt/4).e(easeIn) a(7).from(127).to(64).d(bt/4).e(easeOut)].c(1) [n(70) n(74)].c(2) [a(10).from(0).to(127).d(bt/2).e(easeInOut)].c(2)';
+            // Complex: Multiple sequences with different automations (new syntax)
+            const example = 't(complexMix).bpm(90).sn(4).sd(4).play([n(60) n(64) n(67)].c(1) [a(7).from(0).to(127).d(bt/4).e(easeIn) a(7).from(127).to(64).d(bt/4).e(easeOut)].c(1) [n(70) n(74)].c(2) [a(10).from(0).to(127).d(bt/2).e(easeInOut)].c(2))';
             document.getElementById('cycleStr').value = example;
-            console.log('Loaded Example 3: Complex mix with multiple tracks and automations');
+            console.log('Loaded Example 3: Complex mix with multiple tracks and automations (new syntax)');
+        }
+        
+        function loadExample4() {
+            // Legacy syntax example
+            const example = '[n(c3) n(c3)].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2).e(easeInOut)].c(1)';
+            document.getElementById('cycleStr').value = example;
+            console.log('Loaded Example 4: Legacy syntax');
         }
         
         function sendFadeIn() {
