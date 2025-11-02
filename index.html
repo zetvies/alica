@@ -507,8 +507,8 @@
                                 <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
                                 <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat)<br>
                                 <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
-                                <strong>.co(cutoff):</strong> Duration token for cutoff (bt, br, etc.)<br>
-                                <strong>.ds(delay):</strong> Delay start - duration in ms or tokens (bt, br, etc.)<br>
+                                <strong>.co(cutoff):</strong> Duration token for cutoff: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
+                                <strong>.ds(delay):</strong> Delay start - duration in ms or tokens: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
                                 <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence
                             </div>
                             <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).ds(bt/2).pm(0.2)</div>
@@ -522,19 +522,19 @@
                                 <strong>.d(duration):</strong> Duration in ms, bt (duration of one beat)/br (duration of one bar) tokens, optionally add multipliers (*2, /4)<br>
                                 <strong>.v(velocity):</strong> Velocity 0-127 or randomizer<br>
                                 <strong>.c(channel):</strong> MIDI channel 1-16 or randomizer<br>
-                                <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max), .pm(prob), .pr(prob), .nArp(mode), .vArp(mode), .dArp(mode)
+                                <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max), .pm(prob), .pmRange(min, max), .pr(prob), .prRange(min, max), .nArp(mode), .vArp(mode), .dArp(mode)
                             </div>
                             <div class="syntaxExample">n(60).d(bt).v(80).c(1)</div>
                             
                             <div class="syntaxSubsection">
                                 <div class="syntaxSubsectionTitle">Randomizers:</div>
                                 <div class="syntaxChain">r</div>
-                                <div class="syntaxDesc">Random value (notes default C1-C8, velocity 0-127)</div>
-                                <div class="syntaxExample">n(r).nRange(c3, c5)</div>
+                                <div class="syntaxDesc">Random value (notes default C1-C8, velocity 0-127). Use with ranges: .nRange(min, max), .vRange(min, max), .dRange(min, max), .pmRange(min, max), .prRange(min, max)</div>
+                                <div class="syntaxExample">n(r).nRange(c3, c5)<br>n(60).v(r).vRange(0.5, 1.0)<br>n(60).d(r).dRange(bt/4, bt*2)<br>n(60).pm(r).pmRange(0.2, 0.8)<br>n(60).pr(r).prRange(0.1, 0.3)</div>
                                 
                                 <div class="syntaxChain">r.o{value1, value2, ...}</div>
-                                <div class="syntaxDesc">Random selection from array</div>
-                                <div class="syntaxExample">n(r.o{c4,d4,e4}).v(r.o{60,80,100})</div>
+                                <div class="syntaxDesc">Random selection from array. For notes, can use chord syntax: &lt;c4,e4,g4&gt;, &lt;chord(c-maj7)&gt;, &lt;scale(c-ionian)&gt;. For duration, only even multipliers/divisors allowed (bt/2, bt/4, bt*2, bt*4, etc.)</div>
+                                <div class="syntaxExample">n(r.o{c4,d4,e4}) - notes<br>n(60).v(r.o{60,80,100,127}) - velocity<br>n(60).d(r.o{bt/2,bt/4,bt}) - duration<br>n(r.o{&lt;c4,e4,g4&gt;,&lt;chord(c-maj7)&gt;}) - chord syntax<br>n(60).pm(r.o{0.2,0.5,0.8}) - mute probability</div>
                             </div>
                             
                             <div class="syntaxSubsection">
@@ -575,7 +575,7 @@
                                 <strong>a(controller):</strong> MIDI CC number 0-127<br>
                                 <strong>.from(value):</strong> Start value 0-127 (default: 0)<br>
                                 <strong>.to(value):</strong> End value 0-127 (default: 127)<br>
-                                <strong>.d(duration):</strong> Duration in ms or tokens (bt, br, etc.)<br>
+                                <strong>.d(duration):</strong> Duration in ms or tokens: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
                                 <strong>.e(easing):</strong> Easing function: linear, easeIn, easeOut, easeInOut, easeInQuad, easeOutQuad, easeInOutQuad, easeInCubic, easeOutCubic, easeInOutCubic (default: linear)<br>
                                 <strong>.c(channel):</strong> MIDI channel 1-16 (optional)
                             </div>
