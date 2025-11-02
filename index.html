@@ -207,14 +207,112 @@
         
         #hint {
             position: fixed;
-            bottom: 10px;
-            left: 10px;
-            padding: 8px 12px;
-            background: rgba(0, 0, 0, 0.7);
+            bottom: 60px;
+            right: 20px;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.85);
             border-radius: 4px;
             font-size: 11px;
             color: #888;
             z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+        
+        #hint.hidden {
+            display: none;
+        }
+        
+        #hintHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        #hintTitle {
+            font-weight: bold;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+        
+        #hintClose {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+        
+        #hintClose:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+        }
+        
+        #hintContent {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, auto);
+            gap: 8px 16px;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        
+        .hintItem {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+        
+        .hintKey {
+            font-family: 'Courier New', monospace;
+            color: #4a9eff;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        
+        .hintDesc {
+            color: #aaa;
+            font-size: 10px;
+        }
+        
+        #hintToggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #444;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+        
+        #hintToggle:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: #666;
+            color: #e0e0e0;
+            transform: scale(1.1);
+        }
+        
+        #hintToggle.visible {
+            display: flex;
         }
         
         #bpmDisplay {
@@ -264,12 +362,41 @@
         </div>
         </div>
         <div id="hint">
-        <strong>Shortcuts:</strong> Ctrl+/ (toggle comment), Ctrl+H (clear all cycles), Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
-        For Enter: no Shift = current track, + Shift = selected lines
+            <div id="hintHeader">
+                <span id="hintTitle">Commands:</span>
+                <button id="hintClose" title="Hide hints">×</button>
+            </div>
+            <div id="hintContent">
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+/</span>
+                    <span class="hintDesc">Toggle Comment</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+S</span>
+                    <span class="hintDesc">Loop Track in Next Cycle</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+Shift+S</span>
+                    <span class="hintDesc">Loop Track Immediately</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+H</span>
+                    <span class="hintDesc">Stop All Loops</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+Enter</span>
+                    <span class="hintDesc">Play Track in Next Cycle</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+Shift+Enter</span>
+                    <span class="hintDesc">Play Track Immediately</span>
+                </div>
+            </div>
         </div>
+        <div id="hintToggle">?</div>
     <div id="editorContainer">
         <div id="highlightOverlay"></div>
-        <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
+        <textarea id="commandArea" ></textarea>
     </div>
 
     <script>
@@ -406,30 +533,15 @@
                 e.preventDefault();
                 queuePlayTrackForCurrentTrack();
             }
-            // Ctrl + Shift + Enter = queue playTrack for selected lines (SWAPPED)
+            // Ctrl + Shift + Enter = playTrack for current track immediately
             else if (isCtrl && !isAlt && isShift && e.key === 'Enter') {
-                e.preventDefault();
-                queuePlayTrackForSelection();
-            }
-            // Ctrl + Alt + S = playCycle for selected lines
-            else if (isCtrl && isAlt && !isShift && e.key === 's') {
-                e.preventDefault();
-                playCycleForSelection();
-            }
-            // Ctrl + Alt + Shift + S = playCycle for current track
-            else if (isCtrl && isAlt && isShift && e.key === 'S') {
-                e.preventDefault();
-                playCycleForCurrentTrack();
-            }
-            // Ctrl + Alt + Enter = playTrack for current track (SWAPPED)
-            else if (isCtrl && isAlt && !isShift && e.key === 'Enter') {
                 e.preventDefault();
                 playTrackForCurrentTrack();
             }
-            // Ctrl + Alt + Shift + Enter = playTrack for selected lines (SWAPPED)
-            else if (isCtrl && isAlt && isShift && e.key === 'Enter') {
+            // Ctrl + Shift + S = playCycle for current track immediately
+            else if (isCtrl && !isAlt && isShift && e.key === 's') {
                 e.preventDefault();
-                playTrackForSelection();
+                playCycleForCurrentTrack();
             }
         });
         
@@ -2083,6 +2195,29 @@
             commandArea.focus();
             highlightBrackets();
         });
+        
+        // Hint show/hide functionality
+        const hint = document.getElementById('hint');
+        const hintClose = document.getElementById('hintClose');
+        const hintToggle = document.getElementById('hintToggle');
+        
+        function hideHint() {
+            hint.classList.add('hidden');
+            hintToggle.classList.add('visible');
+        }
+        
+        function showHint() {
+            hint.classList.remove('hidden');
+            hintToggle.classList.remove('visible');
+        }
+        
+        if (hintClose) {
+            hintClose.addEventListener('click', hideHint);
+        }
+        
+        if (hintToggle) {
+            hintToggle.addEventListener('click', showHint);
+        }
         
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
