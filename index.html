@@ -134,7 +134,7 @@
         <div id="beatSequencer"></div>
     </div>
     <div id="hint">
-        <strong>Shortcuts:</strong> Ctrl+S (queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
+        <strong>Shortcuts:</strong> Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
         For Enter: no Shift = current track, + Shift = selected lines
     </div>
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
@@ -241,13 +241,8 @@
             const isShift = e.shiftKey;
             const isAlt = e.altKey;
             
-            // Ctrl + S = queue playCycle for selected lines
+            // Ctrl + S = save whole track (queue playCycle for current track)
             if (isCtrl && !isAlt && !isShift && e.key === 's') {
-                e.preventDefault();
-                queuePlayCycleForSelection();
-            }
-            // Ctrl + Shift + S = queue playCycle for current track
-            else if (isCtrl && !isAlt && isShift && e.key === 'S') {
                 e.preventDefault();
                 queuePlayCycleForCurrentTrack();
             }

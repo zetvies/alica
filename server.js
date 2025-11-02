@@ -2334,20 +2334,32 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   useSignatureDenominator = useSignatureDenominator !== null ? useSignatureDenominator : globalSignatureDenominator;
   
   // Calculate bar duration in milliseconds
-  const beatsPerBar = useSignatureNumerator;
-  const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
+  // Ensure we have valid values for calculation
+  const beatsPerBar = useSignatureNumerator || 4; // Default to 4/4 if not set
+  const effectiveTempo = (typeof useTempo === 'number' && useTempo > 0) ? useTempo : 120; // Default to 120 BPM if not set
+  const barDurationMs = (60000 / effectiveTempo) * beatsPerBar;
   
   // Use parsed cycleId if available (from new syntax), otherwise fall back to provided/generated
   // The cycleId from t(cycleId) should always be used when new syntax is detected
-  const finalCycleId = useCycleId || (tempoParam !== null ? 'cycle_' + Date.now() : null);
+  // Always generate a cycleId if none is provided to ensure cycles can be tracked
+  const finalCycleId = useCycleId || 'cycle_' + Date.now();
   
   // Call playTrack immediately, then set up interval
   playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
   
   // Set up interval to call playTrack at bar duration intervals
   const intervalId = setInterval(() => {
+    console.log(`[CYCLE] Interval callback fired for cycle '${finalCycleId}', intervalId: ${intervalId}`);
     // Check if there's a pending update for this cycle by looking it up in activeCycle
-    const cycleEntry = activeCycle.find(c => c.intervalId === intervalId);
+    // Try both by intervalId and by cycleId (fallback in case entry was replaced)
+    let cycleEntry = activeCycle.find(c => c.intervalId === intervalId);
+    if (!cycleEntry) {
+      // Fallback: try finding by cycleId if intervalId doesn't match (e.g., if entry was replaced)
+      cycleEntry = activeCycle.find(c => c.id === finalCycleId);
+      if (cycleEntry) {
+        console.log(`[CYCLE] Found cycle entry by id instead of intervalId for '${finalCycleId}'`);
+      }
+    }
     if (cycleEntry && cycleEntry.pendingUpdate) {
       const update = cycleEntry.pendingUpdate;
       // Clear this interval
@@ -2360,40 +2372,61 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
         update.signatureDenominatorParam
       );
       // Update activeCycle entry
-      cycleEntry.intervalId = newIntervalId;
-      cycleEntry.function = () => playCycle(
-        update.cycleStr,
-        update.tempoParam,
-        update.signatureNumeratorParam,
-        update.signatureDenominatorParam
-      );
+      if (newIntervalId) {
+        cycleEntry.intervalId = newIntervalId;
+        cycleEntry.function = () => playCycle(
+          update.cycleStr,
+          update.tempoParam,
+          update.signatureNumeratorParam,
+          update.signatureDenominatorParam
+        );
+      }
       // Clear the pending update
       delete cycleEntry.pendingUpdate;
       return; // Exit without playing current cycle
     }
-    // Normal play
-    playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
+    // Normal play - use captured values from closure
+    console.log(`[CYCLE] Playing cycle '${finalCycleId}' at interval`);
+    playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator).catch(err => {
+      console.error(`[CYCLE] Error in cycle interval for '${finalCycleId}':`, err);
+    });
   }, barDurationMs);
   
+  // Ensure interval is valid
+  if (!intervalId) {
+    console.error(`[CYCLE] Failed to create interval for cycle`);
+    return null;
+  }
+  
   // Always store/update in activeCycle using the finalCycleId
-  if (finalCycleId && intervalId) {
+  // Create closure to capture the correct values for the interval callback
+  const cycleFunction = () => {
+    playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
+  };
+  
+  // finalCycleId should always exist now (generated if not provided)
+  if (intervalId) {
     const existingIndex = activeCycle.findIndex(c => c.id === finalCycleId);
     if (existingIndex !== -1) {
       // Replace existing cycle with same ID
       clearInterval(activeCycle[existingIndex].intervalId);
       activeCycle[existingIndex] = {
         id: finalCycleId,
-        function: () => playCycle(cycleStr, useTempo, useSignatureNumerator, useSignatureDenominator),
+        function: cycleFunction,
         intervalId: intervalId
       };
+      console.log(`[CYCLE] Updated cycle '${finalCycleId}' with intervalId ${intervalId}, barDuration: ${barDurationMs}ms`);
     } else {
       // Add new cycle
       activeCycle.push({
         id: finalCycleId,
-        function: () => playCycle(cycleStr, useTempo, useSignatureNumerator, useSignatureDenominator),
+        function: cycleFunction,
         intervalId: intervalId
       });
+      console.log(`[CYCLE] Created new cycle '${finalCycleId}' with intervalId ${intervalId}, barDuration: ${barDurationMs}ms, tempo: ${effectiveTempo}, beatsPerBar: ${beatsPerBar}`);
     }
+  } else {
+    console.error(`[CYCLE] Failed to create interval for cycle '${finalCycleId}'`);
   }
   
   return intervalId;
@@ -2518,26 +2551,24 @@ function onBarChange() {
       // Tracks play once and don't loop
       // Check if result is a Timeout object (has _onTimeout property) or a number
       if (result !== null && result !== undefined && (typeof result === 'number' || (typeof result === 'object' && result._onTimeout))) {
-        // This is a playCycle - check if id already exists in activeCycle
-        const existingIndex = activeCycle.findIndex(cycle => cycle.id === item.id);
-        if (existingIndex !== -1) {
-          // If cycle with same id exists, clear the old interval and replace
-          clearInterval(activeCycle[existingIndex].intervalId);
-          activeCycle[existingIndex] = {
-            id: item.id,
-            function: item.function,
-            intervalId: result
-          };
-          console.log(`[QUEUE] Replaced cycle '${item.id}' in activeCycle`);
+        // This is a playCycle - playCycle() already stored itself in activeCycle
+        // Just verify it's there and log - don't interfere with it
+        const playCycleEntry = activeCycle.find(c => c.id === item.id);
+        if (playCycleEntry) {
+          // Verify the intervalId matches (should always match since playCycle just returned it)
+          if (playCycleEntry.intervalId === result) {
+            console.log(`[QUEUE] Cycle '${item.id}' is active with intervalId ${result} (managed by playCycle)`);
+          } else {
+            console.warn(`[QUEUE] Cycle '${item.id}' intervalId mismatch! Entry has ${playCycleEntry.intervalId}, playCycle returned ${result}`);
+          }
         } else {
-          // Add new cycle to activeCycle (id is unique)
-          // Cycle will loop by itself via setInterval
+          // This shouldn't happen, but add it as fallback
+          console.warn(`[QUEUE] Cycle '${item.id}' not found in activeCycle after playCycle call - adding fallback entry`);
           activeCycle.push({
             id: item.id,
             function: item.function,
             intervalId: result
           });
-          console.log(`[QUEUE] Added cycle '${item.id}' to activeCycle with intervalId ${result}`);
         }
       } else {
         console.log(`[QUEUE] Item '${item.id}' result is not a number (likely a track that plays once)`);
