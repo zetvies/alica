@@ -77,10 +77,62 @@
             color: #888;
             z-index: 1000;
         }
+        
+        #abletonInfo {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 1000;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        #bpmDisplay {
+            color: #4a9eff;
+        }
+        
+        #signatureDisplay {
+            color: #9c27b0;
+        }
+        
+        #beatSequencer {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        
+        .beatCircle {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #444;
+            border: 1px solid #666;
+            transition: all 0.1s ease;
+        }
+        
+        .beatCircle.active {
+            background: #4a9eff;
+            box-shadow: 0 0 8px #4a9eff;
+            border-color: #6bb5ff;
+            transform: scale(1.2);
+        }
     </style>
 </head>
 <body>
     <div id="status" class="disconnected">Disconnected</div>
+    <div id="abletonInfo">
+        <span id="bpmDisplay">BPM: --</span>
+        <span id="signatureDisplay">Signature: --/--</span>
+        <div id="beatSequencer"></div>
+    </div>
     <div id="hint">Press Ctrl+Enter to execute command</div>
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
 
@@ -137,6 +189,20 @@
                 ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     console.log('Received:', data);
+                    
+                    // Handle BPM and signature updates
+                    if (data.type === 'tempoAndSignature') {
+                        updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
+                        // Update sequencer when signature changes
+                        if (data.signatureNumerator) {
+                            updateBeatSequencer(data.signatureNumerator);
+                        }
+                    }
+                    
+                    // Handle beat updates
+                    if (data.type === 'beat' && data.beatNumber !== undefined) {
+                        updateBeatIndicator(data.beatNumber, data.bar);
+                    }
                 };
                 
             } catch (error) {
@@ -209,13 +275,12 @@
                         });
                     }
                 } else if (trimmed.startsWith('t(')) {
-                    // Direct new syntax - determine if it's a cycle or track based on context
-                    // For now, default to playCycle
+                    // Direct new syntax - default to addCycleToQueue
                     // Don't send id - let server extract it from t(cycleId)
                     const parsed = parseMethodChain(trimmed);
                     
                     sendToServer({
-                        action: 'playCycle',
+                        action: 'addCycleToQueue',
                         id: null, // Let server extract from t(cycleId)
                         cycleStr: trimmed,
                         tempo: parsed?.tempo || null,
@@ -223,9 +288,9 @@
                         signatureDenominator: parsed?.sd || null
                     });
                 } else {
-                    // Legacy format or unknown - try to send as cycle
+                    // Legacy format or unknown - default to addCycleToQueue
                     sendToServer({
-                        action: 'playCycle',
+                        action: 'addCycleToQueue',
                         id: null,
                         cycleStr: trimmed,
                         tempo: null,
@@ -337,6 +402,63 @@
             }
             
             return { cycleId, tempo: bpm, sn, sd };
+        }
+        
+        // Update Ableton info display
+        let currentBeatNumber = 0;
+        let currentBarNumber = 0;
+        
+        function updateAbletonInfo(bpm, numerator, denominator) {
+            const bpmDisplay = document.getElementById('bpmDisplay');
+            const signatureDisplay = document.getElementById('signatureDisplay');
+            
+            if (bpm !== null && bpm !== undefined) {
+                bpmDisplay.textContent = `BPM: ${Math.round(bpm)}`;
+            } else {
+                bpmDisplay.textContent = 'BPM: --';
+            }
+            
+            if (numerator !== null && numerator !== undefined && denominator !== null && denominator !== undefined) {
+                signatureDisplay.textContent = `Signature: ${numerator}/${denominator}`;
+                updateBeatSequencer(numerator);
+            } else {
+                signatureDisplay.textContent = 'Signature: --/--';
+            }
+        }
+        
+        // Create/update beat sequencer circles
+        function updateBeatSequencer(beatsPerBar) {
+            const sequencer = document.getElementById('beatSequencer');
+            sequencer.innerHTML = '';
+            
+            for (let i = 1; i <= beatsPerBar; i++) {
+                const circle = document.createElement('div');
+                circle.className = 'beatCircle';
+                circle.id = `beat-${i}`;
+                sequencer.appendChild(circle);
+            }
+            
+            // Update active beat if we have current beat info
+            if (currentBeatNumber > 0) {
+                updateBeatIndicator(currentBeatNumber, currentBarNumber);
+            }
+        }
+        
+        // Update which beat circle is active
+        function updateBeatIndicator(beatNumber, barNumber) {
+            currentBeatNumber = beatNumber;
+            currentBarNumber = barNumber || 0;
+            
+            // Remove active class from all circles
+            document.querySelectorAll('.beatCircle').forEach(circle => {
+                circle.classList.remove('active');
+            });
+            
+            // Add active class to current beat
+            const activeCircle = document.getElementById(`beat-${beatNumber}`);
+            if (activeCircle) {
+                activeCircle.classList.add('active');
+            }
         }
         
         // Helper function to send messages with connection check

@@ -2194,9 +2194,9 @@ function parseMethodChainSyntax(inputStr) {
   
   return {
     cycleId: cycleId,
-    tempo: bpm,
-    signatureNumerator: sn,
-    signatureDenominator: sd,
+    tempo: bpm !== null ? bpm : tempo, // Use Ableton tempo if not specified
+    signatureNumerator: sn !== null ? sn : signatureNumerator, // Use Ableton numerator if not specified
+    signatureDenominator: sd !== null ? sd : signatureDenominator, // Use Ableton denominator if not specified
     playContent: playContent
   };
 }
@@ -2572,7 +2572,7 @@ function calculateBarAndBeat() {
     // Store beat as string "a/b"
     const beatString = `${newBeat}/${beatValue}`;
 
-    // Only log when bar or beat changes
+    // Only process when bar or beat changes
     if (newBar !== previousBar || beatString !== previousBeat) {
       const oldBar = currentBar;
       currentBar = newBar;
@@ -2580,11 +2580,25 @@ function calculateBarAndBeat() {
       previousBar = newBar;
       previousBeat = beatString;
 
-
-      // Detect when the bar changes
-      if (currentBar !== oldBar) {
+      // Detect when the bar changes (including first bar when oldBar is null)
+      if (oldBar === null || currentBar !== oldBar) {
         console.log('[BAR/BEAT] Bar changed:', currentBar);
         onBarChange();
+      }
+      
+      // Broadcast beat change to WebSocket clients
+      if (clients && clients.size > 0) {
+        const beatMessage = JSON.stringify({
+          type: 'beat',
+          beat: currentBeat,
+          bar: currentBar,
+          beatNumber: newBeat
+        });
+        clients.forEach((client) => {
+          if (client.readyState === 1) { // WebSocket.OPEN
+            client.send(beatMessage);
+          }
+        });
       }
     }
   } catch (error) {
@@ -2610,6 +2624,7 @@ udpServer.on('message', (msg, rinfo) => {
             tempo = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
             console.log(`[TEMPO] Updated: ${tempo}`);
             checkInitialization();
+            broadcastTempoAndSignature();
           }
         }
 
@@ -2619,6 +2634,7 @@ udpServer.on('message', (msg, rinfo) => {
             signatureNumerator = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
             console.log(`[NUMERATOR] Updated: ${signatureNumerator}`);
             checkInitialization();
+            broadcastTempoAndSignature();
           }
         }
 
@@ -2628,6 +2644,7 @@ udpServer.on('message', (msg, rinfo) => {
             signatureDenominator = packet.args[0].value !== undefined ? packet.args[0].value : packet.args[0];
             console.log(`[DENOMINATOR] Updated: ${signatureDenominator}`);
             checkInitialization();
+            broadcastTempoAndSignature();
           }
         }
 
@@ -2646,7 +2663,8 @@ udpServer.on('message', (msg, rinfo) => {
               if (p.args && p.args.length > 0) {
                 tempo = p.args[0];
                 console.log(`[TEMPO] Updated: ${tempo}`);
-                checkInitialization()
+                checkInitialization();
+                broadcastTempoAndSignature();
               }
             }
 
@@ -2656,6 +2674,7 @@ udpServer.on('message', (msg, rinfo) => {
                 signatureNumerator = p.args[0];
                 console.log(`[NUMERATOR] Updated: ${signatureNumerator}`);
                 checkInitialization();
+                broadcastTempoAndSignature();
               }
             }
 
@@ -2665,6 +2684,7 @@ udpServer.on('message', (msg, rinfo) => {
                 signatureDenominator = p.args[0];
                 console.log(`[DENOMINATOR] Updated: ${signatureDenominator}`);
                 checkInitialization();
+                broadcastTempoAndSignature();
               }
             }
 
@@ -2716,6 +2736,24 @@ const wss = new WebSocketServer({ server });
 
 // Initialize clients Set
 clients = new Set();
+
+// Function to broadcast BPM and signature to all WebSocket clients
+function broadcastTempoAndSignature() {
+  if (!clients || clients.size === 0) return;
+  
+  const message = JSON.stringify({
+    type: 'tempoAndSignature',
+    tempo: tempo,
+    signatureNumerator: signatureNumerator,
+    signatureDenominator: signatureDenominator
+  });
+  
+  clients.forEach((client) => {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      client.send(message);
+    }
+  });
+}
 
 wss.on('connection', (ws) => {
   clients.add(ws);
@@ -2942,6 +2980,15 @@ wss.on('connection', (ws) => {
     bar: currentBar
   });
   ws.send(initMessage);
+  
+  // Send current BPM and signature when client connects
+  const tempoSignatureMessage = JSON.stringify({
+    type: 'tempoAndSignature',
+    tempo: tempo,
+    signatureNumerator: signatureNumerator,
+    signatureDenominator: signatureDenominator
+  });
+  ws.send(tempoSignatureMessage);
 });
 
 // Start HTTP and WebSocket server on the same port
