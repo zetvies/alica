@@ -150,15 +150,74 @@ function expandChord(chordStr) {
 
 // generateScaleChordNotes is imported from ./src/modules/musicTheory
 
-// Parse chord syntax: <c4,e4,g6> returns array of MIDI note numbers
+// Parse chord syntax: <c4,e4,g6>, <chord(c-maj9)>, or <scale(c-ionian).q(maj9)> returns array of MIDI note numbers
 function parseChord(chordStr) {
   if (!chordStr || typeof chordStr !== 'string') return null;
   
   const match = chordStr.match(/^<([^>]+)>$/);
   if (!match) return null;
   
-  const notesStr = match[1].trim();
-  const noteItems = notesStr.split(',').map(s => s.trim());
+  const content = match[1].trim();
+  
+  // Check if content is scale syntax: scale(c-ionian).q(maj9) or scale(c-ionian)
+  const scaleRegex = /^scale\(([^)]+)\)(?:\.q\(([^)]+)\))?$/i;
+  const scaleMatch = content.match(scaleRegex);
+  
+  if (scaleMatch) {
+    const args = scaleMatch[1].trim();
+    const quality = scaleMatch[2] ? scaleMatch[2].trim() : null;
+    
+    // Parse root-mode (e.g., "c-ionian" or "d-dorian")
+    const parts = args.split('-');
+    if (parts.length !== 2) return null;
+    
+    const root = parts[0].trim();
+    const mode = parts[1].trim().toLowerCase();
+    
+    // If quality specified, build chord on root using quality intervals
+    if (quality) {
+      const chordIntervals = CHORD_QUALITIES[quality.toLowerCase()];
+      if (chordIntervals) {
+        const rootMidi = noteTokenToMidi(`${root}4`);
+        if (rootMidi !== null) {
+          const chordNotes = chordIntervals.map(interval => {
+            const note = rootMidi + interval;
+            return Math.max(0, Math.min(127, note));
+          });
+          
+          return chordNotes;
+        }
+      }
+      return null;
+    }
+    
+    // Otherwise, return scale notes
+    const scaleNotes = scaleToMidiNotes(root, mode);
+    return scaleNotes.length > 0 ? scaleNotes : null;
+  }
+  
+  // Check if content is chord syntax: chord(c-maj9)
+  const chordRegex = /^chord\(([^)]+)\)$/i;
+  const chordMatch = content.match(chordRegex);
+  
+  if (chordMatch) {
+    // Parse root-quality (e.g., "c-maj9" or "d-min7")
+    const args = chordMatch[1].trim();
+    const parts = args.split('-');
+    if (parts.length !== 2) return null;
+    
+    const root = parts[0].trim();
+    const quality = parts[1].trim();
+    
+    // Get chord notes using chordToMidiNotes
+    const chordNotes = chordToMidiNotes(root, quality);
+    if (chordNotes.length === 0) return null;
+    
+    return chordNotes;
+  }
+  
+  // Otherwise, parse as comma-separated notes: <c4,e4,g6>
+  const noteItems = content.split(',').map(s => s.trim());
   const midiNotes = [];
   
   for (const item of noteItems) {
@@ -180,7 +239,7 @@ function parseChord(chordStr) {
 // Parse r.o{...} array syntax and return array of values
 // Examples: r.o{c4, d4, e4}, r.o{60, 64, 67}, r.o{0.25, 0.5, 0.75}, r.o{bt/4, bt, bt*2}
 // Duration tokens: bt, bt/even, or bt*even (even numbers only)
-// Also supports: r.o{scale(...)}, r.o{chord(...)}, r.o{<c4,e4,g4>,<f4,a4,c5>} (chords)
+// Also supports: r.o{scale(...)}, r.o{chord(...)}, r.o{<c4,e4,g4>,<f4,a4,c5>}, r.o{<chord(c-maj9)>}, r.o{<scale(c-ionian).q(maj9)>} (chords)
 function parseArrayRandomizer(str, context = {}) {
   if (!str || typeof str !== 'string') return null;
   
@@ -576,8 +635,77 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     expandedSequence = newSequence;
   }
   
-  const chunkRegex = /n\([^\)]+\)(?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\([^)]*\))*/g;
-  const allChunks = expandedSequence.match(chunkRegex) || [];
+  // Extract chunks using balanced parentheses matching to handle nested structures like n(<chord(c-maj9)>)
+  const allChunks = [];
+  let searchIdx = 0;
+  while (searchIdx < expandedSequence.length) {
+    const nIndex = expandedSequence.indexOf('n(', searchIdx);
+    if (nIndex === -1) break;
+    
+    // Find the matching closing parenthesis for n(...)
+    let parenCount = 0;
+    let chunkEnd = nIndex + 2; // After "n("
+    let i = chunkEnd;
+    
+    // First, find the end of n(...)
+    while (i < expandedSequence.length) {
+      if (expandedSequence[i] === '(') parenCount++;
+      else if (expandedSequence[i] === ')') {
+        if (parenCount === 0) {
+          chunkEnd = i + 1;
+          break;
+        }
+        parenCount--;
+      }
+      i++;
+    }
+    
+    // Now look for parameters after n(...) - they start with a dot
+    i = chunkEnd;
+    while (i < expandedSequence.length) {
+      // Check if we've hit the start of another chunk or whitespace followed by another chunk
+      if (i < expandedSequence.length - 1 && expandedSequence.substring(i, i + 2) === ' n') {
+        break;
+      }
+      
+      // If we find a dot followed by a parameter name, try to match the parameter
+      if (expandedSequence[i] === '.') {
+        const paramMatch = expandedSequence.substring(i + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\(/);
+        if (paramMatch) {
+          const paramName = paramMatch[1];
+          const paramStart = i + 1 + paramName.length + 1; // After "paramName("
+          parenCount = 1;
+          let j = paramStart;
+          
+          // Find matching closing parenthesis for parameter
+          while (j < expandedSequence.length && parenCount > 0) {
+            if (expandedSequence[j] === '(') parenCount++;
+            else if (expandedSequence[j] === ')') parenCount--;
+            j++;
+          }
+          
+          if (parenCount === 0) {
+            chunkEnd = j;
+            i = j;
+            continue;
+          }
+        }
+      }
+      
+      // If we've moved past potential parameters, break
+      if (expandedSequence[i] !== '.' && expandedSequence[i] !== ' ' && expandedSequence[i] !== '\t' && expandedSequence[i] !== '\n') {
+        break;
+      }
+      i++;
+    }
+    
+    const chunk = expandedSequence.substring(nIndex, chunkEnd).trim();
+    if (chunk) {
+      allChunks.push(chunk);
+    }
+    
+    searchIdx = chunkEnd;
+  }
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
   let chunks = allChunks;
@@ -746,9 +874,26 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   
   for (let idx = 0; idx < chunks.length; idx++) {
     const chunk = chunks[idx];
-    const noteMatch = chunk.match(/n\(([^)]+)\)/);
-    if (!noteMatch) continue;
-    const noteArg = noteMatch[1].trim();
+    // Extract note argument, handling nested parentheses (e.g., n(<chord(c-maj9)>))
+    let noteArg = null;
+    const nIndex = chunk.indexOf('n(');
+    if (nIndex !== -1) {
+      let parenCount = 0;
+      let startIdx = nIndex + 2; // After "n("
+      let i = startIdx;
+      while (i < chunk.length) {
+        if (chunk[i] === '(') parenCount++;
+        else if (chunk[i] === ')') {
+          if (parenCount === 0) {
+            noteArg = chunk.substring(startIdx, i).trim();
+            break;
+          }
+          parenCount--;
+        }
+        i++;
+      }
+    }
+    if (!noteArg) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1
     const repeatCount = 1;
     let velocity = 80;
