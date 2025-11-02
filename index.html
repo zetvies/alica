@@ -135,7 +135,7 @@
     </div>
     <div id="hint">
         <strong>Shortcuts:</strong> Ctrl+S (queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
-        + Shift = current track, no Shift = selected lines
+        For Enter: no Shift = current track, + Shift = selected lines
     </div>
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
 
@@ -251,15 +251,15 @@
                 e.preventDefault();
                 queuePlayCycleForCurrentTrack();
             }
-            // Ctrl + Enter = queue playTrack for selected lines
+            // Ctrl + Enter = queue playTrack for current track (SWAPPED)
             else if (isCtrl && !isAlt && !isShift && e.key === 'Enter') {
                 e.preventDefault();
-                queuePlayTrackForSelection();
+                queuePlayTrackForCurrentTrack();
             }
-            // Ctrl + Shift + Enter = queue playTrack for current track
+            // Ctrl + Shift + Enter = queue playTrack for selected lines (SWAPPED)
             else if (isCtrl && !isAlt && isShift && e.key === 'Enter') {
                 e.preventDefault();
-                queuePlayTrackForCurrentTrack();
+                queuePlayTrackForSelection();
             }
             // Ctrl + Alt + S = playCycle for selected lines
             else if (isCtrl && isAlt && !isShift && e.key === 's') {
@@ -271,15 +271,15 @@
                 e.preventDefault();
                 playCycleForCurrentTrack();
             }
-            // Ctrl + Alt + Enter = playTrack for selected lines
+            // Ctrl + Alt + Enter = playTrack for current track (SWAPPED)
             else if (isCtrl && isAlt && !isShift && e.key === 'Enter') {
                 e.preventDefault();
-                playTrackForSelection();
+                playTrackForCurrentTrack();
             }
-            // Ctrl + Alt + Shift + Enter = playTrack for current track
+            // Ctrl + Alt + Shift + Enter = playTrack for selected lines (SWAPPED)
             else if (isCtrl && isAlt && isShift && e.key === 'Enter') {
                 e.preventDefault();
-                playTrackForCurrentTrack();
+                playTrackForSelection();
             }
         });
         
@@ -297,29 +297,55 @@
             const start = commandArea.selectionStart;
             const end = commandArea.selectionEnd;
             
-            // Find line boundaries - use cursor position even if no selection
-            const cursorPos = Math.min(start, end);
-            let lineStart = cursorPos;
-            let lineEnd = Math.max(start, end);
+            // Check if there's actual text selection (not just cursor position)
+            const hasSelection = start !== end;
             
-            // Find start of first line containing cursor/selection
-            while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
-                lineStart--;
+            if (hasSelection) {
+                // Use actual selection boundaries
+                let lineStart = start;
+                let lineEnd = end;
+                
+                // Find start of first line containing selection
+                while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
+                    lineStart--;
+                }
+                
+                // Find end of last line containing selection
+                while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
+                    lineEnd++;
+                }
+                
+                const selectedText = fullText.substring(lineStart, lineEnd);
+                // Get all lines within selection, filtering empty and comments
+                const lines = selectedText.split('\n').filter(line => {
+                    const trimmed = line.trim();
+                    return trimmed && !trimmed.startsWith('//');
+                });
+                
+                if (lines.length === 0) return null;
+                // Join all selected lines
+                return lines.join(' ');
+            } else {
+                // No selection - use line containing cursor
+                const cursorPos = start;
+                let lineStart = cursorPos;
+                let lineEnd = cursorPos;
+                
+                // Find start of line containing cursor
+                while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
+                    lineStart--;
+                }
+                
+                // Find end of line containing cursor
+                while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
+                    lineEnd++;
+                }
+                
+                const lineText = fullText.substring(lineStart, lineEnd).trim();
+                if (!lineText || lineText.startsWith('//')) return null;
+                
+                return lineText;
             }
-            
-            // Find end of last line containing cursor/selection
-            while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
-                lineEnd++;
-            }
-            
-            const selectedText = fullText.substring(lineStart, lineEnd);
-            const lines = selectedText.split('\n').filter(line => {
-                const trimmed = line.trim();
-                return trimmed && !trimmed.startsWith('//') && /\[.*\]/.test(trimmed);
-            });
-            
-            if (lines.length === 0) return null;
-            return lines.join(' ');
         }
         
         // Find the t(...).play(...) wrapper that contains the cursor/selection
