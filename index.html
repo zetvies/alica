@@ -737,6 +737,13 @@
             return filteredLines.join('\n');
         }
         
+        // Remove line breaks and normalize whitespace
+        function normalizeWhitespace(text) {
+            if (!text) return text;
+            // Remove all newlines and normalize other whitespace
+            return text.replace(/\n/g, '').replace(/\r/g, '').replace(/\s+/g, ' ').trim();
+        }
+        
         // Check if text matches t(...).stop() or t(...).play(...).stop() syntax
         function isStopSyntax(text) {
             if (!text) return false;
@@ -1143,9 +1150,10 @@
             
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
+                const normalized = normalizeWhitespace(selectedSeq);
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: selectedSeq
+                    cycleStr: normalized
                 });
                 return;
             }
@@ -1153,22 +1161,23 @@
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            const normalizedCommand = normalizeWhitespace(cleanCommand);
             
             // Check again after applying wrapper settings
-            if (isStopSyntax(cleanCommand)) {
+            if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: cleanCommand
+                    cycleStr: normalizedCommand
                 });
                 return;
             }
             
-            const parsed = parseMethodChain(cleanCommand);
+            const parsed = parseMethodChain(normalizedCommand);
             
             sendToServer({
                 action: 'addCycleToQueue',
                 id: null,
-                cycleStr: cleanCommand,
+                cycleStr: normalizedCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1185,19 +1194,21 @@
             
             // Check if it's a stop command
             if (isStopSyntax(track)) {
+                const normalized = normalizeWhitespace(track);
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: track
+                    cycleStr: normalized
                 });
                 return;
             }
             
             const cleanTrack = removeComments(track);
-            const parsed = parseMethodChain(cleanTrack);
+            const normalizedTrack = normalizeWhitespace(cleanTrack);
+            const parsed = parseMethodChain(normalizedTrack);
             sendToServer({
                 action: 'addCycleToQueue',
                 id: null,
-                cycleStr: cleanTrack,
+                cycleStr: normalizedTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1224,22 +1235,23 @@
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            const normalizedCommand = normalizeWhitespace(cleanCommand);
             
             // Check again after applying wrapper settings
-            if (isStopSyntax(cleanCommand)) {
+            if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: cleanCommand
+                    cycleStr: normalizedCommand
                 });
                 return;
             }
             
-            const parsed = parseMethodChain(cleanCommand);
+            const parsed = parseMethodChain(normalizedCommand);
             
             sendToServer({
                 action: 'addTrackToQueue',
                 id: null,
-                cycleStr: cleanCommand,
+                cycleStr: normalizedCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1256,19 +1268,21 @@
             
             // Check if it's a stop command
             if (isStopSyntax(track)) {
+                const normalized = normalizeWhitespace(track);
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: track
+                    cycleStr: normalized
                 });
                 return;
             }
             
             const cleanTrack = removeComments(track);
-            const parsed = parseMethodChain(cleanTrack);
+            const normalizedTrack = normalizeWhitespace(cleanTrack);
+            const parsed = parseMethodChain(normalizedTrack);
             sendToServer({
                 action: 'addTrackToQueue',
                 id: null,
-                cycleStr: cleanTrack,
+                cycleStr: normalizedTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1285,9 +1299,10 @@
             
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
+                const normalized = normalizeWhitespace(selectedSeq);
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: selectedSeq
+                    cycleStr: normalized
                 });
                 return;
             }
@@ -1295,22 +1310,23 @@
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            const normalizedCommand = normalizeWhitespace(cleanCommand);
             
             // Check again after applying wrapper settings
-            if (isStopSyntax(cleanCommand)) {
+            if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: cleanCommand
+                    cycleStr: normalizedCommand
                 });
                 return;
             }
             
-            const parsed = parseMethodChain(cleanCommand);
+            const parsed = parseMethodChain(normalizedCommand);
             
             sendToServer({
                 action: 'playCycle',
                 id: null,
-                cycleStr: cleanCommand,
+                cycleStr: normalizedCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1335,11 +1351,12 @@
             }
             
             const cleanTrack = removeComments(track);
-            const parsed = parseMethodChain(cleanTrack);
+            const normalizedTrack = normalizeWhitespace(cleanTrack);
+            const parsed = parseMethodChain(normalizedTrack);
             sendToServer({
                 action: 'playCycle',
                 id: null,
-                cycleStr: cleanTrack,
+                cycleStr: normalizedTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1356,9 +1373,10 @@
             
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
+                const normalized = normalizeWhitespace(selectedSeq);
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: selectedSeq
+                    cycleStr: normalized
                 });
                 return;
             }
@@ -1366,22 +1384,23 @@
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            const normalizedCommand = normalizeWhitespace(cleanCommand);
             
             // Check again after applying wrapper settings
-            if (isStopSyntax(cleanCommand)) {
+            if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: cleanCommand
+                    cycleStr: normalizedCommand
                 });
                 return;
             }
             
-            const parsed = parseMethodChain(cleanCommand);
+            const parsed = parseMethodChain(normalizedCommand);
             
             sendToServer({
                 action: 'playTrack',
                 id: null,
-                cycleStr: cleanCommand,
+                cycleStr: normalizedCommand,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
@@ -1398,19 +1417,21 @@
             
             // Check if it's a stop command
             if (isStopSyntax(track)) {
+                const normalized = normalizeWhitespace(track);
                 sendToServer({
                     action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: track
+                    cycleStr: normalized
                 });
                 return;
             }
             
             const cleanTrack = removeComments(track);
-            const parsed = parseMethodChain(cleanTrack);
+            const normalizedTrack = normalizeWhitespace(cleanTrack);
+            const parsed = parseMethodChain(normalizedTrack);
             sendToServer({
                 action: 'playTrack',
                 id: null,
-                cycleStr: cleanTrack,
+                cycleStr: normalizedTrack,
                 tempo: parsed?.tempo || null,
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
