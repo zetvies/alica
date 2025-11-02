@@ -3227,16 +3227,31 @@ wss.on('connection', (ws) => {
           if (!cycleQueueId) {
             cycleQueueId = 'cycle_' + Date.now();
           }
-          queue.push({
-            id: cycleQueueId,
-            function: () => playCycle(
+          // Check if cycle already exists - if so, update at end of cycle instead of queuing
+          const queueCycleExists = activeCycle.some(c => c.id === cycleQueueId);
+          if (queueCycleExists) {
+            // Cycle exists - update at end of cycle instead of on bar change
+            updateCycleById(
+              cycleQueueId,
               cycleQueueStrInput,
               data.tempo || null,
               data.signatureNumerator || null,
               data.signatureDenominator || null
-            )
-          });
-          console.log(`[WS] Added cycle '${cycleQueueId}' to queue`);
+            );
+            console.log(`[WS] Cycle '${cycleQueueId}' already exists - updating at end of cycle instead of queuing`);
+          } else {
+            // Cycle doesn't exist - add to queue as normal
+            queue.push({
+              id: cycleQueueId,
+              function: () => playCycle(
+                cycleQueueStrInput,
+                data.tempo || null,
+                data.signatureNumerator || null,
+                data.signatureDenominator || null
+              )
+            });
+            console.log(`[WS] Added cycle '${cycleQueueId}' to queue`);
+          }
           break;
           
         case 'updateCycleById':
