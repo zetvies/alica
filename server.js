@@ -247,6 +247,103 @@ function parseChord(chordStr) {
 }
 
 // Parse r.o{...} array syntax and return array of values
+// Helper function to evaluate chained multiplication/division expressions
+// Supports: baseValue*2/3*4, where baseValue can be bt, br, tmp, sn, sd, or a number
+// Returns the calculated value, or null if parsing fails
+function evaluateExpression(expr, context = {}) {
+  if (!expr || typeof expr !== 'string') return null;
+  
+  const norm = expr.trim().toLowerCase();
+  
+  // Parse base value: bt, br, tmp, sn, sd, or a number
+  let baseValue = null;
+  let remainingExpr = '';
+  
+  if (norm === 'bt' && context.bt !== undefined && context.bt !== null) {
+    baseValue = context.bt;
+  } else if (norm === 'br' && context.br !== undefined && context.br !== null) {
+    baseValue = context.br;
+  } else if (norm === 'tmp' && context.tmp !== undefined && context.tmp !== null) {
+    baseValue = context.tmp;
+  } else if (norm === 'sn' && context.sn !== undefined && context.sn !== null) {
+    baseValue = context.sn;
+  } else if (norm === 'sd' && context.sd !== undefined && context.sd !== null) {
+    baseValue = context.sd;
+  } else if (norm.startsWith('bt')) {
+    if (context.bt !== undefined && context.bt !== null) {
+      baseValue = context.bt;
+      remainingExpr = norm.substring(2); // Remove 'bt' prefix
+    }
+  } else if (norm.startsWith('br')) {
+    if (context.br !== undefined && context.br !== null) {
+      baseValue = context.br;
+      remainingExpr = norm.substring(2); // Remove 'br' prefix
+    }
+  } else if (norm.startsWith('tmp')) {
+    if (context.tmp !== undefined && context.tmp !== null) {
+      baseValue = context.tmp;
+      remainingExpr = norm.substring(3); // Remove 'tmp' prefix
+    }
+  } else if (norm.startsWith('sn')) {
+    if (context.sn !== undefined && context.sn !== null) {
+      baseValue = context.sn;
+      remainingExpr = norm.substring(2); // Remove 'sn' prefix
+    }
+  } else if (norm.startsWith('sd')) {
+    if (context.sd !== undefined && context.sd !== null) {
+      baseValue = context.sd;
+      remainingExpr = norm.substring(2); // Remove 'sd' prefix
+    }
+  } else {
+    // Try to parse as a number
+    const numMatch = norm.match(/^(\d+(?:\.\d+)?)/);
+    if (numMatch) {
+      baseValue = parseFloat(numMatch[1]);
+      remainingExpr = norm.substring(numMatch[1].length);
+    }
+  }
+  
+  if (baseValue === null || isNaN(baseValue)) return null;
+  
+  // If no remaining expression, return base value
+  if (!remainingExpr) return baseValue;
+  
+  // Parse and apply operations from left to right
+  // Pattern: *N or /N, where N can be any number
+  const operationRegex = /([*\/])(\d+(?:\.\d+)?)/g;
+  let result = baseValue;
+  let match;
+  let lastIndex = 0;
+  
+  while ((match = operationRegex.exec(remainingExpr)) !== null) {
+    // Check that we're starting where we left off (no gaps)
+    if (match.index !== lastIndex) {
+      return null; // Invalid - there's text between operations
+    }
+    
+    const op = match[1];
+    const num = parseFloat(match[2]);
+    
+    if (isNaN(num) || num <= 0) return null; // Invalid operation
+    
+    if (op === '*') {
+      result = result * num;
+    } else if (op === '/') {
+      result = result / num;
+    }
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Check if we consumed the entire expression
+  if (lastIndex !== remainingExpr.length) {
+    // There's extra text that wasn't consumed - invalid expression
+    return null;
+  }
+  
+  return result;
+}
+
 // Examples: r.o{c4, d4, e4}, r.o{60, 64, 67}, r.o{0.25, 0.5, 0.75}, r.o{bt/4, bt, bt*2}
 // Duration tokens: bt, bt/even, or bt*even (even numbers only)
 // Also supports: r.o{scale(...)}, r.o{chord(...)}, r.o{<c4,e4,g4>,<f4,a4,c5>}, r.o{<chord(c-maj9)>}, r.o{<scale(c-ionian).q(maj9)>} (chords)
@@ -311,12 +408,19 @@ function parseArrayRandomizer(str, context = {}) {
     }
     
     // Handle duration tokens: bt, bt/even, or bt*even (even numbers only)
+    // Note: Randomizer arrays and dRange must use even numbers only
     const normItem = item.replace(/\s+/g, '').toLowerCase();
     
     // Check for standalone bt first
     if (normItem === 'bt') {
       if (context.bt) {
         result.push({ type: 'duration', value: Math.round(context.bt), token: 'bt' });
+        continue;
+      }
+    } else if (normItem === 'br') {
+      if (context.br) {
+        result.push({ type: 'duration', value: Math.round(context.br), token: 'br' });
+        continue;
       }
     } else {
       const mDiv = normItem.match(/^bt\/(\d+)$/);
@@ -326,29 +430,32 @@ function parseArrayRandomizer(str, context = {}) {
         const divisor = parseInt(mDiv[1], 10);
         if (context.bt && !isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
           result.push({ type: 'duration', value: Math.round(context.bt / divisor), token: `bt/${divisor}` });
+          continue;
         }
       } else if (mMul && mMul[1]) {
         const multiplier = parseInt(mMul[1], 10);
         if (context.bt && !isNaN(multiplier) && multiplier > 0 && multiplier % 2 === 0) {
           result.push({ type: 'duration', value: Math.round(context.bt * multiplier), token: `bt*${multiplier}` });
+          continue;
         }
+      }
+    }
+    
+    // If not a duration token, try parsing as note/number
+    // Try to parse as note token first (e.g., "c4", "c#3")
+    const noteMidi = noteTokenToMidi(item);
+    if (noteMidi !== null) {
+      result.push({ type: 'note', value: noteMidi });
+    } else {
+      // Try as MIDI note number (0-127)
+      const midiNum = parseInt(item, 10);
+      if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
+        result.push({ type: 'note', value: midiNum });
       } else {
-        // Try to parse as note token first (e.g., "c4", "c#3")
-        const noteMidi = noteTokenToMidi(item);
-        if (noteMidi !== null) {
-          result.push({ type: 'note', value: noteMidi });
-        } else {
-          // Try as MIDI note number (0-127)
-          const midiNum = parseInt(item, 10);
-          if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
-            result.push({ type: 'note', value: midiNum });
-          } else {
-            // Parse as regular number (for velocity, pan, etc.)
-            const num = parseFloat(item);
-            if (!isNaN(num)) {
-              result.push({ type: 'number', value: num });
-            }
-          }
+        // Parse as regular number (for velocity, pan, etc.)
+        const num = parseFloat(item);
+        if (!isNaN(num)) {
+          result.push({ type: 'number', value: num });
         }
       }
     }
@@ -760,35 +867,13 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   const br = barDurationMs
   
   // Parse cutoff token and convert to milliseconds
-  // Supports: br, br*i, br/even, bt, bt*i, bt/even (where i is a number, even is even number)
+  // Parse cutoff duration - supports: br, br*2/3*4, bt, bt*2/3*4, or number*2/3*4
   let cutoffDurationMs = null;
   if (cutOff) {
     const cutoffNorm = cutOff.trim().toLowerCase();
-    const brMatch = cutoffNorm.match(/^br(?:\*(\d+(?:\.\d+)?))?$/);
-    const brDivMatch = cutoffNorm.match(/^br\/(\d+)$/);
-    const btMatch = cutoffNorm.match(/^bt(?:\*(\d+(?:\.\d+)?))?$/);
-    const btDivMatch = cutoffNorm.match(/^bt\/(\d+)$/);
-    
-    if (brMatch) {
-      const multiplier = brMatch[1] ? parseFloat(brMatch[1]) : 1;
-      if (!isNaN(multiplier) && multiplier > 0) {
-        cutoffDurationMs = Math.round(br * multiplier);
-      }
-    } else if (brDivMatch) {
-      const divisor = parseInt(brDivMatch[1], 10);
-      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
-        cutoffDurationMs = Math.round(br / divisor);
-      }
-    } else if (btMatch) {
-      const multiplier = btMatch[1] ? parseFloat(btMatch[1]) : 1;
-      if (!isNaN(multiplier) && multiplier > 0) {
-        cutoffDurationMs = Math.round(bt * multiplier);
-      }
-    } else if (btDivMatch) {
-      const divisor = parseInt(btDivMatch[1], 10);
-      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) {
-        cutoffDurationMs = Math.round(bt / divisor);
-      }
+    const exprResult = evaluateExpression(cutoffNorm, { bt, br });
+    if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+      cutoffDurationMs = Math.round(exprResult);
     }
   }
 
@@ -1037,42 +1122,29 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         const norm = raw.replace(/\s+/g, '').toLowerCase();
         const prevDuration = duration; // Save previous state
 
-        // Helpers to get base durations
-        const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'br' ? br : null);
-
-        // Allowed patterns ONLY:
-        // d(*f) or d(/f)
+        // Allowed patterns:
+        // d(*f) or d(/f) - multiply/divide default duration
         const mMul = norm.match(/^\*(\d*(?:\.\d+)?)$/);
         const mDiv = norm.match(/^\/(\d*(?:\.\d+)?)$/);
-        // d(bt) | d(br)
-        const mAbs = norm.match(/^(bt|br)$/);
-        // d(bt*f) | d(br*f) — require explicit '*'
-        const mTokMul = norm.match(/^(bt|br)\*(\d*(?:\.\d+)?)$/);
-        // d(bt/f) | d(br/f)
-        const mTokDiv = norm.match(/^(bt|br)\/(\d*(?:\.\d+)?)$/);
-
+        
+        // Try to evaluate as expression: bt, br, bt*2/3*4, br*2/3*4, or number*2/3*4
+        const exprResult = evaluateExpression(norm, { bt, br });
+        
         if (mMul && mMul[1] !== '') {
           f = parseFloat(mMul[1]);
           if (type !== 'fit' && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs * f));
         } else if (mDiv && mDiv[1] !== '') {
           f = parseFloat(mDiv[1]);
           if (type !== 'fit' && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(defaultDurationMs / f));
-        } else if (mAbs) {
-          if (!(disallowBtBr && (mAbs[1] === 'bt' || mAbs[1] === 'br'))) {
-            const base = baseFromToken(mAbs[1]);
-            if (base !== null) duration = Math.max(0, Math.round(base));
-          }
-        } else if (mTokMul && mTokMul[2] !== '') {
-          if (!(disallowBtBr && (mTokMul[1] === 'bt' || mTokMul[1] === 'br'))) {
-            const base = baseFromToken(mTokMul[1]);
-            f = parseFloat(mTokMul[2]);
-            if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base * f));
-          }
-        } else if (mTokDiv && mTokDiv[2] !== '') {
-          if (!(disallowBtBr && (mTokDiv[1] === 'bt' || mTokDiv[1] === 'br'))) {
-            const base = baseFromToken(mTokDiv[1]);
-            f = parseFloat(mTokDiv[2]);
-            if (base !== null && !isNaN(f) && f > 0) duration = Math.max(0, Math.round(base / f));
+        } else if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+          // Check if it's a bt/br token (disallow for 'fit' type)
+          if (norm.startsWith('bt') || norm.startsWith('br')) {
+            if (!disallowBtBr) {
+              duration = Math.max(0, Math.round(exprResult));
+            }
+          } else {
+            // Regular number expression
+            duration = Math.max(0, Math.round(exprResult));
           }
         } else if (norm === 'r') {
           // Random duration
@@ -1998,54 +2070,28 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
   const effectiveType = (type === 'fit' || type === 'beat') ? type : 'fit';
   const defaultDurationMs = effectiveType === 'fit' ? ev : bt;
   
-  // Parse cutoff
+  // Parse cutoff duration - supports: br, br*2/3*4, bt, bt*2/3*4, or number*2/3*4
   let cutoffDurationMs = null;
   if (cutOff) {
     const cutoffNorm = cutOff.trim().toLowerCase();
-    const brMatch = cutoffNorm.match(/^br(?:\*(\d+(?:\.\d+)?))?$/);
-    const brDivMatch = cutoffNorm.match(/^br\/(\d+)$/);
-    const btMatch = cutoffNorm.match(/^bt(?:\*(\d+(?:\.\d+)?))?$/);
-    const btDivMatch = cutoffNorm.match(/^bt\/(\d+)$/);
-    
-    if (brMatch) {
-      const multiplier = brMatch[1] ? parseFloat(brMatch[1]) : 1;
-      if (!isNaN(multiplier) && multiplier > 0) cutoffDurationMs = Math.round(br * multiplier);
-    } else if (brDivMatch) {
-      const divisor = parseInt(brDivMatch[1], 10);
-      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) cutoffDurationMs = Math.round(br / divisor);
-    } else if (btMatch) {
-      const multiplier = btMatch[1] ? parseFloat(btMatch[1]) : 1;
-      if (!isNaN(multiplier) && multiplier > 0) cutoffDurationMs = Math.round(bt * multiplier);
-    } else if (btDivMatch) {
-      const divisor = parseInt(btDivMatch[1], 10);
-      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) cutoffDurationMs = Math.round(bt / divisor);
+    const exprResult = evaluateExpression(cutoffNorm, { bt, br });
+    if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+      cutoffDurationMs = Math.round(exprResult);
     }
   }
   
-  // Helper to parse duration token (same as playAutomation)
+  // Helper to parse duration token - supports: bt, br, bt*2/3*4, br*2/3*4, or number*2/3*4
   const parseDuration = (durationStr, defaultMs) => {
     if (!durationStr || typeof durationStr !== 'string') return defaultMs;
     
     const norm = durationStr.trim().toLowerCase();
-    const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'br' ? br : null);
+    const exprResult = evaluateExpression(norm, { bt, br });
     
-    const mAbs = norm.match(/^(bt|br)$/);
-    const mTokMul = norm.match(/^(bt|br)\*(\d+(?:\.\d+)?)$/);
-    const mTokDiv = norm.match(/^(bt|br)\/(\d+(?:\.\d+)?)$/);
-    
-    if (mAbs) {
-      const base = baseFromToken(mAbs[1]);
-      return base !== null ? Math.max(1, Math.round(base)) : defaultMs;
-    } else if (mTokMul && mTokMul[2] !== '') {
-      const base = baseFromToken(mTokMul[1]);
-      const f = parseFloat(mTokMul[2]);
-      if (base !== null && !isNaN(f) && f > 0) return Math.max(1, Math.round(base * f));
-    } else if (mTokDiv && mTokDiv[2] !== '') {
-      const base = baseFromToken(mTokDiv[1]);
-      const f = parseFloat(mTokDiv[2]);
-      if (base !== null && !isNaN(f) && f > 0) return Math.max(1, Math.round(base / f));
+    if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+      return Math.max(1, Math.round(exprResult));
     }
     
+    // Fallback to parsing as a plain number
     const ms = parseFloat(norm);
     if (!isNaN(ms) && ms > 0) return Math.max(1, Math.round(ms));
     
@@ -2183,22 +2229,10 @@ function parseMethodChainSyntax(inputStr) {
     }
     if (depth === 0) {
       const bpmStr = trimmed.substring(start, currentPos - 1).trim();
-      // Support tmp*f syntax where tmp is Ableton tempo
-      if (bpmStr.toLowerCase().startsWith('tmp')) {
-        const multiplierMatch = bpmStr.match(/^tmp\*([0-9.]+)$/i);
-        if (multiplierMatch) {
-          const multiplier = parseFloat(multiplierMatch[1]);
-          if (!isNaN(multiplier) && multiplier > 0 && tempo !== null) {
-            bpm = tempo * multiplier;
-          }
-        } else if (bpmStr.toLowerCase() === 'tmp' && tempo !== null) {
-          // Just 'tmp' means use Ableton tempo as-is
-          bpm = tempo;
-        }
-      } else {
-        // Regular number
-        const bpmVal = parseFloat(bpmStr);
-        if (!isNaN(bpmVal) && bpmVal > 0) bpm = bpmVal;
+      // Support tmp*2/3*4 syntax where tmp is Ableton tempo, or regular number*2/3*4
+      const exprResult = evaluateExpression(bpmStr.toLowerCase(), { tmp: tempo });
+      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+        bpm = exprResult;
       }
     }
   }
@@ -2215,28 +2249,10 @@ function parseMethodChainSyntax(inputStr) {
     }
     if (depth === 0) {
       const snStr = trimmed.substring(start, currentPos - 1).trim();
-      // Support sn*f or sn/f syntax where sn is Ableton signature numerator
-      if (snStr.toLowerCase().startsWith('sn')) {
-        const multiplierMatch = snStr.match(/^sn\*([0-9.]+)$/i);
-        const divisorMatch = snStr.match(/^sn\/([0-9.]+)$/i);
-        if (multiplierMatch) {
-          const multiplier = parseFloat(multiplierMatch[1]);
-          if (!isNaN(multiplier) && multiplier > 0 && signatureNumerator !== null) {
-            sn = Math.round(signatureNumerator * multiplier);
-          }
-        } else if (divisorMatch) {
-          const divisor = parseFloat(divisorMatch[1]);
-          if (!isNaN(divisor) && divisor > 0 && signatureNumerator !== null) {
-            sn = Math.round(signatureNumerator / divisor);
-          }
-        } else if (snStr.toLowerCase() === 'sn' && signatureNumerator !== null) {
-          // Just 'sn' means use Ableton signature numerator as-is
-          sn = signatureNumerator;
-        }
-      } else {
-        // Regular number
-        const snVal = parseFloat(snStr);
-        if (!isNaN(snVal) && snVal > 0) sn = Math.round(snVal);
+      // Support sn*2/3*4 syntax where sn is Ableton signature numerator, or regular number*2/3*4
+      const exprResult = evaluateExpression(snStr.toLowerCase(), { sn: signatureNumerator });
+      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+        sn = Math.round(exprResult);
       }
     }
   }
@@ -2253,28 +2269,10 @@ function parseMethodChainSyntax(inputStr) {
     }
     if (depth === 0) {
       const sdStr = trimmed.substring(start, currentPos - 1).trim();
-      // Support sd*f or sd/f syntax where sd is Ableton signature denominator
-      if (sdStr.toLowerCase().startsWith('sd')) {
-        const multiplierMatch = sdStr.match(/^sd\*([0-9.]+)$/i);
-        const divisorMatch = sdStr.match(/^sd\/([0-9.]+)$/i);
-        if (multiplierMatch) {
-          const multiplier = parseFloat(multiplierMatch[1]);
-          if (!isNaN(multiplier) && multiplier > 0 && signatureDenominator !== null) {
-            sd = Math.round(signatureDenominator * multiplier);
-          }
-        } else if (divisorMatch) {
-          const divisor = parseFloat(divisorMatch[1]);
-          if (!isNaN(divisor) && divisor > 0 && signatureDenominator !== null) {
-            sd = Math.round(signatureDenominator / divisor);
-          }
-        } else if (sdStr.toLowerCase() === 'sd' && signatureDenominator !== null) {
-          // Just 'sd' means use Ableton signature denominator as-is
-          sd = signatureDenominator;
-        }
-      } else {
-        // Regular number
-        const sdVal = parseFloat(sdStr);
-        if (!isNaN(sdVal) && sdVal > 0) sd = Math.round(sdVal);
+      // Support sd*2/3*4 syntax where sd is Ableton signature denominator, or regular number*2/3*4
+      const exprResult = evaluateExpression(sdStr.toLowerCase(), { sd: signatureDenominator });
+      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+        sd = Math.round(exprResult);
       }
     }
   }

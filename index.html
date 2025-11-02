@@ -132,11 +132,11 @@
         <span id="bpmDisplay">BPM: --</span>
         <span id="signatureDisplay">Signature: --/--</span>
         <div id="beatSequencer"></div>
-    </div>
+        </div>
     <div id="hint">
         <strong>Shortcuts:</strong> Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
         For Enter: no Shift = current track, + Shift = selected lines
-    </div>
+        </div>
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
 
     <script>
@@ -164,34 +164,34 @@
             
             try {
                 ws = new WebSocket(`ws://localhost:4254`);
-                
-                ws.onopen = () => {
-                    statusEl.textContent = 'Connected';
-                    statusEl.className = 'status connected';
+        
+        ws.onopen = () => {
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'status connected';
                     reconnectAttempts = 0; // Reset on successful connection
-                    console.log('WebSocket connected');
-                };
-                
+            console.log('WebSocket connected');
+        };
+        
                 ws.onclose = (event) => {
-                    statusEl.textContent = 'Disconnected';
-                    statusEl.className = 'status disconnected';
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'status disconnected';
                     console.log('WebSocket disconnected', event.code, event.reason);
                     
                     // Attempt to reconnect (unless it was a clean close or manual close)
                     if (event.code !== 1000) { // 1000 = normal closure
                         scheduleReconnect();
                     }
-                };
-                
-                ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
                     statusEl.textContent = 'Error';
                     statusEl.className = 'status disconnected';
-                };
-                
-                ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    console.log('Received:', data);
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log('Received:', data);
                     
                     // Handle BPM and signature updates
                     if (data.type === 'tempoAndSignature') {
@@ -653,6 +653,88 @@
             return commands.filter(cmd => cmd.trim() && !cmd.trim().startsWith('//'));
         }
         
+        // Helper function to evaluate chained multiplication/division expressions
+        // Supports: baseValue*2/3*4, where baseValue can be tmp, sn, sd, or a number
+        function evaluateExpression(expr, context = {}) {
+            if (!expr || typeof expr !== 'string') return null;
+            
+            const norm = expr.trim().toLowerCase();
+            
+            // Parse base value: tmp, sn, sd, or a number
+            let baseValue = null;
+            let remainingExpr = '';
+            
+            if (norm === 'tmp' && context.tmp !== undefined && context.tmp !== null) {
+                baseValue = context.tmp;
+            } else if (norm === 'sn' && context.sn !== undefined && context.sn !== null) {
+                baseValue = context.sn;
+            } else if (norm === 'sd' && context.sd !== undefined && context.sd !== null) {
+                baseValue = context.sd;
+            } else if (norm.startsWith('tmp')) {
+                if (context.tmp !== undefined && context.tmp !== null) {
+                    baseValue = context.tmp;
+                    remainingExpr = norm.substring(3); // Remove 'tmp' prefix
+                }
+            } else if (norm.startsWith('sn')) {
+                if (context.sn !== undefined && context.sn !== null) {
+                    baseValue = context.sn;
+                    remainingExpr = norm.substring(2); // Remove 'sn' prefix
+                }
+            } else if (norm.startsWith('sd')) {
+                if (context.sd !== undefined && context.sd !== null) {
+                    baseValue = context.sd;
+                    remainingExpr = norm.substring(2); // Remove 'sd' prefix
+                }
+            } else {
+                // Try to parse as a number
+                const numMatch = norm.match(/^(\d+(?:\.\d+)?)/);
+                if (numMatch) {
+                    baseValue = parseFloat(numMatch[1]);
+                    remainingExpr = norm.substring(numMatch[1].length);
+                }
+            }
+            
+            if (baseValue === null || isNaN(baseValue)) return null;
+            
+            // If no remaining expression, return base value
+            if (!remainingExpr) return baseValue;
+            
+            // Parse and apply operations from left to right
+            // Pattern: *N or /N, where N can be any number
+            const operationRegex = /([*\/])(\d+(?:\.\d+)?)/g;
+            let result = baseValue;
+            let match;
+            let lastIndex = 0;
+            
+            while ((match = operationRegex.exec(remainingExpr)) !== null) {
+                // Check that we're starting where we left off (no gaps)
+                if (match.index !== lastIndex) {
+                    return null; // Invalid - there's text between operations
+                }
+                
+                const op = match[1];
+                const num = parseFloat(match[2]);
+                
+                if (isNaN(num) || num <= 0) return null; // Invalid operation
+                
+                if (op === '*') {
+                    result = result * num;
+                } else if (op === '/') {
+                    result = result / num;
+                }
+                
+                lastIndex = match.index + match[0].length;
+            }
+            
+            // Check if we consumed the entire expression
+            if (lastIndex !== remainingExpr.length) {
+                // There's extra text that wasn't consumed - invalid expression
+                return null;
+            }
+            
+            return result;
+        }
+        
         // Simple parser for new syntax (client-side helper)
         function parseMethodChain(str) {
             if (!str || !str.trim().startsWith('t(')) return null;
@@ -667,22 +749,10 @@
             const bpmMatch = str.match(/\.bpm\(([^)]+)\)/);
             if (bpmMatch) {
                 const bpmStr = bpmMatch[1].trim();
-                // Support tmp*f syntax where tmp is Ableton tempo
-                if (bpmStr.toLowerCase().startsWith('tmp')) {
-                    const multiplierMatch = bpmStr.match(/^tmp\*([0-9.]+)$/i);
-                    if (multiplierMatch && currentAbletonTempo !== null) {
-                        const multiplier = parseFloat(multiplierMatch[1]);
-                        if (!isNaN(multiplier) && multiplier > 0) {
-                            bpm = currentAbletonTempo * multiplier;
-                        }
-                    } else if (bpmStr.toLowerCase() === 'tmp' && currentAbletonTempo !== null) {
-                        // Just 'tmp' means use Ableton tempo as-is
-                        bpm = currentAbletonTempo;
-                    }
-                } else {
-                    // Regular number
-                    const val = parseFloat(bpmStr);
-                    if (!isNaN(val) && val > 0) bpm = val;
+                // Support tmp*2/3*4 syntax where tmp is Ableton tempo, or regular number*2/3*4
+                const exprResult = evaluateExpression(bpmStr.toLowerCase(), { tmp: currentAbletonTempo });
+                if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+                    bpm = exprResult;
                 }
             }
             
@@ -690,28 +760,10 @@
             const snMatch = str.match(/\.sn\(([^)]+)\)/);
             if (snMatch) {
                 const snStr = snMatch[1].trim();
-                // Support sn*f or sn/f syntax where sn is Ableton signature numerator
-                if (snStr.toLowerCase().startsWith('sn')) {
-                    const multiplierMatch = snStr.match(/^sn\*([0-9.]+)$/i);
-                    const divisorMatch = snStr.match(/^sn\/([0-9.]+)$/i);
-                    if (multiplierMatch && currentAbletonSignatureNumerator !== null) {
-                        const multiplier = parseFloat(multiplierMatch[1]);
-                        if (!isNaN(multiplier) && multiplier > 0) {
-                            sn = Math.round(currentAbletonSignatureNumerator * multiplier);
-                        }
-                    } else if (divisorMatch && currentAbletonSignatureNumerator !== null) {
-                        const divisor = parseFloat(divisorMatch[1]);
-                        if (!isNaN(divisor) && divisor > 0) {
-                            sn = Math.round(currentAbletonSignatureNumerator / divisor);
-                        }
-                    } else if (snStr.toLowerCase() === 'sn' && currentAbletonSignatureNumerator !== null) {
-                        // Just 'sn' means use Ableton signature numerator as-is
-                        sn = currentAbletonSignatureNumerator;
-                    }
-                } else {
-                    // Regular number
-                    const val = parseFloat(snStr);
-                    if (!isNaN(val) && val > 0) sn = Math.round(val);
+                // Support sn*2/3*4 syntax where sn is Ableton signature numerator, or regular number*2/3*4
+                const exprResult = evaluateExpression(snStr.toLowerCase(), { sn: currentAbletonSignatureNumerator });
+                if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+                    sn = Math.round(exprResult);
                 }
             }
             
@@ -719,28 +771,10 @@
             const sdMatch = str.match(/\.sd\(([^)]+)\)/);
             if (sdMatch) {
                 const sdStr = sdMatch[1].trim();
-                // Support sd*f or sd/f syntax where sd is Ableton signature denominator
-                if (sdStr.toLowerCase().startsWith('sd')) {
-                    const multiplierMatch = sdStr.match(/^sd\*([0-9.]+)$/i);
-                    const divisorMatch = sdStr.match(/^sd\/([0-9.]+)$/i);
-                    if (multiplierMatch && currentAbletonSignatureDenominator !== null) {
-                        const multiplier = parseFloat(multiplierMatch[1]);
-                        if (!isNaN(multiplier) && multiplier > 0) {
-                            sd = Math.round(currentAbletonSignatureDenominator * multiplier);
-                        }
-                    } else if (divisorMatch && currentAbletonSignatureDenominator !== null) {
-                        const divisor = parseFloat(divisorMatch[1]);
-                        if (!isNaN(divisor) && divisor > 0) {
-                            sd = Math.round(currentAbletonSignatureDenominator / divisor);
-                        }
-                    } else if (sdStr.toLowerCase() === 'sd' && currentAbletonSignatureDenominator !== null) {
-                        // Just 'sd' means use Ableton signature denominator as-is
-                        sd = currentAbletonSignatureDenominator;
-                    }
-                } else {
-                    // Regular number
-                    const val = parseFloat(sdStr);
-                    if (!isNaN(val) && val > 0) sd = Math.round(val);
+                // Support sd*2/3*4 syntax where sd is Ableton signature denominator, or regular number*2/3*4
+                const exprResult = evaluateExpression(sdStr.toLowerCase(), { sd: currentAbletonSignatureDenominator });
+                if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+                    sd = Math.round(exprResult);
                 }
             }
             
@@ -849,4 +883,5 @@
     </script>
 </body>
 </html>
+
 
