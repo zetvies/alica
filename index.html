@@ -191,7 +191,7 @@
         <div id="beatSequencer"></div>
         </div>
         <div id="hint">
-        <strong>Shortcuts:</strong> Ctrl+/ (toggle comment), Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
+        <strong>Shortcuts:</strong> Ctrl+/ (toggle comment), Ctrl+H (clear all cycles), Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
         For Enter: no Shift = current track, + Shift = selected lines
         </div>
     <div id="editorContainer">
@@ -317,6 +317,11 @@
             if (isCtrl && !isAlt && !isShift && (e.key === '/' || e.key === '?')) {
                 e.preventDefault();
                 toggleComment();
+            }
+            // Ctrl + H = clear all cycles
+            else if (isCtrl && !isAlt && !isShift && e.key === 'h') {
+                e.preventDefault();
+                clearAllCycles();
             }
             // Ctrl + S = save whole track (queue playCycle for current track)
             else if (isCtrl && !isAlt && !isShift && e.key === 's') {
@@ -1237,6 +1242,13 @@
                 statusEl.textContent = 'Not Connected - Retrying...';
                 statusEl.className = 'status disconnected';
             }
+        }
+        
+        function clearAllCycles() {
+            sendToServer({
+                action: 'clearAllCycles'
+            });
+            console.log('Clear all cycles requested');
         }
         
         // Syntax highlighting for brackets/parentheses

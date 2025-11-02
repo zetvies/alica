@@ -2525,7 +2525,7 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   
   // Set up interval to call playTrack at bar duration intervals
   const intervalId = setInterval(() => {
-    console.log(`[CYCLE] Interval callback fired for cycle '${finalCycleId}', intervalId: ${intervalId}`);
+    // console.log(`[CYCLE] Interval callback fired for cycle '${finalCycleId}', intervalId: ${intervalId}`);
     // Check if there's a pending update for this cycle by looking it up in activeCycle
     // Try both by intervalId and by cycleId (fallback in case entry was replaced)
     let cycleEntry = activeCycle.find(c => c.intervalId === intervalId);
@@ -2789,7 +2789,7 @@ function calculateBarAndBeat() {
 
       // Detect when the bar changes (including first bar when oldBar is null)
       if (oldBar === null || currentBar !== oldBar) {
-        console.log('[BAR/BEAT] Bar changed:', currentBar);
+        // console.log('[BAR/BEAT] Bar changed:', currentBar);
         onBarChange();
       }
       
