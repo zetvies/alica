@@ -85,30 +85,86 @@
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
 
     <script>
-        const ws = new WebSocket(`ws://localhost:4254`);
+        let ws = null;
+        let reconnectTimeout = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = Infinity; // Keep trying forever
+        const reconnectDelay = 3000; // Start with 3 seconds
+        const maxReconnectDelay = 30000; // Max 30 seconds
         const statusEl = document.getElementById('status');
         const commandArea = document.getElementById('commandArea');
         
-        ws.onopen = () => {
-            statusEl.textContent = 'Connected';
-            statusEl.className = 'status connected';
-            console.log('WebSocket connected');
-        };
+        function connect() {
+            // Clear any existing reconnect timeout
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            
+            // Close existing connection if any
+            if (ws) {
+                ws.onclose = null; // Prevent infinite loop
+                ws.close();
+            }
+            
+            try {
+                ws = new WebSocket(`ws://localhost:4254`);
+                
+                ws.onopen = () => {
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'status connected';
+                    reconnectAttempts = 0; // Reset on successful connection
+                    console.log('WebSocket connected');
+                };
+                
+                ws.onclose = (event) => {
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'status disconnected';
+                    console.log('WebSocket disconnected', event.code, event.reason);
+                    
+                    // Attempt to reconnect (unless it was a clean close or manual close)
+                    if (event.code !== 1000) { // 1000 = normal closure
+                        scheduleReconnect();
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    statusEl.textContent = 'Error';
+                    statusEl.className = 'status disconnected';
+                };
+                
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    console.log('Received:', data);
+                };
+                
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                scheduleReconnect();
+            }
+        }
         
-        ws.onclose = () => {
-            statusEl.textContent = 'Disconnected';
-            statusEl.className = 'status disconnected';
-            console.log('WebSocket disconnected');
-        };
+        function scheduleReconnect() {
+            // Don't schedule if already scheduled
+            if (reconnectTimeout) return;
+            
+            reconnectAttempts++;
+            
+            // Calculate delay with exponential backoff (capped at maxReconnectDelay)
+            const delay = Math.min(reconnectDelay * Math.pow(1.5, reconnectAttempts - 1), maxReconnectDelay);
+            
+            statusEl.textContent = `Reconnecting... (attempt ${reconnectAttempts})`;
+            console.log(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttempts})`);
+            
+            reconnectTimeout = setTimeout(() => {
+                reconnectTimeout = null;
+                connect();
+            }, delay);
+        }
         
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log('Received:', data);
-        };
+        // Initial connection
+        connect();
         
         // Handle keyboard shortcuts
         commandArea.addEventListener('keydown', (e) => {
@@ -143,14 +199,14 @@
                         // Check if new syntax is used
                         const parsed = parseMethodChain(cycleStr);
                         
-                        ws.send(JSON.stringify({
+                        sendToServer({
                             action: action,
                             id: null, // Let server extract from t(cycleId)
                             cycleStr: cycleStr,
                             tempo: parsed?.tempo || null,
                             signatureNumerator: parsed?.sn || null,
                             signatureDenominator: parsed?.sd || null
-                        }));
+                        });
                     }
                 } else if (trimmed.startsWith('t(')) {
                     // Direct new syntax - determine if it's a cycle or track based on context
@@ -158,24 +214,24 @@
                     // Don't send id - let server extract it from t(cycleId)
                     const parsed = parseMethodChain(trimmed);
                     
-                    ws.send(JSON.stringify({
+                    sendToServer({
                         action: 'playCycle',
                         id: null, // Let server extract from t(cycleId)
                         cycleStr: trimmed,
                         tempo: parsed?.tempo || null,
                         signatureNumerator: parsed?.sn || null,
                         signatureDenominator: parsed?.sd || null
-                    }));
+                    });
                 } else {
                     // Legacy format or unknown - try to send as cycle
-                    ws.send(JSON.stringify({
+                    sendToServer({
                         action: 'playCycle',
                         id: null,
                         cycleStr: trimmed,
                         tempo: null,
                         signatureNumerator: null,
                         signatureDenominator: null
-                    }));
+                    });
                 }
             });
         }
@@ -283,9 +339,33 @@
             return { cycleId, tempo: bpm, sn, sd };
         }
         
+        // Helper function to send messages with connection check
+        function sendToServer(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            } else {
+                console.warn('WebSocket not connected, message queued:', data);
+                // Optionally queue messages for when connection is restored
+                // For now, just log a warning
+                statusEl.textContent = 'Not Connected - Retrying...';
+                statusEl.className = 'status disconnected';
+            }
+        }
+        
         // Focus textarea on load
         window.addEventListener('load', () => {
             commandArea.focus();
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (ws) {
+                ws.onclose = null; // Prevent reconnect on manual close
+                ws.close();
+            }
         });
     </script>
 </body>
