@@ -19,15 +19,48 @@
             overflow: hidden;
         }
         
+        /* Custom scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-left: 1px solid #333;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 6px;
+            border: 2px solid #1a1a1a;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        ::-webkit-scrollbar-thumb:active {
+            background: #666;
+        }
+        
+        /* Firefox scrollbar */
+        #commandArea,
+        #highlightOverlay {
+            scrollbar-width: thin;
+            scrollbar-color: #444 #1a1a1a;
+        }
+        
         #editorContainer {
             position: relative;
             width: 100%;
-            height: 100vh;
+            margin-top: 50px; /* Account for header */
+            height: calc(100vh - 50px);
         }
         
         #commandArea {
             width: 100%;
-            height: 100vh;
+            height: 100%;
             padding: 20px;
             background: transparent;
             border: none;
@@ -55,10 +88,11 @@
             top: 0;
             left: 0;
             width: 100%;
-            height: 100vh;
+            height: 100%;
             padding: 20px;
             margin: 0;
             background: #0f0f0f;
+            box-sizing: border-box;
             font-family: 'Courier New', monospace;
             font-size: 14px;
             line-height: 1.6;
@@ -85,28 +119,76 @@
             background: rgba(255, 107, 107, 0.1);
         }
         
-        .bracket-0 { color: #ff6b6b; }
-        .bracket-1 { color: #4ecdc4; }
-        .bracket-2 { color: #ffe66d; }
-        .bracket-3 { color: #95e1d3; }
-        .bracket-4 { color: #f38181; }
-        .bracket-5 { color: #aa96da; }
-        .bracket-6 { color: #fcbad3; }
-        .bracket-7 { color: #a8e6cf; }
+        /* Track-level brackets (t(), .play(), .bpm(), etc.) */
+        .bracket-track-0 { color: #ff6b6b; } /* Red */
+        .bracket-track-1 { color: #feca57; } /* Orange Yellow */
+        .bracket-track-2 { color: #ff9ff3; } /* Magenta */
+        .bracket-track-3 { color: #a29bfe; } /* Purple */
+        
+        /* Sequence-level brackets ([...], .c(), .ds(), etc.) */
+        .bracket-seq-0 { color: #00d2d3; } /* Teal */
+        .bracket-seq-1 { color: #fd79a8; } /* Hot Pink */
+        .bracket-seq-2 { color: #fdcb6e; } /* Golden Yellow */
+        .bracket-seq-3 { color: #55efc4; } /* Mint */
         
         #commandArea::placeholder {
             color: #666;
         }
         
-        #status {
+        #header {
             position: fixed;
-            top: 10px;
-            right: 10px;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #444;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        #headerLeft {
+            display: flex;
+            align-items: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        
+        #headerLeft .brand {
+            font-size: 20px;
+        }
+        
+        #headerLeft .byline {
+            font-size: 11px;
+            color: #888;
+            margin-left: 6px;
+            font-weight: normal;
+        }
+        
+        #headerMiddle {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        
+        #headerRight {
+            display: flex;
+            align-items: center;
+        }
+        
+        #status {
             padding: 8px 16px;
             border-radius: 4px;
             font-size: 12px;
             font-weight: bold;
-            z-index: 1000;
             background: #333;
             border: 1px solid #555;
         }
@@ -133,23 +215,6 @@
             font-size: 11px;
             color: #888;
             z-index: 1000;
-        }
-        
-        #abletonInfo {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 13px;
-            font-weight: bold;
-            z-index: 1000;
-            background: #1a1a1a;
-            border: 1px solid #444;
-            color: #e0e0e0;
-            display: flex;
-            align-items: center;
-            gap: 20px;
         }
         
         #bpmDisplay {
@@ -184,11 +249,19 @@
     </style>
 </head>
 <body>
-    <div id="status" class="disconnected">Disconnected</div>
-    <div id="abletonInfo">
-        <span id="bpmDisplay">BPM: --</span>
-        <span id="signatureDisplay">Signature: --/--</span>
-        <div id="beatSequencer"></div>
+    <div id="header">
+        <div id="headerLeft">
+            <span class="brand">ALiCA</span>
+            <span class="byline">by Zetvies</span>
+        </div>
+        <div id="headerMiddle">
+            <span id="bpmDisplay">BPM: --</span>
+            <span id="signatureDisplay">Signature: --/--</span>
+            <div id="beatSequencer"></div>
+        </div>
+        <div id="headerRight">
+            <div id="status" class="disconnected">Disconnected</div>
+        </div>
         </div>
         <div id="hint">
         <strong>Shortcuts:</strong> Ctrl+/ (toggle comment), Ctrl+H (clear all cycles), Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
@@ -1270,32 +1343,380 @@
             }
             
             const text = commandArea.value || '';
-            const lines = text.split('\n');
             
-            // Clear overlay
+            // Process entire text for multiline bracket matching
+            const highlighted = highlightText(text);
+            
+            // Clear overlay and add highlighted content
             highlightOverlay.innerHTML = '';
+            if (highlighted) {
+                highlightOverlay.appendChild(highlighted);
+            }
+        }
+        
+        function highlightText(text) {
+            if (!text) {
+                return document.createDocumentFragment();
+            }
             
-            lines.forEach((line, lineIndex) => {
-                if (lineIndex > 0) {
-                    // Add newline as a span to maintain line structure
+            // First, process the entire text as a whole for bracket context
+            // Then highlight character by character while maintaining line structure
+            return highlightTextWithContext(text);
+        }
+        
+        function highlightTextWithContext(text) {
+            const result = document.createDocumentFragment();
+            const bracketChars = { '(': ')', '[': ']', '{': '}', '<': '>' };
+            const closingBrackets = { ')': '(', ']': '[', '}': '{', '>': '<' };
+            
+            // Process entire text for bracket matching across lines
+            const lines = text.split('\n');
+            const fullText = text;
+            
+            // Track bracket state across all lines
+            const brackets = []; // Track current bracket stack: { char, index, isSeqBracket, level }
+            let trackLevel = 0; // Track level for track brackets (t(), .play(), etc.)
+            let seqLevel = 0; // Sequence level for sequence brackets ([...], .c(), etc.)
+            let insideSeqBlock = false; // Track if we're currently inside a [ ... ] block
+            
+            // First pass: validate brackets across entire text
+            const errors = new Set();
+            const stack = [];
+            let charIndex = 0;
+            
+            for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+                const line = lines[lineIndex];
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    const nextChar = i < line.length - 1 ? line[i + 1] : '';
+                    
+                    // Skip comments
+                    if (char === '/' && nextChar === '/') {
+                        break;
+                    }
+                    
+                    if (bracketChars[char]) {
+                        stack.push({ char, index: charIndex });
+                    } else if (closingBrackets[char]) {
+                        if (stack.length === 0 || closingBrackets[char] !== stack[stack.length - 1].char) {
+                            errors.add(charIndex);
+                        } else {
+                            stack.pop();
+                        }
+                    }
+                    charIndex++;
+                }
+                charIndex++; // For newline
+            }
+            
+            // Mark unmatched opening brackets
+            stack.forEach(item => errors.add(item.index));
+            
+            // Helper to determine bracket type - now uses full text context
+            function determineBracketType(char, globalIndex) {
+                // [ and ] are ALWAYS sequence level
+                if (char === '[' || char === ']') {
+                    return { isSeq: true, reason: 'sequence-block' };
+                }
+                
+                if (char === '(' || char === ')') {
+                    const lookback = fullText.substring(0, globalIndex);
+                    
+                    // Sequence modifiers
+                    const seqModifiers = ['.c', '.ds', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
+                    // Track modifiers
+                    const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.stop'];
+                    
+                    // Check what comes immediately before this bracket
+                    const modifierMatch = lookback.match(/([a-zA-Z0-9_]+|\.\w+)\s*$/);
+                    if (modifierMatch) {
+                        const modifier = modifierMatch[1];
+                        
+                        // Check for function calls like n(, a(
+                        if (modifier.match(/^(n|a)$/)) {
+                            // n( or a( - check if inside sequence block
+                            let inSeq = false;
+                            let depth = 0;
+                            for (let k = lookback.length - 1; k >= 0; k--) {
+                                if (lookback[k] === ']') depth++;
+                                else if (lookback[k] === '[') {
+                                    depth--;
+                                    if (depth === 0) {
+                                        inSeq = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            return { isSeq: inSeq, reason: inSeq ? 'sequence-function' : 'track-function' };
+                        }
+                        
+                        // Check for dot modifiers
+                        if (modifier.startsWith('.')) {
+                            if (seqModifiers.some(m => modifier === m)) {
+                                return { isSeq: true, reason: 'sequence-modifier' };
+                            } else if (trackModifiers.some(m => modifier === m)) {
+                                return { isSeq: false, reason: 'track-modifier' };
+                            }
+                        }
+                    }
+                    
+                    // Check if we're inside a sequence block [ ... ]
+                    let bracketDepth = 0;
+                    let foundSeqBlock = false;
+                    for (let k = lookback.length - 1; k >= 0; k--) {
+                        if (lookback[k] === ']') bracketDepth++;
+                        else if (lookback[k] === '[') {
+                            bracketDepth--;
+                            if (bracketDepth === 0) {
+                                foundSeqBlock = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Check for track-level function calls first
+                    if (lookback.trim().match(/(t|\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
+                        return { isSeq: false, reason: 'track-declaration-or-modifier' };
+                    }
+                    
+                    if (foundSeqBlock) {
+                        return { isSeq: true, reason: 'inside-sequence-block' };
+                    }
+                    
+                    // Default to track level
+                    return { isSeq: false, reason: 'default-track' };
+                }
+                
+                return { isSeq: false, reason: 'unknown' };
+            }
+            
+            // Second pass: highlight character by character
+            charIndex = 0;
+            for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+                const line = lines[lineIndex];
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    const nextChar = i < line.length - 1 ? line[i + 1] : '';
+                    
+                    // Check for comment start
+                    if (char === '/' && nextChar === '/') {
+                        // Add rest of line as plain text
+                        for (let j = i; j < line.length; j++) {
+                            const span = document.createElement('span');
+                            span.className = 'char';
+                            span.textContent = line[j];
+                            result.appendChild(span);
+                        }
+                        charIndex += (line.length - i);
+                        break;
+                    }
+                    
+                    // Check if this character is an error
+                    const isError = errors.has(charIndex);
+                    
+                     // Check if it's an opening bracket
+                     if (bracketChars[char]) {
+                         const bracketInfo = determineBracketType(char, charIndex);
+                         const isSeqBracket = bracketInfo.isSeq;
+                         
+                         // Check if this is part of a chain inside a sequence block
+                         // All chained items (.nRange(), .nArp(), .n(), .a(), etc.) should share level 1 with n()/a()
+                         let isModifier = false;
+                         let modifierParentLevel = null;
+                         if (char === '(' && isSeqBracket && insideSeqBlock) {
+                             // Look back to see if this is a modifier or chained function
+                             // Get text before this position, remove all whitespace for matching
+                             const lookbackRaw = fullText.substring(0, charIndex);
+                             const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+                             
+                             // Match modifiers like .nRange, .nArp, etc. at the end of the lookback
+                             const modifierMatch = lookbackNoWS.match(/(\.(?:nRange|vRange|dRange|nArp|vArp|dArp|pm|pr|v|d|p))$/);
+                             
+                             // Also check if this is .n() or .a() that comes after a closing parenthesis
+                             const chainFunctionMatch = lookbackNoWS.match(/(\.(?:n|a))$/);
+                             
+                             let isChainItem = false;
+                             
+                             if (modifierMatch) {
+                                 // This is definitely a modifier
+                                 isChainItem = true;
+                             } else if (chainFunctionMatch) {
+                                 // This might be a chained .n() or .a()
+                                 // Check if it comes after a closing parenthesis (meaning it's chained)
+                                 // Look backwards in the original text (with whitespace) to find the previous )
+                                 let searchPos = charIndex - 1;
+                                 let parenDepth = 0;
+                                 let foundClosingParen = false;
+                                 
+                                 while (searchPos >= 0) {
+                                     const charAtPos = fullText[searchPos];
+                                     if (charAtPos === ')') {
+                                         parenDepth++;
+                                         foundClosingParen = true;
+                                         break;
+                                     } else if (charAtPos === '(') {
+                                         if (parenDepth > 0) parenDepth--;
+                                         else break; // Hit the opening of current function
+                                     }
+                                     searchPos--;
+                                 }
+                                 
+                                 if (foundClosingParen) {
+                                     // This .n() or .a() comes after a closing ), so it's chained
+                                     isChainItem = true;
+                                 }
+                             }
+                             
+                             if (isChainItem) {
+                                 // All chained items inside sequence blocks share level 1
+                                 modifierParentLevel = 0;
+                                 isModifier = true;
+                             }
+                         }
+                         
+                         let level;
+                         // For [ brackets, ALWAYS sequence level 0
+                         if (char === '[') {
+                             level = 0;
+                             insideSeqBlock = true;
+                             seqLevel = 1;
+                         } else if (isSeqBracket) {
+                             if (isModifier && modifierParentLevel !== null) {
+                                 // Use level 1 for all chained items (modifiers and chained functions)
+                                 level = modifierParentLevel;
+                                 // Don't increment seqLevel - chained items share the same level
+                             } else if (insideSeqBlock) {
+                                 // Check if this is the first n() or a() in the sequence block
+                                 const lookbackRaw = fullText.substring(0, charIndex);
+                                 const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+                                 
+                                 // Check if this is directly after [ (first function in sequence)
+                                 const firstFuncMatch = lookbackNoWS.match(/\[[^[]*(n|a)$/);
+                                 
+                                 // OR check if this is n() or a() that comes after something ending with )
+                                 // (meaning it might be chained but not detected yet)
+                                 const afterClosingParenMatch = lookbackNoWS.match(/\)(n|a)$/);
+                                 
+                                 if (firstFuncMatch || afterClosingParenMatch) {
+                                     // First n() or a() in sequence block, or chained n()/a() gets level 1
+                                     level = 1;
+                                     seqLevel = 2; // Keep seqLevel at 2 for nested brackets
+                                 } else {
+                                     // Other brackets inside sequence block (nested content)
+                                     level = seqLevel;
+                                     seqLevel++;
+                                 }
+                             } else {
+                                 level = 2;
+                                 seqLevel = 0;
+                                 insideSeqBlock = false;
+                             }
+                         } else {
+                             level = trackLevel;
+                             trackLevel++;
+                             if (char === '(' && !isSeqBracket) {
+                                 insideSeqBlock = false;
+                             }
+                         }
+                         
+                         brackets.push({ 
+                             char, 
+                             index: charIndex, 
+                             isSeqBracket: isSeqBracket, 
+                             level: level,
+                             modifierParentLevel: isModifier ? modifierParentLevel : undefined
+                         });
+                        
+                        const span = document.createElement('span');
+                        span.className = isError ? 'bracket error' : 'bracket';
+                        
+                        if (isError) {
+                            span.style.color = '#ff6b6b';
+                        } else if (isSeqBracket) {
+                            span.className += ` bracket-seq-${level % 4}`;
+                        } else {
+                            span.className += ` bracket-track-${level % 4}`;
+                        }
+                        
+                        span.textContent = char;
+                        result.appendChild(span);
+                    }
+                    // Check if it's a closing bracket
+                    else if (closingBrackets[char]) {
+                        let matched = false;
+                        if (brackets.length > 0) {
+                            const lastBracket = brackets[brackets.length - 1];
+                            if (closingBrackets[char] === lastBracket.char) {
+                                const wasSeqBracket = lastBracket.isSeqBracket;
+                                const bracketLevel = lastBracket.level;
+                                brackets.pop();
+                                
+                                // Update levels
+                                if (wasSeqBracket) {
+                                    if (char === ']') {
+                                        seqLevel = 0;
+                                        insideSeqBlock = false;
+                                    } else {
+                                        // Only decrement seqLevel if this wasn't a modifier
+                                        // Modifiers don't increment seqLevel, so they shouldn't decrement it
+                                        if (lastBracket.modifierParentLevel === undefined) {
+                                            seqLevel = Math.max(0, seqLevel - 1);
+                                        }
+                                        // If it was a modifier, seqLevel stays the same
+                                    }
+                                } else {
+                                    trackLevel = Math.max(0, trackLevel - 1);
+                                }
+                                
+                                matched = true;
+                                const span = document.createElement('span');
+                                span.className = isError ? 'bracket error' : 'bracket';
+                                
+                                if (isError) {
+                                    span.style.color = '#ff6b6b';
+                                } else if (wasSeqBracket) {
+                                    span.className += ` bracket-seq-${bracketLevel % 4}`;
+                                } else {
+                                    span.className += ` bracket-track-${bracketLevel % 4}`;
+                                }
+                                
+                                span.textContent = char;
+                                result.appendChild(span);
+                            }
+                        }
+                        if (!matched) {
+                            const span = document.createElement('span');
+                            span.className = 'bracket error';
+                            span.textContent = char;
+                            result.appendChild(span);
+                        }
+                    }
+                    // Regular character
+                    else {
+                        const span = document.createElement('span');
+                        span.className = isError ? 'char error' : 'char';
+                        span.textContent = char;
+                        result.appendChild(span);
+                    }
+                    
+                    charIndex++;
+                }
+                
+                // Add newline (except after last line)
+                if (lineIndex < lines.length - 1) {
                     const newlineSpan = document.createElement('span');
                     newlineSpan.className = 'char';
                     newlineSpan.textContent = '\n';
-                    highlightOverlay.appendChild(newlineSpan);
+                    result.appendChild(newlineSpan);
+                    charIndex++;
                 }
-                
-                const highlighted = highlightLine(line || '');
-                if (highlighted) {
-                    highlightOverlay.appendChild(highlighted);
-                } else {
-                    // Empty line
-                    const emptySpan = document.createElement('span');
-                    emptySpan.className = 'char';
-                    highlightOverlay.appendChild(emptySpan);
-                }
-            });
+            }
+            
+            return result;
         }
         
+        // Legacy function for backward compatibility - now calls the new function
         function highlightLine(line) {
             if (!line) {
                 return document.createDocumentFragment();
@@ -1304,9 +1725,18 @@
             const result = document.createDocumentFragment();
             const bracketChars = { '(': ')', '[': ']', '{': '}', '<': '>' };
             const closingBrackets = { ')': '(', ']': '[', '}': '{', '>': '<' };
-            const bracketColors = [
-                '#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3',
-                '#f38181', '#aa96da', '#fcbad3', '#a8e6cf'
+            const trackColors = [
+                '#ff6b6b', /* Red */
+                '#4a9eff', /* Blue */
+                '#ffd93d', /* Yellow */
+                '#6bcf7f'  /* Green */
+            ];
+            
+            const seqColors = [
+                '#ff8c42', /* Orange */
+                '#9b59b6', /* Purple */
+                '#00d9ff', /* Cyan */
+                '#ff44aa'  /* Pink */
             ];
             
             const stack = []; // Track bracket pairs: { char, index, level }
@@ -1340,7 +1770,88 @@
             stack.forEach(item => errors.add(item.index));
             
             // Second pass: build the HTML with spans for each character
-            const brackets = []; // Track current bracket stack for coloring
+            const brackets = []; // Track current bracket stack: { char, index, isSeqBracket, level }
+            let trackLevel = 0; // Track level for track brackets (t(), .play(), etc.)
+            let seqLevel = 0; // Sequence level for sequence brackets ([...], .c(), etc.)
+            let insideSeqBlock = false; // Track if we're currently inside a [ ... ] block
+            
+            // Helper to determine if a bracket is sequence-level
+            function determineBracketType(char, lookback) {
+                // [ and ] are ALWAYS sequence level, regardless of context
+                if (char === '[' || char === ']') {
+                    return { isSeq: true, reason: 'sequence-block' };
+                }
+                
+                if (char === '(' || char === ')') {
+                    // Sequence modifiers - these are always sequence level
+                    const seqModifiers = ['.c', '.ds', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
+                    // Track modifiers - these are always track level
+                    const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.stop'];
+                    
+                    // Check what comes immediately before this bracket
+                    const modifierMatch = lookback.match(/([a-zA-Z0-9_]+|\.\w+)\s*$/);
+                    if (modifierMatch) {
+                        const modifier = modifierMatch[1];
+                        
+                        // Check for function calls like n(, a(
+                        if (modifier.match(/^(n|a)$/)) {
+                            // n( or a( - check if inside sequence block
+                            // Look for previous [ or ]
+                            let inSeq = false;
+                            let depth = 0;
+                            for (let k = lookback.length - 1; k >= 0; k--) {
+                                if (lookback[k] === ']') depth++;
+                                else if (lookback[k] === '[') {
+                                    depth--;
+                                    if (depth === 0) {
+                                        inSeq = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            return { isSeq: inSeq, reason: inSeq ? 'sequence-function' : 'track-function' };
+                        }
+                        
+                        // Check for dot modifiers
+                        if (modifier.startsWith('.')) {
+                            if (seqModifiers.some(m => modifier === m)) {
+                                return { isSeq: true, reason: 'sequence-modifier' };
+                            } else if (trackModifiers.some(m => modifier === m)) {
+                                return { isSeq: false, reason: 'track-modifier' };
+                            }
+                        }
+                    }
+                    
+                    // Check if we're inside a sequence block [ ... ]
+                    let bracketDepth = 0;
+                    let foundSeqBlock = false;
+                    for (let k = lookback.length - 1; k >= 0; k--) {
+                        if (lookback[k] === ']') bracketDepth++;
+                        else if (lookback[k] === '[') {
+                            bracketDepth--;
+                            if (bracketDepth === 0) {
+                                foundSeqBlock = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Check for track-level function calls first (before checking sequence block)
+                    // Check if it's t(, .play(, .bpm(, .sn(, .sd(, .stop(
+                    if (lookback.trim().match(/(t|\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
+                        return { isSeq: false, reason: 'track-declaration-or-modifier' };
+                    }
+                    
+                    if (foundSeqBlock) {
+                        return { isSeq: true, reason: 'inside-sequence-block' };
+                    }
+                    
+                    // Default to track level
+                    return { isSeq: false, reason: 'default-track' };
+                }
+                
+                return { isSeq: false, reason: 'unknown' };
+            }
             
             for (let i = 0; i < line.length; i++) {
                 const char = line[i];
@@ -1363,11 +1874,49 @@
                 
                 // Check if it's an opening bracket
                 if (bracketChars[char]) {
-                    const level = brackets.length;
-                    brackets.push({ char, level });
+                    const lookback = line.substring(0, i);
+                    const bracketInfo = determineBracketType(char, lookback);
+                    const isSeqBracket = bracketInfo.isSeq;
+                    
+                    let level;
+                    // For [ brackets, ALWAYS sequence level 0, regardless of any previous state
+                    if (char === '[') {
+                        level = 0; // Always start sequence blocks at level 0
+                        insideSeqBlock = true;
+                        seqLevel = 1; // Next bracket inside [ will be at seqLevel 1
+                    } else if (isSeqBracket) {
+                        if (insideSeqBlock) {
+                            level = seqLevel;
+                            seqLevel++;
+                        } else {
+                            // Sequence modifier after ] block - reset and start at 0
+                            level = 0;
+                            seqLevel = 1;
+                            insideSeqBlock = false; // Modifiers after ] are not "inside" the block
+                        }
+                    } else {
+                        level = trackLevel;
+                        trackLevel++;
+                        // Track brackets are not inside sequence blocks
+                        if (char === '(' && !isSeqBracket) {
+                            insideSeqBlock = false;
+                        }
+                    }
+                    
+                    // Store bracket with its type and level
+                    brackets.push({ char, index: i, isSeqBracket: isSeqBracket, level: level });
+                    
                     const span = document.createElement('span');
                     span.className = isError ? 'bracket error' : 'bracket';
-                    span.style.color = isError ? '#ff6b6b' : bracketColors[level % 8];
+                    
+                    if (isError) {
+                        span.style.color = '#ff6b6b';
+                    } else if (isSeqBracket) {
+                        span.className += ` bracket-seq-${level % 4}`;
+                    } else {
+                        span.className += ` bracket-track-${level % 4}`;
+                    }
+                    
                     span.textContent = char;
                     result.appendChild(span);
                 }
@@ -1377,12 +1926,36 @@
                     if (brackets.length > 0) {
                         const lastBracket = brackets[brackets.length - 1];
                         if (closingBrackets[char] === lastBracket.char) {
-                            const level = brackets.length - 1;
+                            // Use the stored level from the opening bracket
+                            const wasSeqBracket = lastBracket.isSeqBracket;
+                            const bracketLevel = lastBracket.level; // Use stored level, not current
                             brackets.pop();
+                            
+                            // Update levels AFTER using the stored level
+                            if (wasSeqBracket) {
+                                if (char === ']') {
+                                    // Reset sequence level when closing a sequence block
+                                    seqLevel = 0;
+                                    insideSeqBlock = false;
+                                } else {
+                                    seqLevel = Math.max(0, seqLevel - 1);
+                                }
+                            } else {
+                                trackLevel = Math.max(0, trackLevel - 1);
+                            }
+                            
                             matched = true;
                             const span = document.createElement('span');
                             span.className = isError ? 'bracket error' : 'bracket';
-                            span.style.color = isError ? '#ff6b6b' : bracketColors[level % 8];
+                            
+                            if (isError) {
+                                span.style.color = '#ff6b6b';
+                            } else if (wasSeqBracket) {
+                                span.className += ` bracket-seq-${bracketLevel % 4}`;
+                            } else {
+                                span.className += ` bracket-track-${bracketLevel % 4}`;
+                            }
+                            
                             span.textContent = char;
                             result.appendChild(span);
                         }

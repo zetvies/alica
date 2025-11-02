@@ -2973,11 +2973,11 @@ wss.on('connection', (ws) => {
     // Silent error handling
   });
 
-      // Handle incoming messages from client
-      ws.on('message', (message) => {
-        try {
-          const data = JSON.parse(message.toString());
-          console.log('[WS] Received action:', data.action, data);
+  // Handle incoming messages from client
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      console.log('[WS] Received action:', data.action, data);
           
           // Check for stop syntax first: t(cycleId).stop()
           if (data.cycleStr) {
@@ -2988,8 +2988,8 @@ wss.on('connection', (ws) => {
               return; // Exit early after handling stop
             }
           }
-          
-          switch (data.action) {
+      
+      switch (data.action) {
         case 'playTrack':
           playTrack(
             data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
