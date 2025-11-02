@@ -1460,6 +1460,21 @@
                         }
                     }
                     
+                    // Check for track-level function calls FIRST (before checking sequence blocks)
+                    // This ensures t(), .play(), etc. are always track-level even after sequence blocks
+                    const lookbackTrimmed = lookback.trim();
+                    const lookbackNoWS = lookback.replace(/\s+/g, '');
+                    
+                    // Check if this is t( - remove whitespace for matching
+                    if (lookbackNoWS.match(/t$/)) {
+                        return { isSeq: false, reason: 'track-declaration-t' };
+                    }
+                    
+                    // Check for other track-level functions
+                    if (lookbackTrimmed.match(/(\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
+                        return { isSeq: false, reason: 'track-declaration-or-modifier' };
+                    }
+                    
                     // Check if we're inside a sequence block [ ... ]
                     let bracketDepth = 0;
                     let foundSeqBlock = false;
@@ -1472,11 +1487,6 @@
                                 break;
                             }
                         }
-                    }
-                    
-                    // Check for track-level function calls first
-                    if (lookback.trim().match(/(t|\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
-                        return { isSeq: false, reason: 'track-declaration-or-modifier' };
                     }
                     
                     if (foundSeqBlock) {
@@ -1613,8 +1623,30 @@
                                  insideSeqBlock = false;
                              }
                          } else {
-                             level = trackLevel;
-                             trackLevel++;
+                             // Check if this is t() - always use level 0 (same color)
+                             if (char === '(') {
+                                 const lookbackRaw = fullText.substring(0, charIndex);
+                                 // Remove whitespace for matching
+                                 const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+                                 
+                                 // Check if this is t( - must end with "t" (optionally with whitespace removed)
+                                 // This means the last non-whitespace character before this ( is "t"
+                                 const isTFunction = lookbackNoWS.match(/t$/) !== null;
+                                 
+                                 if (isTFunction) {
+                                     level = 0; // t() always uses level 0 (Red)
+                                     // Reset trackLevel to 1 for the next track-level bracket
+                                     // This ensures each t() chain starts fresh
+                                     trackLevel = 1;
+                                 } else {
+                                     level = trackLevel;
+                                     trackLevel++;
+                                 }
+                             } else {
+                                 level = trackLevel;
+                                 trackLevel++;
+                             }
+                             
                              if (char === '(' && !isSeqBracket) {
                                  insideSeqBlock = false;
                              }
@@ -1666,7 +1698,25 @@
                                         // If it was a modifier, seqLevel stays the same
                                     }
                                 } else {
-                                    trackLevel = Math.max(0, trackLevel - 1);
+                                    // Check if this closing bracket is for t()
+                                    // The opening bracket's level would be 0 if it was t()
+                                    // We can check the lookback to confirm it's t()
+                                    if (bracketLevel === 0 && !wasSeqBracket) {
+                                        // Check if the opening bracket was actually t() by looking at stored info
+                                        // Since t() always uses level 0, and we're closing a track bracket at level 0,
+                                        // this is likely t(). Reset trackLevel for next t() chain
+                                        const lookbackRaw = fullText.substring(0, lastBracket.index);
+                                        const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+                                        if (lookbackNoWS.match(/t$/)) {
+                                            // This is closing t() - reset trackLevel so next t() starts fresh
+                                            trackLevel = 0;
+                                        } else {
+                                            // Not t(), just happens to be level 0 - normal decrement
+                                            trackLevel = Math.max(0, trackLevel - 1);
+                                        }
+                                    } else {
+                                        trackLevel = Math.max(0, trackLevel - 1);
+                                    }
                                 }
                                 
                                 matched = true;
