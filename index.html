@@ -460,32 +460,32 @@
                 <div class="hintSection">
                     <div class="syntaxSectionTitle">Commands:</div>
                     <div class="hintCommandsGrid">
-                        <div class="hintItem">
-                            <span class="hintKey">Ctrl+/</span>
-                            <span class="hintDesc">Toggle Comment</span>
-                        </div>
-                        <div class="hintItem">
-                            <span class="hintKey">Ctrl+S</span>
-                            <span class="hintDesc">Loop Track in Next Cycle</span>
-                        </div>
-                        <div class="hintItem">
-                            <span class="hintKey">Ctrl+Shift+S</span>
-                            <span class="hintDesc">Loop Track Immediately</span>
-                        </div>
-                        <div class="hintItem">
-                            <span class="hintKey">Ctrl+H</span>
-                            <span class="hintDesc">Stop All Loops</span>
-                        </div>
-                        <div class="hintItem">
-                            <span class="hintKey">Ctrl+Enter</span>
-                            <span class="hintDesc">Play Track in Next Cycle</span>
-                        </div>
-                        <div class="hintItem">
-                            <span class="hintKey">Ctrl+Shift+Enter</span>
-                            <span class="hintDesc">Play Track Immediately</span>
-                        </div>
-                    </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+/</span>
+                    <span class="hintDesc">Toggle Comment</span>
                 </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+S</span>
+                    <span class="hintDesc">Loop Track in Next Cycle</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+Shift+S</span>
+                    <span class="hintDesc">Loop Track Immediately</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+H</span>
+                    <span class="hintDesc">Stop All Loops</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+Enter</span>
+                    <span class="hintDesc">Play Track in Next Cycle</span>
+                </div>
+                <div class="hintItem">
+                    <span class="hintKey">Ctrl+Shift+Enter</span>
+                    <span class="hintDesc">Play Track Immediately</span>
+                </div>
+            </div>
+        </div>
                 <div class="hintSection">
                     <div class="syntaxSectionTitle">Syntax:</div>
                     <div id="hintSyntax">
@@ -778,6 +778,85 @@
                 highlightTrackBriefly();
                 queuePlayCycleForCurrentTrack();
             }
+            // Enter between matching brackets = split into separate lines
+            else if (!isCtrl && !isAlt && e.key === 'Enter') {
+                const start = commandArea.selectionStart;
+                const end = commandArea.selectionEnd;
+                const text = commandArea.value;
+                
+                // Only handle if cursor is at single position (no selection)
+                if (start === end && start > 0 && start < text.length) {
+                    // Check if we're between matching brackets
+                    const bracketPairs = {
+                        '(': ')',
+                        '[': ']',
+                        '{': '}',
+                        '<': '>'
+                    };
+                    
+                    // Find the opening bracket to the left
+                    let openBracket = null;
+                    let openPos = -1;
+                    let depth = 0;
+                    for (let i = start - 1; i >= 0; i--) {
+                        const char = text[i];
+                        if (bracketPairs.hasOwnProperty(char)) {
+                            // Found an opening bracket
+                            if (depth === 0) {
+                                openBracket = char;
+                                openPos = i;
+                                break;
+                            }
+                            depth--;
+                        } else if (Object.values(bracketPairs).includes(char)) {
+                            // Found a closing bracket, increase depth
+                            depth++;
+                        }
+                    }
+                    
+                    if (openBracket && openPos !== -1) {
+                        // Check if the next closing bracket matches
+                        const closingBracket = bracketPairs[openBracket];
+                        const afterCursor = text.substring(start);
+                        const nextCloseMatch = afterCursor.match(new RegExp('^\\s*\\' + closingBracket));
+                        
+                        if (nextCloseMatch) {
+                            // Check if there's any content (including spaces/line breaks) between brackets
+                            const between = text.substring(openPos + 1, start);
+                            const hasContent = between.trim().length > 0 || between.includes('\n') || between.includes('\r');
+                            
+                            // Only proceed if there's no content between brackets
+                            if (!hasContent) {
+                                e.preventDefault();
+                                
+                                // Get indentation from the line with the opening bracket
+                                const lineStart = text.lastIndexOf('\n', openPos) + 1;
+                                const lineBeforeOpen = text.substring(lineStart, openPos);
+                                const indent = lineBeforeOpen.match(/^(\s*)/)[1];
+                                
+                                // Create the new content
+                                const beforeOpen = text.substring(0, openPos + 1);
+                                const afterClose = text.substring(start + nextCloseMatch[0].length);
+                                
+                                // Build new text (no indentation on middle line)
+                                const newText = beforeOpen + '\n' + '\n' + indent + closingBracket + afterClose;
+                                
+                                // Update textarea
+                                commandArea.value = newText;
+                                
+                                // Position cursor on the middle line (empty line)
+                                const cursorPos = beforeOpen.length + 1;
+                                commandArea.selectionStart = commandArea.selectionEnd = cursorPos;
+                                
+                                // Trigger input event for highlighting
+                                commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Ctrl + Enter = queue playTrack for current track (SWAPPED)
             else if (isCtrl && !isAlt && !isShift && e.key === 'Enter') {
                 e.preventDefault();

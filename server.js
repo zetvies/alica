@@ -2562,7 +2562,7 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
       return; // Exit without playing current cycle
     }
     // Normal play - use captured values from closure
-    console.log(`[CYCLE] Playing cycle '${finalCycleId}' at interval`);
+    // console.log(`[CYCLE] Playing cycle '${finalCycleId}' at interval`);
     playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator).catch(err => {
       console.error(`[CYCLE] Error in cycle interval for '${finalCycleId}':`, err);
     });
