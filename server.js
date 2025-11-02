@@ -2418,10 +2418,15 @@ function parseStopSyntax(inputStr) {
 function parseMethodChainSyntax(inputStr) {
   if (!inputStr || typeof inputStr !== 'string') return null;
   
-  const trimmed = inputStr.trim();
+  // Remove all whitespace including newlines for parsing
+  const trimmed = inputStr.replace(/\s+/g, '');
+  console.log(`[PARSE METHOD] Input: "${inputStr.substring(0, 100)}" -> Trimmed: "${trimmed.substring(0, 100)}"`);
   
   // Must start with t(
-  if (!trimmed.startsWith('t(')) return null;
+  if (!trimmed.startsWith('t(')) {
+    console.log(`[PARSE METHOD] Doesn't start with t(`);
+    return null;
+  }
   
   // Find the end of t(...)
   let pos = 2; // After 't('
@@ -2505,6 +2510,22 @@ function parseMethodChainSyntax(inputStr) {
     }
   }
   
+  // Parse .ds(...) - delay start
+  let dsValue = null;
+  if (trimmed.substring(currentPos).startsWith('.ds(')) {
+    currentPos += 4; // Skip '.ds('
+    depth = 1;
+    let start = currentPos;
+    while (currentPos < trimmed.length && depth > 0) {
+      if (trimmed[currentPos] === '(') depth++;
+      else if (trimmed[currentPos] === ')') depth--;
+      currentPos++;
+    }
+    if (depth === 0) {
+      dsValue = trimmed.substring(start, currentPos - 1).trim();
+    }
+  }
+  
   // Must end with .play(...)
   if (!trimmed.substring(currentPos).startsWith('.play(')) return null;
   currentPos += 6; // Skip '.play('
@@ -2522,16 +2543,44 @@ function parseMethodChainSyntax(inputStr) {
   
   const playContent = trimmed.substring(start, currentPos - 1).trim();
   
-  // Must be at end of string (or only whitespace)
-  if (currentPos < trimmed.length && trimmed.substring(currentPos).trim().length > 0) {
-    return null; // Extra content after .play(...)
+  // Check if there's .ds(...) after .play(...)
+  // Skip whitespace after .play(...) closing paren
+  while (currentPos < trimmed.length && /\s/.test(trimmed[currentPos])) {
+    currentPos++;
   }
+  
+  // Parse .ds(...) if present after .play(...)
+  if (trimmed.substring(currentPos).startsWith('.ds(')) {
+    currentPos += 4; // Skip '.ds('
+    depth = 1;
+    start = currentPos;
+    while (currentPos < trimmed.length && depth > 0) {
+      if (trimmed[currentPos] === '(') depth++;
+      else if (trimmed[currentPos] === ')') depth--;
+      currentPos++;
+    }
+    if (depth === 0) {
+      // Only update dsValue if it wasn't already set (before .play())
+      if (dsValue === null) {
+        dsValue = trimmed.substring(start, currentPos - 1).trim();
+      }
+    }
+  }
+  
+  // Must be at end of string after .play(...) and optional .ds(...)
+  if (currentPos < trimmed.length && trimmed.substring(currentPos).trim().length > 0) {
+    console.log(`[PARSE METHOD] Extra content after .play(...): "${trimmed.substring(currentPos)}"`);
+    return null; // Extra content after .play(...) or .ds(...)
+  }
+  
+  console.log(`[PARSE METHOD] Successfully parsed - cycleId: ${cycleId}, delayStart: ${dsValue}, playContent: "${playContent.substring(0, 50)}..."`);
   
   return {
     cycleId: cycleId,
     tempo: bpm !== null ? bpm : tempo, // Use Ableton tempo if not specified
     signatureNumerator: sn !== null ? sn : signatureNumerator, // Use Ableton numerator if not specified
     signatureDenominator: sd !== null ? sd : signatureDenominator, // Use Ableton denominator if not specified
+    delayStart: dsValue, // Store ds value for track-level delay
     playContent: playContent
   };
 }
@@ -2567,12 +2616,138 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
   useTempo = useTempo !== null ? useTempo : globalTempo;
   useSignatureNumerator = useSignatureNumerator !== null ? useSignatureNumerator : globalSignatureNumerator;
   useSignatureDenominator = useSignatureDenominator !== null ? useSignatureDenominator : globalSignatureDenominator;
+  
+  // Calculate timing constants for delay calculation
+  const beatsPerBar = useSignatureNumerator || 4;
+  const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
+  const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar));
+  const br = barDurationMs;
+  
+  // Parse and apply track-level delay start (ds) if present
+  // First check if ds was parsed from method chain syntax, otherwise look in cycleStr
+  let trackDelayStart = 0;
+  let dsValue = null;
+  
+  if (parsed && parsed.delayStart !== null && parsed.delayStart !== undefined) {
+    // Use ds from parsed method chain syntax
+    dsValue = parsed.delayStart;
+    console.log(`[DELAY] Using parsed delayStart: "${dsValue}"`);
+  } else {
+    // Look for .ds(...) at the track level (outside of blocks) in original cycleStr or useCycleStr
+    const trackLevelDsMatch = cycleStr.match(/\.ds\(([^)]+)\)/) || useCycleStr.match(/\.ds\(([^)]+)\)/);
+    if (trackLevelDsMatch) {
+      dsValue = trackLevelDsMatch[1].trim();
+      console.log(`[DELAY] Found delayStart in cycleStr: "${dsValue}"`);
+    }
+  }
+  
+  if (!dsValue) {
+    console.log(`[DELAY] No delayStart found - parsed:`, parsed ? parsed.delayStart : 'no parse');
+  }
+  
+  if (dsValue) {
+    const norm = dsValue.replace(/\s+/g, '').toLowerCase();
+    
+    // Check if this is a beat-based delay (contains 'bt')
+    if (norm.includes('bt')) {
+      // Extract beat offset: e.g., bt*2 -> 2 beats, bt -> 1 beat
+      let beatOffset = 0;
+      if (norm === 'bt') {
+        beatOffset = 1;
+      } else {
+        // Try to extract multiplier: bt*N or bt/N
+        const btMulMatch = norm.match(/^bt\*(\d+(?:\.\d+)?)$/);
+        const btDivMatch = norm.match(/^bt\/(\d+(?:\.\d+)?)$/);
+        if (btMulMatch) {
+          beatOffset = parseFloat(btMulMatch[1]);
+        } else if (btDivMatch) {
+          beatOffset = 1 / parseFloat(btDivMatch[1]);
+        } else {
+          // Complex expression: evaluate and divide by bt to get beat offset
+          const exprResult = evaluateExpression(norm, { bt, br });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0 && bt > 0) {
+            beatOffset = exprResult / bt;
+          }
+        }
+      }
+      
+      if (beatOffset > 0 && bt > 0) {
+        // For beat-based delays, calculate from start of bar (beat 1)
+        // beatOffset=2 means start at beat 3, so wait (3-1)*bt = 2*bt
+        const targetBeat = 1 + beatOffset;
+        const beatsToWait = targetBeat - 1; // Always from beat 1
+        trackDelayStart = Math.max(0, Math.round(beatsToWait * bt));
+      } else {
+        // Fallback to direct evaluation
+        const exprResult = evaluateExpression(norm, { bt, br });
+        if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+          trackDelayStart = Math.max(0, Math.round(exprResult));
+        }
+      }
+    } else if (norm.includes('br')) {
+      // Check if this is a bar-based delay (contains 'br')
+      let barOffset = 0;
+      if (norm === 'br') {
+        barOffset = 1;
+      } else {
+        // Try to extract multiplier: br*N or br/N
+        const brMulMatch = norm.match(/^br\*(\d+(?:\.\d+)?)$/);
+        const brDivMatch = norm.match(/^br\/(\d+(?:\.\d+)?)$/);
+        if (brMulMatch) {
+          barOffset = parseFloat(brMulMatch[1]);
+        } else if (brDivMatch) {
+          barOffset = 1 / parseFloat(brDivMatch[1]);
+        } else {
+          // Complex expression: evaluate and divide by br to get bar offset
+          const exprResult = evaluateExpression(norm, { bt, br });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0 && br > 0) {
+            barOffset = exprResult / br;
+          }
+        }
+      }
+      
+      if (barOffset > 0 && br > 0) {
+        trackDelayStart = Math.max(0, Math.round(barOffset * br));
+      } else {
+        // Fallback to direct evaluation
+        const exprResult = evaluateExpression(norm, { bt, br });
+        if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+          trackDelayStart = Math.max(0, Math.round(exprResult));
+        }
+      }
+    } else {
+      // Not a token-based delay, evaluate normally
+      const exprResult = evaluateExpression(norm, { bt, br });
+      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+        trackDelayStart = Math.max(0, Math.round(exprResult));
+      } else {
+        // Try parsing as plain number (milliseconds)
+        const ms = parseFloat(norm);
+        if (!isNaN(ms) && ms >= 0) {
+          trackDelayStart = Math.max(0, Math.round(ms));
+        }
+      }
+    }
+  }
+  
+  // Apply track-level delay before processing blocks
+  if (trackDelayStart > 0) {
+    console.log(`[DELAY] Applying track-level delay: ${trackDelayStart}ms`);
+    await new Promise(resolve => setTimeout(resolve, trackDelayStart));
+    console.log(`[DELAY] Delay complete, proceeding with blocks`);
+  } else if (dsValue) {
+    console.log(`[DELAY] Warning: dsValue was "${dsValue}" but trackDelayStart is 0 - delay calculation may have failed`);
+  }
+  
+  // Remove .ds() from the cycle string so it doesn't interfere with block parsing
+  const cycleStrWithoutDs = useCycleStr.replace(/\.ds\([^)]+\)/g, '');
+  
   // Match blocks: [sequence or automation] then optional .t(...).c(...).co(...).pm(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|pm)\([^)]*\))*)/g;
   const modifierRegex = /\.(t|c|co|pm)\(([^)]+)\)/g;
   let m;
   const plays = [];
-  while ((m = blockRegex.exec(useCycleStr)) !== null) {
+  while ((m = blockRegex.exec(cycleStrWithoutDs)) !== null) {
     const content = m[1].trim();
     const mods = m[2] || '';
     let type = 'fit';
@@ -2679,8 +2854,82 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   // Always generate a cycleId if none is provided to ensure cycles can be tracked
   const finalCycleId = useCycleId || 'cycle_' + Date.now();
   
-  // Call playTrack immediately, then set up interval
-  playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
+  // Calculate delay start for cycle if present
+  let cycleDelayStart = 0;
+  if (parsed && parsed.delayStart !== null && parsed.delayStart !== undefined) {
+    // Parse delay from parsed value
+    const dsValue = parsed.delayStart;
+    const beatsPerBar = useSignatureNumerator || 4;
+    const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
+    const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar));
+    const br = barDurationMs;
+    const norm = dsValue.replace(/\s+/g, '').toLowerCase();
+    
+    // Calculate delay (same logic as playTrack)
+    if (norm.includes('bt')) {
+      let beatOffset = 0;
+      if (norm === 'bt') {
+        beatOffset = 1;
+      } else {
+        const btMulMatch = norm.match(/^bt\*(\d+(?:\.\d+)?)$/);
+        const btDivMatch = norm.match(/^bt\/(\d+(?:\.\d+)?)$/);
+        if (btMulMatch) {
+          beatOffset = parseFloat(btMulMatch[1]);
+        } else if (btDivMatch) {
+          beatOffset = 1 / parseFloat(btDivMatch[1]);
+        } else {
+          const exprResult = evaluateExpression(norm, { bt, br });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0 && bt > 0) {
+            beatOffset = exprResult / bt;
+          }
+        }
+      }
+      if (beatOffset > 0 && bt > 0) {
+        const targetBeat = 1 + beatOffset;
+        const beatsToWait = targetBeat - 1;
+        cycleDelayStart = Math.max(0, Math.round(beatsToWait * bt));
+      }
+    } else if (norm.includes('br')) {
+      let barOffset = 0;
+      if (norm === 'br') {
+        barOffset = 1;
+      } else {
+        const brMulMatch = norm.match(/^br\*(\d+(?:\.\d+)?)$/);
+        const brDivMatch = norm.match(/^br\/(\d+(?:\.\d+)?)$/);
+        if (brMulMatch) {
+          barOffset = parseFloat(brMulMatch[1]);
+        } else if (brDivMatch) {
+          barOffset = 1 / parseFloat(brDivMatch[1]);
+        } else {
+          const exprResult = evaluateExpression(norm, { bt, br });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0 && br > 0) {
+            barOffset = exprResult / br;
+          }
+        }
+      }
+      if (barOffset > 0 && br > 0) {
+        cycleDelayStart = Math.max(0, Math.round(barOffset * br));
+      }
+    } else {
+      const exprResult = evaluateExpression(norm, { bt, br });
+      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+        cycleDelayStart = Math.max(0, Math.round(exprResult));
+      }
+    }
+  }
+  
+  // Function to start the cycle (with delay if needed)
+  const startCycle = () => {
+    playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
+  };
+  
+  // Call playTrack with delay if ds is specified, otherwise immediately
+  if (cycleDelayStart > 0) {
+    console.log(`[CYCLE] Scheduling cycle '${finalCycleId}' to start after ${cycleDelayStart}ms delay`);
+    setTimeout(startCycle, cycleDelayStart);
+  } else {
+    startCycle();
+  }
   
   // Set up interval to call playTrack at bar duration intervals
   const intervalId = setInterval(() => {
@@ -2721,10 +2970,20 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
       return; // Exit without playing current cycle
     }
     // Normal play - use captured values from closure
-    // console.log(`[CYCLE] Playing cycle '${finalCycleId}' at interval`);
-    playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator).catch(err => {
-      console.error(`[CYCLE] Error in cycle interval for '${finalCycleId}':`, err);
-    });
+    // Apply delay for each cycle iteration if delayStart was specified
+    const playCycleIteration = () => {
+      playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator).catch(err => {
+        console.error(`[CYCLE] Error in cycle interval for '${finalCycleId}':`, err);
+      });
+    };
+    
+    if (cycleDelayStart > 0) {
+      // Schedule the play with delay
+      setTimeout(playCycleIteration, cycleDelayStart);
+    } else {
+      // Play immediately
+      playCycleIteration();
+    }
   }, barDurationMs);
   
   // Ensure interval is valid
@@ -2744,13 +3003,14 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
     const existingIndex = activeCycle.findIndex(c => c.id === finalCycleId);
     if (existingIndex !== -1) {
       // Replace existing cycle with same ID
-      clearInterval(activeCycle[existingIndex].intervalId);
+      const oldIntervalId = activeCycle[existingIndex].intervalId;
+      clearInterval(oldIntervalId);
       activeCycle[existingIndex] = {
         id: finalCycleId,
         function: cycleFunction,
         intervalId: intervalId
       };
-      console.log(`[CYCLE] Updated cycle '${finalCycleId}' with intervalId ${intervalId}, barDuration: ${barDurationMs}ms`);
+      console.log(`[CYCLE] Replaced existing cycle '${finalCycleId}' - cleared old intervalId ${oldIntervalId}, new intervalId ${intervalId}, barDuration: ${barDurationMs}ms`);
     } else {
       // Add new cycle
       activeCycle.push({
@@ -2788,6 +3048,7 @@ const exampleQueue = [
 // queue.push(...exampleQueue);
 
 // Update an existing playCycle by id - waits for current interval to finish before switching
+// If the new cycle has ds(), clears immediately instead of waiting
 function updateCycleById(id, cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
   if (!id || typeof id !== 'string') {
     console.log('[UPDATE CYCLE] Invalid id provided');
@@ -2802,10 +3063,24 @@ function updateCycleById(id, cycleStr, tempoParam = null, signatureNumeratorPara
     return false;
   }
   
-  const cycleEntry = activeCycle[existingIndex];
+  // Check if the new cycle has ds() - if so, clear immediately and start fresh
+  const parsedUpdate = parseMethodChainSyntax(cycleStr);
+  const hasDelayStart = parsedUpdate && parsedUpdate.delayStart !== null && parsedUpdate.delayStart !== undefined;
   
-  // Store pending update info on the cycle entry
-  // This will be checked on the next interval tick (after current interval completes)
+  if (hasDelayStart) {
+    // Cycle with ds() - clear immediately and start new one
+    const cycleEntry = activeCycle[existingIndex];
+    clearInterval(cycleEntry.intervalId);
+    activeCycle.splice(existingIndex, 1);
+    console.log(`[UPDATE CYCLE] Cycle '${id}' with ds() - cleared immediately, starting new cycle`);
+    
+    // Start new cycle immediately
+    playCycle(cycleStr, tempoParam, signatureNumeratorParam, signatureDenominatorParam);
+    return true;
+  }
+  
+  // No ds() - store pending update to apply at end of cycle
+  const cycleEntry = activeCycle[existingIndex];
   cycleEntry.pendingUpdate = {
     cycleStr: cycleStr,
     tempoParam: tempoParam,
@@ -3230,16 +3505,36 @@ wss.on('connection', (ws) => {
           // Check if cycle already exists - if so, update at end of cycle instead of queuing
           const queueCycleExists = activeCycle.some(c => c.id === cycleQueueId);
           if (queueCycleExists) {
-            // Cycle exists - update at end of cycle instead of on bar change
-            updateCycleById(
-              cycleQueueId,
-              cycleQueueStrInput,
-              data.tempo || null,
-              data.signatureNumerator || null,
-              data.signatureDenominator || null
-            );
-            console.log(`[WS] Cycle '${cycleQueueId}' already exists - updating at end of cycle instead of queuing`);
-          } else {
+            // Check if the new cycle has ds() - if so, clear immediately and queue fresh
+            // parsedCycleQueue is already defined above
+            const hasDelayStart = parsedCycleQueue && parsedCycleQueue.delayStart !== null && parsedCycleQueue.delayStart !== undefined;
+            
+            if (hasDelayStart) {
+              // Cycle with ds() exists - clear it immediately and queue the new one
+              // This ensures the old cycle stops right away when ds changes
+              const existingQueueIndex = activeCycle.findIndex(c => c.id === cycleQueueId);
+              if (existingQueueIndex !== -1) {
+                clearInterval(activeCycle[existingQueueIndex].intervalId);
+                activeCycle.splice(existingQueueIndex, 1);
+                console.log(`[WS] Cycle '${cycleQueueId}' with ds() exists - cleared immediately to queue new one`);
+              }
+              // Fall through to queue the new cycle (don't break)
+            } else {
+              // No ds() - update at end of cycle instead of on bar change
+              updateCycleById(
+                cycleQueueId,
+                cycleQueueStrInput,
+                data.tempo || null,
+                data.signatureNumerator || null,
+                data.signatureDenominator || null
+              );
+              console.log(`[WS] Cycle '${cycleQueueId}' already exists - updating at end of cycle instead of queuing`);
+              break; // Don't queue, already updated
+            }
+          }
+          
+          // Queue the cycle if it doesn't exist or if it had ds() and was cleared
+          if (!queueCycleExists || (parsedCycleQueue && parsedCycleQueue.delayStart !== null && parsedCycleQueue.delayStart !== undefined)) {
             // Cycle doesn't exist - add to queue as normal
             queue.push({
               id: cycleQueueId,
