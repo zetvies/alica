@@ -1003,6 +1003,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     let hasNoteVelocity = false;
     let hasNoteChannel = false;
     let hasNoteDuration = false;
+    // Delay start (in milliseconds)
+    let delayStart = 0;
     // Randomization flags and range values
     let randomizeNote = false;
     let randomizeVelocity = false;
@@ -1067,7 +1069,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     if (midiNote === null && !randomizeNote && !isDirectChord) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1 (already set above)
     // Use a more sophisticated approach to handle nested brackets in parameters
-      const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\((.*?)\)/g;
+      const paramRegex = /\.(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp|ds)\((.*?)\)/g;
     let lastIndex = 0;
     let m;
     const params = [];
@@ -1086,7 +1088,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         const dotPos = chunk.indexOf('.', chunkPos);
         if (dotPos === -1) break;
         
-        const paramMatch = chunk.substring(dotPos + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\(/);
+        const paramMatch = chunk.substring(dotPos + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp|ds)\(/);
         if (paramMatch) {
           const key = paramMatch[1];
           const startPos = dotPos + 1 + key.length + 1;
@@ -1427,6 +1429,20 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         const mode = raw.toLowerCase().trim();
         if (mode === 'up' || mode === 'down' || mode === 'up-down' || mode === 'down-up' || mode === 'random') {
           prArpMode = mode === 'random' ? null : mode; // null means random
+        }
+      }
+      if (key === 'ds') {
+        // Parse delay start: ds(500) or ds(bt) or ds(bt*2/3*4)
+        const norm = raw.replace(/\s+/g, '').toLowerCase();
+        const exprResult = evaluateExpression(norm, { bt, br });
+        if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+          delayStart = Math.max(0, Math.round(exprResult));
+        } else {
+          // Try parsing as plain number (milliseconds)
+          const ms = parseFloat(norm);
+          if (!isNaN(ms) && ms >= 0) {
+            delayStart = Math.max(0, Math.round(ms));
+          }
         }
       }
     }
@@ -1931,6 +1947,11 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           finalDuration = remainingTime;
           shouldBreakAfterPlay = true;
         }
+      }
+      
+      // Apply delay start if specified
+      if (delayStart > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayStart));
       }
       
       // Play all notes in the chord simultaneously (or single note)
