@@ -133,7 +133,10 @@
         <span id="signatureDisplay">Signature: --/--</span>
         <div id="beatSequencer"></div>
     </div>
-    <div id="hint">Press Ctrl+Enter to execute command</div>
+    <div id="hint">
+        <strong>Shortcuts:</strong> Ctrl+S (queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
+        + Shift = current track, no Shift = selected lines
+    </div>
     <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
 
     <script>
@@ -234,70 +237,329 @@
         
         // Handle keyboard shortcuts
         commandArea.addEventListener('keydown', (e) => {
-            // Ctrl+Enter or Cmd+Enter to execute
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            const isCtrl = e.ctrlKey || e.metaKey;
+            const isShift = e.shiftKey;
+            const isAlt = e.altKey;
+            
+            // Ctrl + S = queue playCycle for selected lines
+            if (isCtrl && !isAlt && !isShift && e.key === 's') {
                 e.preventDefault();
-                executeCommand();
+                queuePlayCycleForSelection();
+            }
+            // Ctrl + Shift + S = queue playCycle for current track
+            else if (isCtrl && !isAlt && isShift && e.key === 'S') {
+                e.preventDefault();
+                queuePlayCycleForCurrentTrack();
+            }
+            // Ctrl + Enter = queue playTrack for selected lines
+            else if (isCtrl && !isAlt && !isShift && e.key === 'Enter') {
+                e.preventDefault();
+                queuePlayTrackForSelection();
+            }
+            // Ctrl + Shift + Enter = queue playTrack for current track
+            else if (isCtrl && !isAlt && isShift && e.key === 'Enter') {
+                e.preventDefault();
+                queuePlayTrackForCurrentTrack();
+            }
+            // Ctrl + Alt + S = playCycle for selected lines
+            else if (isCtrl && isAlt && !isShift && e.key === 's') {
+                e.preventDefault();
+                playCycleForSelection();
+            }
+            // Ctrl + Alt + Shift + S = playCycle for current track
+            else if (isCtrl && isAlt && isShift && e.key === 'S') {
+                e.preventDefault();
+                playCycleForCurrentTrack();
+            }
+            // Ctrl + Alt + Enter = playTrack for selected lines
+            else if (isCtrl && isAlt && !isShift && e.key === 'Enter') {
+                e.preventDefault();
+                playTrackForSelection();
+            }
+            // Ctrl + Alt + Shift + Enter = playTrack for current track
+            else if (isCtrl && isAlt && isShift && e.key === 'Enter') {
+                e.preventDefault();
+                playTrackForCurrentTrack();
             }
         });
         
-        function executeCommand() {
-            const text = commandArea.value.trim();
-            if (!text) return;
+        // Get selected text from textarea
+        function getSelectedText() {
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            if (start === end) return null; // No selection
+            return commandArea.value.substring(start, end);
+        }
+        
+        // Get selected lines or line containing cursor
+        function getSelectedLines() {
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
             
-            // First, try to join multi-line commands
-            // Look for commands that span multiple lines (especially t(...).play(...))
-            const commands = joinMultiLineCommand(text);
+            // Find line boundaries - use cursor position even if no selection
+            const cursorPos = Math.min(start, end);
+            let lineStart = cursorPos;
+            let lineEnd = Math.max(start, end);
             
-            // Process each complete command
-            commands.forEach(command => {
-                const trimmed = command.trim();
-                if (!trimmed || trimmed.startsWith('//')) return; // Skip empty lines and comments
+            // Find start of first line containing cursor/selection
+            while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
+                lineStart--;
+            }
+            
+            // Find end of last line containing cursor/selection
+            while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
+                lineEnd++;
+            }
+            
+            const selectedText = fullText.substring(lineStart, lineEnd);
+            const lines = selectedText.split('\n').filter(line => {
+                const trimmed = line.trim();
+                return trimmed && !trimmed.startsWith('//') && /\[.*\]/.test(trimmed);
+            });
+            
+            if (lines.length === 0) return null;
+            return lines.join(' ');
+        }
+        
+        // Find the t(...).play(...) wrapper that contains the cursor/selection
+        function findCurrentTrack() {
+            const fullText = commandArea.value;
+            const cursorPos = commandArea.selectionStart;
+            
+            // Find the nearest t(...) before cursor
+            let searchStart = 0;
+            let bestMatch = null;
+            let bestEnd = -1;
+            
+            while (true) {
+                const tIndex = fullText.indexOf('t(', searchStart);
+                if (tIndex === -1 || tIndex > cursorPos) break;
                 
-                // Check if it's a function call pattern
-                if (trimmed.startsWith('playCycle(') || trimmed.startsWith('playTrack(')) {
-                    // Extract the string argument (may span multiple lines)
-                    const match = trimmed.match(/(playCycle|playTrack)\s*\(\s*['"](.+?)['"]\s*\)/s);
-                    if (match) {
-                        const action = match[1] === 'playCycle' ? 'playCycle' : 'playTrack';
-                        const cycleStr = match[2];
-                        
-                        // Check if new syntax is used
-                        const parsed = parseMethodChain(cycleStr);
-                        
-                        sendToServer({
-                            action: action,
-                            id: null, // Let server extract from t(cycleId)
-                            cycleStr: cycleStr,
-                            tempo: parsed?.tempo || null,
-                            signatureNumerator: parsed?.sn || null,
-                            signatureDenominator: parsed?.sd || null
-                        });
+                // Find matching closing parenthesis for .play(...)
+                let depth = 0;
+                let pos = tIndex;
+                let inPlay = false;
+                let playStartPos = -1;
+                
+                while (pos < fullText.length) {
+                    if (fullText.substring(pos).startsWith('.play(')) {
+                        inPlay = true;
+                        playStartPos = pos + 6; // Position after '.play('
+                        pos += 6; // Skip '.play('
+                        depth = 1;
+                        continue;
                     }
-                } else if (trimmed.startsWith('t(')) {
-                    // Direct new syntax - default to addCycleToQueue
-                    // Don't send id - let server extract it from t(cycleId)
-                    const parsed = parseMethodChain(trimmed);
                     
-                    sendToServer({
-                        action: 'addCycleToQueue',
-                        id: null, // Let server extract from t(cycleId)
-                        cycleStr: trimmed,
-                        tempo: parsed?.tempo || null,
-                        signatureNumerator: parsed?.sn || null,
-                        signatureDenominator: parsed?.sd || null
-                    });
-                } else {
-                    // Legacy format or unknown - default to addCycleToQueue
-                    sendToServer({
-                        action: 'addCycleToQueue',
-                        id: null,
-                        cycleStr: trimmed,
-                        tempo: null,
-                        signatureNumerator: null,
-                        signatureDenominator: null
-                    });
+                    if (fullText[pos] === '(') depth++;
+                    else if (fullText[pos] === ')') {
+                        depth--;
+                        if (inPlay && depth === 0) {
+                            // Found complete t(...).play(...)
+                            const endPos = pos + 1;
+                            // Check if cursor is within this track
+                            if (cursorPos >= tIndex && cursorPos <= endPos) {
+                                bestMatch = fullText.substring(tIndex, endPos);
+                                bestEnd = endPos;
+                                break;
+                            }
+                            break;
+                        }
+                    }
+                    pos++;
                 }
+                
+                searchStart = tIndex + 2;
+            }
+            
+            return bestMatch;
+        }
+        
+        // Apply t() wrapper settings to a sequence string
+        function applyWrapperSettings(sequenceStr, wrapperStr) {
+            if (!wrapperStr || !wrapperStr.startsWith('t(')) {
+                return sequenceStr; // No wrapper, return as-is
+            }
+            
+            const parsed = parseMethodChain(wrapperStr);
+            if (!parsed) return sequenceStr;
+            
+            // Extract cycleId and build new t() wrapper with sequence
+            const match = wrapperStr.match(/^t\(([^)]+)\)/);
+            if (!match) return sequenceStr;
+            
+            const cycleId = match[1];
+            let result = `t(${cycleId})`;
+            
+            if (parsed.tempo !== null) result += `.bpm(${parsed.tempo})`;
+            if (parsed.sn !== null) result += `.sn(${parsed.sn})`;
+            if (parsed.sd !== null) result += `.sd(${parsed.sd})`;
+            
+            result += `.play(${sequenceStr})`;
+            return result;
+        }
+        
+        // Queue playCycle for selected lines
+        function queuePlayCycleForSelection() {
+            const selectedSeq = getSelectedLines();
+            if (!selectedSeq) {
+                console.warn('No valid sequence selected');
+                return;
+            }
+            
+            const wrapper = findCurrentTrack();
+            const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
+            const parsed = parseMethodChain(fullCommand);
+            
+            sendToServer({
+                action: 'addCycleToQueue',
+                id: null,
+                cycleStr: fullCommand,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Queue playCycle for current track
+        function queuePlayCycleForCurrentTrack() {
+            const track = findCurrentTrack();
+            if (!track) {
+                console.warn('No t() track found');
+                return;
+            }
+            
+            const parsed = parseMethodChain(track);
+            sendToServer({
+                action: 'addCycleToQueue',
+                id: null,
+                cycleStr: track,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Queue playTrack for selected lines
+        function queuePlayTrackForSelection() {
+            const selectedSeq = getSelectedLines();
+            if (!selectedSeq) {
+                console.warn('No valid sequence selected');
+                return;
+            }
+            
+            const wrapper = findCurrentTrack();
+            const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
+            const parsed = parseMethodChain(fullCommand);
+            
+            sendToServer({
+                action: 'addTrackToQueue',
+                id: null,
+                cycleStr: fullCommand,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Queue playTrack for current track
+        function queuePlayTrackForCurrentTrack() {
+            const track = findCurrentTrack();
+            if (!track) {
+                console.warn('No t() track found');
+                return;
+            }
+            
+            const parsed = parseMethodChain(track);
+            sendToServer({
+                action: 'addTrackToQueue',
+                id: null,
+                cycleStr: track,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Play playCycle for selected lines (immediate)
+        function playCycleForSelection() {
+            const selectedSeq = getSelectedLines();
+            if (!selectedSeq) {
+                console.warn('No valid sequence selected');
+                return;
+            }
+            
+            const wrapper = findCurrentTrack();
+            const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
+            const parsed = parseMethodChain(fullCommand);
+            
+            sendToServer({
+                action: 'playCycle',
+                id: null,
+                cycleStr: fullCommand,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Play playCycle for current track (immediate)
+        function playCycleForCurrentTrack() {
+            const track = findCurrentTrack();
+            if (!track) {
+                console.warn('No t() track found');
+                return;
+            }
+            
+            const parsed = parseMethodChain(track);
+            sendToServer({
+                action: 'playCycle',
+                id: null,
+                cycleStr: track,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Play playTrack for selected lines (immediate)
+        function playTrackForSelection() {
+            const selectedSeq = getSelectedLines();
+            if (!selectedSeq) {
+                console.warn('No valid sequence selected');
+                return;
+            }
+            
+            const wrapper = findCurrentTrack();
+            const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
+            const parsed = parseMethodChain(fullCommand);
+            
+            sendToServer({
+                action: 'playTrack',
+                id: null,
+                cycleStr: fullCommand,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
+            });
+        }
+        
+        // Play playTrack for current track (immediate)
+        function playTrackForCurrentTrack() {
+            const track = findCurrentTrack();
+            if (!track) {
+                console.warn('No t() track found');
+                return;
+            }
+            
+            const parsed = parseMethodChain(track);
+            sendToServer({
+                action: 'playTrack',
+                id: null,
+                cycleStr: track,
+                tempo: parsed?.tempo || null,
+                signatureNumerator: parsed?.sn || null,
+                signatureDenominator: parsed?.sd || null
             });
         }
         
