@@ -2173,17 +2173,42 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
   for (let idx = 0; idx < automationChunks.length; idx++) {
     const chunk = automationChunks[idx];
     
-    // Parse: a(controller).from(value).to(value).d(duration).e(easing)
-    const automationRegex = /a\((\d+)\)(?:\s*\.from\(([^)]+)\))?(?:\s*\.to\(([^)]+)\))?(?:\s*\.d\(([^)]+)\))?(?:\s*\.e\(([^)]+)\))?/i;
-    const match = chunk.match(automationRegex);
+    // Parse: a(controller) with optional methods in any order: .c(channel).from(value).to(value).d(duration).e(easing)
+    // First extract the controller number
+    const controllerMatch = chunk.match(/^a\((\d+)\)/i);
+    if (!controllerMatch) continue;
     
-    if (!match) continue;
+    const controller = parseInt(controllerMatch[1], 10);
+    if (isNaN(controller) || controller < 0 || controller > 127) continue;
     
-    const controller = parseInt(match[1], 10);
-    const fromValue = match[2] !== undefined ? parseFloat(match[2]) : 0;
-    const toValue = match[3] !== undefined ? parseFloat(match[3]) : 127;
-    const durationStr = match[4];
-    const easingStr = match[5] || 'linear';
+    // Extract each method independently (order doesn't matter)
+    // Helper function to extract method value
+    const extractMethodValue = (methodName) => {
+      const regex = new RegExp(`\\.${methodName}\\(([^)]+)\\)`, 'i');
+      const match = chunk.match(regex);
+      return match ? match[1] : null;
+    };
+    
+    // Extract values from methods
+    const channelStr = extractMethodValue('c');
+    const fromStr = extractMethodValue('from');
+    const toStr = extractMethodValue('to');
+    const durationStr = extractMethodValue('d');
+    const easingStr = extractMethodValue('e');
+    
+    // Parse values
+    const fromValue = fromStr !== null ? parseFloat(fromStr) : 0;
+    const toValue = toStr !== null ? parseFloat(toStr) : 127;
+    
+    // Determine channel: use .c() from chunk if present, otherwise use channelOverride
+    let useChannel = channel;
+    if (channelStr !== null) {
+      const parsedChannel = parseInt(channelStr, 10);
+      if (!isNaN(parsedChannel) && parsedChannel >= 1 && parsedChannel <= 16) {
+        useChannel = parsedChannel - 1; // Convert 1-16 to 0-15
+      }
+    }
+    useChannel = Math.max(0, Math.min(15, useChannel));
     
     // Calculate duration for this chunk (same logic as sequences)
     let chunkDuration = defaultDurationMs;
@@ -2199,21 +2224,19 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
       if (chunkDuration <= 0) break;
     }
     
-    if (!isNaN(controller) && controller >= 0 && controller <= 127) {
-      // Validate easing function name
-      const validEasings = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'easeInQuad', 'easeOutQuad', 'easeInOutQuad', 'easeInCubic', 'easeOutCubic', 'easeInOutCubic'];
-      const easing = validEasings.includes(easingStr.toLowerCase()) ? easingStr.toLowerCase() : 'linear';
-      
-      automations.push({
-        controller: controller,
-        channel: channel,
-        startValue: Math.max(0, Math.min(127, Math.round(fromValue))),
-        endValue: Math.max(0, Math.min(127, Math.round(toValue))),
-        duration: chunkDuration,
-        startTime: cumulativeTime,
-        easing: easing
-      });
-    }
+    // Validate easing function name
+    const validEasings = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'easeInQuad', 'easeOutQuad', 'easeInOutQuad', 'easeInCubic', 'easeOutCubic', 'easeInOutCubic'];
+    const easing = easingStr && validEasings.includes(easingStr.toLowerCase()) ? easingStr.toLowerCase() : 'linear';
+    
+    automations.push({
+      controller: controller,
+      channel: useChannel,
+      startValue: Math.max(0, Math.min(127, Math.round(fromValue))),
+      endValue: Math.max(0, Math.min(127, Math.round(toValue))),
+      duration: chunkDuration,
+      startTime: cumulativeTime,
+      easing: easing
+    });
     
     cumulativeTime += chunkDuration;
     
