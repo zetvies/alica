@@ -19,13 +19,19 @@
             overflow: hidden;
         }
         
+        #editorContainer {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+        
         #commandArea {
             width: 100%;
             height: 100vh;
             padding: 20px;
-            background: #0f0f0f;
+            background: transparent;
             border: none;
-            color: #e0e0e0;
+            color: transparent; /* Make text transparent - overlay shows the text */
             font-family: 'Courier New', monospace;
             font-size: 14px;
             line-height: 1.6;
@@ -35,7 +41,58 @@
             white-space: pre;
             overflow-wrap: normal;
             overflow-x: auto;
+            position: relative;
+            z-index: 2;
+            caret-color: #e0e0e0;
         }
+        
+        #commandArea::selection {
+            background: rgba(100, 150, 255, 0.3);
+        }
+        
+        #highlightOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            padding: 20px;
+            margin: 0;
+            background: #0f0f0f;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre;
+            overflow-wrap: normal;
+            overflow-x: auto;
+            overflow-y: hidden;
+            pointer-events: none;
+            z-index: 1;
+            tab-size: 2;
+            color: #e0e0e0; /* Normal text color */
+        }
+        
+        #highlightOverlay .char {
+            color: #e0e0e0;
+        }
+        
+        #highlightOverlay .bracket {
+            font-weight: bold;
+        }
+        
+        #highlightOverlay .error {
+            color: #ff6b6b; /* Red for syntax errors */
+            background: rgba(255, 107, 107, 0.1);
+        }
+        
+        .bracket-0 { color: #ff6b6b; }
+        .bracket-1 { color: #4ecdc4; }
+        .bracket-2 { color: #ffe66d; }
+        .bracket-3 { color: #95e1d3; }
+        .bracket-4 { color: #f38181; }
+        .bracket-5 { color: #aa96da; }
+        .bracket-6 { color: #fcbad3; }
+        .bracket-7 { color: #a8e6cf; }
         
         #commandArea::placeholder {
             color: #666;
@@ -137,7 +194,10 @@
         <strong>Shortcuts:</strong> Ctrl+/ (toggle comment), Ctrl+S (save/queue cycle), Ctrl+Enter (queue track), Ctrl+Alt+S (play cycle), Ctrl+Alt+Enter (play track)<br>
         For Enter: no Shift = current track, + Shift = selected lines
         </div>
-    <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
+    <div id="editorContainer">
+        <div id="highlightOverlay"></div>
+        <textarea id="commandArea" placeholder="Enter ALiCA commands here...&#10;&#10;Examples:&#10;t(mainLoop).bpm(80).sn(4).sd(8).play([n(<c3,e3,g3>)].c(1) [a(7).from(127).to(0)].c(1))&#10;&#10;playCycle('t(example).bpm(120).sn(4).sd(4).play([n(c3) n(c3)].c(1))')&#10;playTrack('t(test).bpm(100).sn(4).sd(4).play([a(7).from(0).to(127)].c(1))')"></textarea>
+    </div>
 
     <script>
         let ws = null;
@@ -148,6 +208,18 @@
         const maxReconnectDelay = 30000; // Max 30 seconds
         const statusEl = document.getElementById('status');
         const commandArea = document.getElementById('commandArea');
+        
+        // Initialize highlighting immediately if elements exist
+        if (commandArea) {
+            // Wait a bit for overlay to be ready
+            setTimeout(() => {
+                const overlay = document.getElementById('highlightOverlay');
+                if (overlay) {
+                    highlightOverlay = overlay;
+                    highlightBrackets();
+                }
+            }, 50);
+        }
         
         function connect() {
             // Clear any existing reconnect timeout
@@ -1167,9 +1239,214 @@
             }
         }
         
-        // Focus textarea on load
+        // Syntax highlighting for brackets/parentheses
+        let highlightOverlay = null;
+        
+        // Initialize overlay after DOM is ready
+        function initHighlighting() {
+            highlightOverlay = document.getElementById('highlightOverlay');
+            if (highlightOverlay && commandArea) {
+                highlightBrackets();
+            }
+        }
+        
+        function highlightBrackets() {
+            if (!highlightOverlay) {
+                // Try to get overlay if not set
+                highlightOverlay = document.getElementById('highlightOverlay');
+                if (!highlightOverlay) return;
+            }
+            
+            const text = commandArea.value || '';
+            const lines = text.split('\n');
+            
+            // Clear overlay
+            highlightOverlay.innerHTML = '';
+            
+            lines.forEach((line, lineIndex) => {
+                if (lineIndex > 0) {
+                    // Add newline as a span to maintain line structure
+                    const newlineSpan = document.createElement('span');
+                    newlineSpan.className = 'char';
+                    newlineSpan.textContent = '\n';
+                    highlightOverlay.appendChild(newlineSpan);
+                }
+                
+                const highlighted = highlightLine(line || '');
+                if (highlighted) {
+                    highlightOverlay.appendChild(highlighted);
+                } else {
+                    // Empty line
+                    const emptySpan = document.createElement('span');
+                    emptySpan.className = 'char';
+                    highlightOverlay.appendChild(emptySpan);
+                }
+            });
+        }
+        
+        function highlightLine(line) {
+            if (!line) {
+                return document.createDocumentFragment();
+            }
+            
+            const result = document.createDocumentFragment();
+            const bracketChars = { '(': ')', '[': ']', '{': '}', '<': '>' };
+            const closingBrackets = { ')': '(', ']': '[', '}': '{', '>': '<' };
+            const bracketColors = [
+                '#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3',
+                '#f38181', '#aa96da', '#fcbad3', '#a8e6cf'
+            ];
+            
+            const stack = []; // Track bracket pairs: { char, index, level }
+            const errors = new Set(); // Track error positions
+            
+            // First pass: validate brackets from front to back
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                const nextChar = i < line.length - 1 ? line[i + 1] : '';
+                
+                // Skip comments - no bracket validation inside comments
+                if (char === '/' && nextChar === '/') {
+                    break; // Rest of line is comment, stop validation
+                }
+                
+                if (bracketChars[char]) {
+                    // Opening bracket
+                    stack.push({ char, index: i, level: stack.length });
+                } else if (closingBrackets[char]) {
+                    // Closing bracket
+                    if (stack.length === 0 || closingBrackets[char] !== stack[stack.length - 1].char) {
+                        // Mismatched or unmatched closing bracket
+                        errors.add(i);
+                    } else {
+                        stack.pop();
+                    }
+                }
+            }
+            
+            // Mark any unmatched opening brackets as errors
+            stack.forEach(item => errors.add(item.index));
+            
+            // Second pass: build the HTML with spans for each character
+            const brackets = []; // Track current bracket stack for coloring
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                const nextChar = i < line.length - 1 ? line[i + 1] : '';
+                
+                // Check for comment start
+                if (char === '/' && nextChar === '/') {
+                    // Add rest of line character by character as normal text (comment)
+                    for (let j = i; j < line.length; j++) {
+                        const span = document.createElement('span');
+                        span.className = 'char';
+                        span.textContent = line[j];
+                        result.appendChild(span);
+                    }
+                    break;
+                }
+                
+                // Check if this character is an error
+                const isError = errors.has(i);
+                
+                // Check if it's an opening bracket
+                if (bracketChars[char]) {
+                    const level = brackets.length;
+                    brackets.push({ char, level });
+                    const span = document.createElement('span');
+                    span.className = isError ? 'bracket error' : 'bracket';
+                    span.style.color = isError ? '#ff6b6b' : bracketColors[level % 8];
+                    span.textContent = char;
+                    result.appendChild(span);
+                }
+                // Check if it's a closing bracket
+                else if (closingBrackets[char]) {
+                    let matched = false;
+                    if (brackets.length > 0) {
+                        const lastBracket = brackets[brackets.length - 1];
+                        if (closingBrackets[char] === lastBracket.char) {
+                            const level = brackets.length - 1;
+                            brackets.pop();
+                            matched = true;
+                            const span = document.createElement('span');
+                            span.className = isError ? 'bracket error' : 'bracket';
+                            span.style.color = isError ? '#ff6b6b' : bracketColors[level % 8];
+                            span.textContent = char;
+                            result.appendChild(span);
+                        }
+                    }
+                    if (!matched) {
+                        // Unmatched closing bracket
+                        const span = document.createElement('span');
+                        span.className = 'bracket error';
+                        span.textContent = char;
+                        result.appendChild(span);
+                    }
+                }
+                // Regular character - wrap each one in a span
+                else {
+                    const span = document.createElement('span');
+                    span.className = isError ? 'char error' : 'char';
+                    span.textContent = char;
+                    result.appendChild(span);
+                }
+            }
+            
+            return result;
+        }
+        
+        // Update highlighting on any text change
+        commandArea.addEventListener('input', () => {
+            if (highlightOverlay) {
+                highlightBrackets();
+            }
+        });
+        
+        commandArea.addEventListener('keyup', () => {
+            if (highlightOverlay) {
+                highlightBrackets();
+            }
+        });
+        
+        commandArea.addEventListener('paste', () => {
+            setTimeout(() => {
+                if (highlightOverlay) {
+                    highlightBrackets();
+                }
+            }, 0);
+        });
+        
+        // Also update on change event
+        commandArea.addEventListener('change', () => {
+            if (highlightOverlay) {
+                highlightBrackets();
+            }
+        });
+        
+        // Sync scroll between textarea and overlay
+        commandArea.addEventListener('scroll', () => {
+            if (highlightOverlay) {
+                highlightOverlay.scrollTop = commandArea.scrollTop;
+                highlightOverlay.scrollLeft = commandArea.scrollLeft;
+            }
+        });
+        
+        // Initialize highlighting when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                initHighlighting();
+            });
+        } else {
+            initHighlighting();
+        }
+        
+        // Focus textarea on load and ensure highlighting is active
         window.addEventListener('load', () => {
+            if (!highlightOverlay) {
+                initHighlighting();
+            }
             commandArea.focus();
+            highlightBrackets();
         });
         
         // Cleanup on page unload
