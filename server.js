@@ -756,27 +756,122 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
+  // Handle nested parentheses and angle brackets properly
   let expandedSequence = processedSequence;
-  const repeatPattern = /n\([^)]+\)(\^\d+)((?:\.(?:d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\([^)]*\))*)/g;
-  let repeatMatch;
-  let lastIndex = 0;
+  let repeatSearchIdx = 0;
   let newSequence = '';
-  while ((repeatMatch = repeatPattern.exec(processedSequence)) !== null) {
-    newSequence += processedSequence.substring(lastIndex, repeatMatch.index);
-    const notePattern = repeatMatch[0].replace(repeatMatch[1], ''); // Remove ^N
-    const repeatCount = parseInt(repeatMatch[1].substring(1), 10); // Extract number from ^N
-    if (!isNaN(repeatCount) && repeatCount > 0) {
+  
+  while (repeatSearchIdx < processedSequence.length) {
+    const nIndex = processedSequence.indexOf('n(', repeatSearchIdx);
+    if (nIndex === -1) {
+      newSequence += processedSequence.substring(repeatSearchIdx);
+      break;
+    }
+    
+    newSequence += processedSequence.substring(repeatSearchIdx, nIndex);
+    
+    // Find the matching closing parenthesis for n(...)
+    let parenCount = 0;
+    let angleCount = 0;
+    let chunkStart = nIndex;
+    let chunkEnd = nIndex + 2; // After "n("
+    let i = chunkEnd;
+    
+    // First, find the end of n(...)
+    while (i < processedSequence.length) {
+      if (processedSequence[i] === '(') parenCount++;
+      else if (processedSequence[i] === ')') {
+        if (parenCount === 0 && angleCount === 0) {
+          chunkEnd = i + 1;
+          break;
+        }
+        parenCount--;
+      } else if (processedSequence[i] === '<') angleCount++;
+      else if (processedSequence[i] === '>') angleCount--;
+      i++;
+    }
+    
+    // Now look for parameters and repeat syntax after n(...)
+    i = chunkEnd;
+    let hasRepeat = false;
+    let repeatCount = 1;
+    let paramEnd = chunkEnd;
+    let repeatIndex = -1; // Track where the ^ is found
+    
+    while (i < processedSequence.length) {
+      // Check for repeat syntax: ^N
+      if (processedSequence[i] === '^' && i + 1 < processedSequence.length) {
+        const numMatch = processedSequence.substring(i + 1).match(/^\d+/);
+        if (numMatch) {
+          repeatCount = parseInt(numMatch[0], 10);
+          if (!isNaN(repeatCount) && repeatCount > 0) {
+            hasRepeat = true;
+            repeatIndex = i;
+            // Don't break yet - continue to find any parameters AFTER the ^
+            i += 1 + numMatch[0].length;
+            paramEnd = i; // Update paramEnd to after the ^N
+            continue; // Continue to look for more parameters
+          }
+        }
+      }
+      
+      // Check if we've hit the start of another chunk
+      if (i < processedSequence.length - 1 && processedSequence.substring(i, i + 2) === 'n(') {
+        break;
+      }
+      
+      // If we find a dot, check for parameter name
+      if (processedSequence[i] === '.') {
+        const paramMatch = processedSequence.substring(i + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp|ds)\(/);
+        if (paramMatch) {
+          const paramName = paramMatch[1];
+          const paramStart = i + 1 + paramName.length + 1; // After "paramName("
+          parenCount = 1;
+          let j = paramStart;
+          
+          // Find matching closing parenthesis for parameter
+          while (j < processedSequence.length && parenCount > 0) {
+            if (processedSequence[j] === '(') parenCount++;
+            else if (processedSequence[j] === ')') parenCount--;
+            j++;
+          }
+          
+          if (parenCount === 0) {
+            paramEnd = j;
+            i = j;
+            continue;
+          }
+        }
+      }
+      
+      i++;
+    }
+    
+    if (hasRepeat) {
+      // Extract the note pattern (including parameters after ^N, but excluding ^N itself)
+      // If repeatIndex is set, extract from chunkStart to repeatIndex (before the ^)
+      // Then append everything from after ^N to paramEnd (parameters after ^N)
+      let notePattern;
+      if (repeatIndex >= 0) {
+        // Pattern includes everything before ^ and after ^N (parameters)
+        const beforeRepeat = processedSequence.substring(chunkStart, repeatIndex);
+        const afterRepeat = processedSequence.substring(repeatIndex + 1 + String(repeatCount).length, paramEnd);
+        notePattern = beforeRepeat + afterRepeat;
+      } else {
+        // Fallback (shouldn't happen, but be safe)
+        notePattern = processedSequence.substring(chunkStart, paramEnd);
+      }
       // Repeat the note pattern N times
       const repeated = Array(repeatCount).fill(notePattern).join(' ');
       newSequence += repeated;
+      repeatSearchIdx = i;
     } else {
-      newSequence += repeatMatch[0];
+      // No repeat found, just copy the chunk
+      newSequence += processedSequence.substring(chunkStart, paramEnd);
+      repeatSearchIdx = paramEnd;
     }
-    lastIndex = repeatMatch.index + repeatMatch[0].length;
   }
-  if (lastIndex < processedSequence.length) {
-    newSequence += processedSequence.substring(lastIndex);
-  }
+  
   if (newSequence) {
     expandedSequence = newSequence;
   }
@@ -1563,6 +1658,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     
     if (nArpMode !== null && noteArray) {
       orderedNoteArray = orderArrayByArp(noteArray, nArpMode);
+      console.log('[ARP] Note array ordered:', orderedNoteArray.map(item => 
+        item.type === 'chord' ? `chord[${item.value.join(',')}]` : item.value
+      ));
     }
     if (vArpMode !== null && velocityArray) {
       orderedVelocityArray = orderArrayByArp(velocityArray, vArpMode);
@@ -1636,6 +1734,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           if (nArpMode !== null && orderedNoteArray) {
             const arpItem = getArpValue(orderedNoteArray, currentArpPosition);
             selectedItem = arpItem || noteArray[0];
+            console.log('[ARP] Position:', currentArpPosition, 'Selected:', 
+              selectedItem.type === 'chord' ? `chord[${selectedItem.value.join(',')}]` : selectedItem.value);
           } else {
             const randomIndex = Math.floor(Math.random() * noteArray.length);
             selectedItem = noteArray[randomIndex];
