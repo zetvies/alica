@@ -119,6 +119,11 @@
             background: rgba(255, 107, 107, 0.1);
         }
         
+        #highlightOverlay .trackHighlight {
+            background: rgba(100, 200, 255, 0.3) !important;
+            transition: background 0.3s ease-out;
+        }
+        
         /* Track-level brackets (t(), .play(), .bpm(), etc.) */
         .bracket-track-0 { color: #ff6b6b; } /* Red */
         .bracket-track-1 { color: #feca57; } /* Orange Yellow */
@@ -520,6 +525,7 @@
                 e.stopPropagation();
                 e.stopImmediatePropagation();
                 console.log('Ctrl+Shift+S pressed - playing cycle immediately');
+                highlightTrackBriefly();
                 playCycleForCurrentTrack();
                 return;
             }
@@ -527,26 +533,31 @@
             // Ctrl + / = toggle comment on selected lines
             if (isCtrl && !isAlt && !isShift && (e.key === '/' || e.key === '?')) {
                 e.preventDefault();
+                highlightTrackBriefly();
                 toggleComment();
             }
             // Ctrl + H = clear all cycles
             else if (isCtrl && !isAlt && !isShift && e.key === 'h') {
                 e.preventDefault();
+                highlightAllText();
                 clearAllCycles();
             }
             // Ctrl + S = save whole track (queue playCycle for current track)
             else if (isCtrl && !isAlt && !isShift && e.key === 's') {
                 e.preventDefault();
+                highlightTrackBriefly();
                 queuePlayCycleForCurrentTrack();
             }
             // Ctrl + Enter = queue playTrack for current track (SWAPPED)
             else if (isCtrl && !isAlt && !isShift && e.key === 'Enter') {
                 e.preventDefault();
+                highlightTrackBriefly();
                 queuePlayTrackForCurrentTrack();
             }
             // Ctrl + Shift + Enter = playTrack for current track immediately
             else if (isCtrl && !isAlt && isShift && e.key === 'Enter') {
                 e.preventDefault();
+                highlightTrackBriefly();
                 playTrackForCurrentTrack();
             }
         }, true); // Use capture phase to catch earlier
@@ -566,6 +577,7 @@
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     console.log('Ctrl+Shift+S pressed (window handler) - playing cycle immediately');
+                    highlightTrackBriefly();
                     playCycleForCurrentTrack();
                 }
             }
@@ -864,6 +876,237 @@
             }
             
             return bestMatch;
+        }
+        
+        // Find current track and return both the track string and its position in the text
+        function findCurrentTrackWithPosition() {
+            const fullText = commandArea.value;
+            const cursorPos = commandArea.selectionStart;
+            
+            // Find the nearest t(...) before cursor
+            let searchStart = 0;
+            let bestMatch = null;
+            let bestStart = -1;
+            let bestEnd = -1;
+            
+            while (true) {
+                const tIndex = fullText.indexOf('t(', searchStart);
+                if (tIndex === -1 || tIndex > cursorPos) break;
+                
+                // Find matching closing parenthesis for .play(...) and optionally .stop()
+                let depth = 0;
+                let pos = tIndex;
+                let inPlay = false;
+                let playStartPos = -1;
+                let playEndPos = -1;
+                
+                while (pos < fullText.length) {
+                    if (fullText.substring(pos).startsWith('.play(')) {
+                        inPlay = true;
+                        playStartPos = pos + 6; // Position after '.play('
+                        pos += 6; // Skip '.play('
+                        depth = 1;
+                        continue;
+                    }
+                    
+                    if (fullText[pos] === '(') depth++;
+                    else if (fullText[pos] === ')') {
+                        depth--;
+                        if (inPlay && depth === 0) {
+                            // Found complete t(...).play(...)
+                            playEndPos = pos + 1;
+                            
+                            // Check for .stop() after .play(...)
+                            let afterPlayPos = playEndPos;
+                            // Skip whitespace
+                            while (afterPlayPos < fullText.length && /\s/.test(fullText[afterPlayPos])) {
+                                afterPlayPos++;
+                            }
+                            
+                            // Check if .stop() or .stop follows
+                            if (fullText.substring(afterPlayPos).startsWith('.stop()')) {
+                                const stopEnd = afterPlayPos + 7;
+                                // Check if cursor is within this track including stop
+                                if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                    bestMatch = fullText.substring(tIndex, stopEnd);
+                                    bestStart = tIndex;
+                                    bestEnd = stopEnd;
+                                    break;
+                                }
+                            } else if (fullText.substring(afterPlayPos).startsWith('.stop')) {
+                                const stopEnd = afterPlayPos + 6;
+                                // Check if cursor is within this track including stop
+                                if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                    bestMatch = fullText.substring(tIndex, stopEnd);
+                                    bestStart = tIndex;
+                                    bestEnd = stopEnd;
+                                    break;
+                                }
+                            }
+                            
+                            // Check if cursor is within this track (without stop)
+                            if (cursorPos >= tIndex && cursorPos <= playEndPos) {
+                                bestMatch = fullText.substring(tIndex, playEndPos);
+                                bestStart = tIndex;
+                                bestEnd = playEndPos;
+                                break;
+                            }
+                            break;
+                        }
+                    }
+                    pos++;
+                }
+                
+                searchStart = tIndex + 2;
+            }
+            
+            // Also check for standalone t(...).stop() (without .play())
+            if (!bestMatch || cursorPos > bestEnd) {
+                searchStart = 0;
+                while (true) {
+                    const tIndex = fullText.indexOf('t(', searchStart);
+                    if (tIndex === -1 || tIndex > cursorPos) break;
+                    
+                    // Find the end of t(...)
+                    let pos = tIndex + 2;
+                    let depth = 1;
+                    while (pos < fullText.length && depth > 0) {
+                        if (fullText[pos] === '(') depth++;
+                        else if (fullText[pos] === ')') depth--;
+                        pos++;
+                    }
+                    
+                    if (depth === 0) {
+                        // Check for .stop() after t(...)
+                        let afterT = pos;
+                        // Skip whitespace
+                        while (afterT < fullText.length && /\s/.test(fullText[afterT])) {
+                            afterT++;
+                        }
+                        
+                        // Check if .stop() or .stop follows
+                        if (fullText.substring(afterT).startsWith('.stop()')) {
+                            const stopEnd = afterT + 7;
+                            if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                bestMatch = fullText.substring(tIndex, stopEnd);
+                                bestStart = tIndex;
+                                bestEnd = stopEnd;
+                                break;
+                            }
+                        } else if (fullText.substring(afterT).startsWith('.stop')) {
+                            const stopEnd = afterT + 6;
+                            if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                bestMatch = fullText.substring(tIndex, stopEnd);
+                                bestStart = tIndex;
+                                bestEnd = stopEnd;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    searchStart = tIndex + 2;
+                }
+            }
+            
+            if (bestMatch && bestStart !== -1 && bestEnd !== -1) {
+                return {
+                    track: bestMatch,
+                    start: bestStart,
+                    end: bestEnd
+                };
+            }
+            return null;
+        }
+        
+        // Highlight the current track for a brief moment
+        function highlightTrackBriefly() {
+            if (!highlightOverlay) {
+                highlightOverlay = document.getElementById('highlightOverlay');
+                if (!highlightOverlay) return;
+            }
+            
+            const trackInfo = findCurrentTrackWithPosition();
+            if (!trackInfo) return;
+            
+            // Get all character spans in the overlay
+            const chars = highlightOverlay.querySelectorAll('.char, .bracket, .error');
+            
+            if (chars.length === 0) return;
+            
+            const fullText = commandArea.value;
+            const trackStart = trackInfo.start;
+            const trackEnd = trackInfo.end;
+            
+            // Find spans that correspond to the track range
+            // Since spans are in order and map 1:1 with characters, we can use position counting
+            let charCount = 0;
+            let startSpanIndex = -1;
+            let endSpanIndex = -1;
+            
+            for (let i = 0; i < chars.length; i++) {
+                const span = chars[i];
+                const text = span.textContent || '';
+                
+                // Check if we've reached the start of the track
+                if (startSpanIndex === -1 && charCount >= trackStart) {
+                    startSpanIndex = i;
+                }
+                
+                // Count characters (newlines count as 1)
+                charCount += text.length || 1;
+                
+                // Check if we've passed the end of the track
+                if (charCount >= trackEnd && endSpanIndex === -1) {
+                    endSpanIndex = i;
+                    break;
+                }
+            }
+            
+            // If we found the range, highlight all spans in between
+            if (startSpanIndex !== -1) {
+                const endIndex = endSpanIndex !== -1 ? endSpanIndex : chars.length;
+                const spansToHighlight = [];
+                
+                for (let i = startSpanIndex; i <= endIndex && i < chars.length; i++) {
+                    const span = chars[i];
+                    span.classList.add('trackHighlight');
+                    spansToHighlight.push(span);
+                }
+                
+                // Remove highlight after 500ms
+                setTimeout(() => {
+                    spansToHighlight.forEach(span => {
+                        span.classList.remove('trackHighlight');
+                    });
+                }, 500);
+            }
+        }
+        
+        // Highlight all text for a brief moment
+        function highlightAllText() {
+            if (!highlightOverlay) {
+                highlightOverlay = document.getElementById('highlightOverlay');
+                if (!highlightOverlay) return;
+            }
+            
+            // Get all character spans in the overlay
+            const chars = highlightOverlay.querySelectorAll('.char, .bracket, .error');
+            
+            if (chars.length === 0) return;
+            
+            // Highlight all spans
+            const spansToHighlight = [];
+            chars.forEach(span => {
+                span.classList.add('trackHighlight');
+                spansToHighlight.push(span);
+            });
+            
+            // Remove highlight after 500ms
+            setTimeout(() => {
+                spansToHighlight.forEach(span => {
+                    span.classList.remove('trackHighlight');
+                });
+            }, 500);
         }
         
         // Apply t() wrapper settings to a sequence string
