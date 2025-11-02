@@ -2337,7 +2337,8 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   const beatsPerBar = useSignatureNumerator;
   const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
   
-  // Use parsed cycleId if available, otherwise use provided id or generate one
+  // Use parsed cycleId if available (from new syntax), otherwise fall back to provided/generated
+  // The cycleId from t(cycleId) should always be used when new syntax is detected
   const finalCycleId = useCycleId || (tempoParam !== null ? 'cycle_' + Date.now() : null);
   
   // Call playTrack immediately, then set up interval
@@ -2374,11 +2375,19 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
     playTrack(useCycleStr, useTempo, useSignatureNumerator, useSignatureDenominator);
   }, barDurationMs);
   
-  // If we have a cycleId from new syntax, return it with the intervalId for tracking
+  // Always store/update in activeCycle using the finalCycleId
   if (finalCycleId && intervalId) {
-    // Store the cycleId in activeCycle if not already there
     const existingIndex = activeCycle.findIndex(c => c.id === finalCycleId);
-    if (existingIndex === -1) {
+    if (existingIndex !== -1) {
+      // Replace existing cycle with same ID
+      clearInterval(activeCycle[existingIndex].intervalId);
+      activeCycle[existingIndex] = {
+        id: finalCycleId,
+        function: () => playCycle(cycleStr, useTempo, useSignatureNumerator, useSignatureDenominator),
+        intervalId: intervalId
+      };
+    } else {
+      // Add new cycle
       activeCycle.push({
         id: finalCycleId,
         function: () => playCycle(cycleStr, useTempo, useSignatureNumerator, useSignatureDenominator),
@@ -2737,58 +2746,44 @@ wss.on('connection', (ws) => {
           break;
           
         case 'playCycle':
-          // Try to extract cycleId from new syntax or use provided id
-          let playCycleId = data.id;
+          // Extract cycleId from new syntax - this is the authoritative source
           const cycleStrInput = data.cycleStr || "[n(70)^4].c(2)";
           const parsedCycle = parseMethodChainSyntax(cycleStrInput);
-          if (parsedCycle) {
-            playCycleId = parsedCycle.cycleId;
-          }
-          if (!playCycleId) {
-            playCycleId = 'cycle_' + Date.now();
-          }
+          // When new syntax is detected, always use the cycleId from t(cycleId)
+          // Otherwise fall back to provided id or generate one
+          const playCycleId = parsedCycle ? parsedCycle.cycleId : (data.id || 'cycle_' + Date.now());
           
-          const playCycleIntervalId = playCycle(
-            cycleStrInput,
-            data.tempo || null,
-            data.signatureNumerator || null,
-            data.signatureDenominator || null
-          );
-          if (playCycleIntervalId !== null) {
-            // Check if cycle with same id already exists
-            const existingIndex = activeCycle.findIndex(cycle => cycle.id === playCycleId);
-            if (existingIndex !== -1) {
-              // Replace existing cycle
-              clearInterval(activeCycle[existingIndex].intervalId);
-              activeCycle[existingIndex] = {
-                id: playCycleId,
-                function: () => playCycle(
-                  cycleStrInput,
-                  data.tempo || null,
-                  data.signatureNumerator || null,
-                  data.signatureDenominator || null
-                ),
-                intervalId: playCycleIntervalId
-              };
+          // Check if cycle with this ID already exists
+          const existingCycleIndex = activeCycle.findIndex(c => c.id === playCycleId);
+          
+          if (existingCycleIndex !== -1) {
+            // Cycle exists - update it
+            const updateResult = updateCycleById(
+              playCycleId,
+              cycleStrInput,
+              data.tempo || null,
+              data.signatureNumerator || null,
+              data.signatureDenominator || null
+            );
+            if (updateResult) {
+              console.log(`[WS] playCycle called - updated existing cycle '${playCycleId}'`);
             } else {
-              // Add new cycle to activeCycle (if not already added by playCycle)
-              const alreadyAdded = activeCycle.find(c => c.id === playCycleId);
-              if (!alreadyAdded) {
-                activeCycle.push({
-                  id: playCycleId,
-                  function: () => playCycle(
-                    cycleStrInput,
-                    data.tempo || null,
-                    data.signatureNumerator || null,
-                    data.signatureDenominator || null
-                  ),
-                  intervalId: playCycleIntervalId
-                });
-              }
+              console.log(`[WS] playCycle called - update failed for cycle '${playCycleId}'`);
             }
-            console.log(`[WS] playCycle called - added to activeCycle with id '${playCycleId}'`);
           } else {
-            console.log('[WS] playCycle failed to start');
+            // Cycle doesn't exist - create new one
+            const playCycleIntervalId = playCycle(
+              cycleStrInput,
+              data.tempo || null,
+              data.signatureNumerator || null,
+              data.signatureDenominator || null
+            );
+            
+            if (playCycleIntervalId !== null) {
+              console.log(`[WS] playCycle called - created new cycle '${playCycleId}' (from ${parsedCycle ? 'new syntax' : 'provided/generated'})`);
+            } else {
+              console.log('[WS] playCycle called - failed to create cycle');
+            }
           }
           break;
           
