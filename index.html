@@ -212,8 +212,10 @@
         
         #hint {
             position: fixed;
-            bottom: 60px;
+            bottom: 20px;
             right: 20px;
+            width: 500px;
+            max-width: calc(100vw - 40px);
             padding: 12px 16px;
             background: rgba(0, 0, 0, 0.85);
             border-radius: 4px;
@@ -262,12 +264,95 @@
         }
         
         #hintContent {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        
+        .hintSection {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .hintCommandsGrid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             grid-template-rows: repeat(2, auto);
             gap: 8px 16px;
+        }
+        
+        #hintSyntax {
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        
+        #hintSyntax::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        #hintSyntax::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+        
+        #hintSyntax::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        
+        #hintSyntax::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .syntaxSection {
+            margin-bottom: 16px;
+        }
+        
+        .syntaxSectionTitle {
+            font-weight: bold;
+            color: #4a9eff;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .syntaxSubsection {
+            margin-left: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .syntaxSubsectionTitle {
+            font-weight: bold;
+            color: #9c27b0;
             font-size: 11px;
-            line-height: 1.6;
+            margin-bottom: 6px;
+        }
+        
+        .syntaxChain {
+            font-family: 'Courier New', monospace;
+            color: #e0e0e0;
+            font-size: 10px;
+            margin-bottom: 4px;
+        }
+        
+        .syntaxDesc {
+            color: #aaa;
+            font-size: 10px;
+            margin-left: 12px;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+        
+        .syntaxExample {
+            font-family: 'Courier New', monospace;
+            color: #4a9eff;
+            font-size: 9px;
+            margin-left: 12px;
+            margin-bottom: 8px;
+            opacity: 0.8;
         }
         
         .hintItem {
@@ -366,42 +451,144 @@
             <div id="status" class="disconnected">Disconnected</div>
         </div>
         </div>
-        <div id="hint">
+        <div id="hint" class="hidden">
             <div id="hintHeader">
-                <span id="hintTitle">Commands:</span>
+                <span id="hintTitle">Commands & Syntax</span>
                 <button id="hintClose" title="Hide hints">×</button>
         </div>
             <div id="hintContent">
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+/</span>
-                    <span class="hintDesc">Toggle Comment</span>
+                <div class="hintSection">
+                    <div class="syntaxSectionTitle">Commands:</div>
+                    <div class="hintCommandsGrid">
+                        <div class="hintItem">
+                            <span class="hintKey">Ctrl+/</span>
+                            <span class="hintDesc">Toggle Comment</span>
+                        </div>
+                        <div class="hintItem">
+                            <span class="hintKey">Ctrl+S</span>
+                            <span class="hintDesc">Loop Track in Next Cycle</span>
+                        </div>
+                        <div class="hintItem">
+                            <span class="hintKey">Ctrl+Shift+S</span>
+                            <span class="hintDesc">Loop Track Immediately</span>
+                        </div>
+                        <div class="hintItem">
+                            <span class="hintKey">Ctrl+H</span>
+                            <span class="hintDesc">Stop All Loops</span>
+                        </div>
+                        <div class="hintItem">
+                            <span class="hintKey">Ctrl+Enter</span>
+                            <span class="hintDesc">Play Track in Next Cycle</span>
+                        </div>
+                        <div class="hintItem">
+                            <span class="hintKey">Ctrl+Shift+Enter</span>
+                            <span class="hintDesc">Play Track Immediately</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+S</span>
-                    <span class="hintDesc">Loop Track in Next Cycle</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+Shift+S</span>
-                    <span class="hintDesc">Loop Track Immediately</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+H</span>
-                    <span class="hintDesc">Stop All Loops</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+Enter</span>
-                    <span class="hintDesc">Play Track in Next Cycle</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+Shift+Enter</span>
-                    <span class="hintDesc">Play Track Immediately</span>
+                <div class="hintSection">
+                    <div class="syntaxSectionTitle">Syntax:</div>
+                    <div id="hintSyntax">
+                        <div class="syntaxSection">
+                            <div class="syntaxChain">t(cycleId).bpm(bpm).sn(num).sd(den).play([...])</div>
+                            <div class="syntaxDesc">
+                                <strong>t(cycleId):</strong> Track identifier (alphanumeric with _/-)<br>
+                                <strong>.bpm(bpm):</strong> Override tempo (number or tmp*2/3*4)<br>
+                                <strong>.sn(num):</strong> Time signature numerator (number or sn*2/3*4)<br>
+                                <strong>.sd(den):</strong> Time signature denominator (number or sd*2/3*4)<br>
+                                <strong>.play([...]):</strong> Sequence/automation blocks to play
+                            </div>
+                            <div class="syntaxExample">t(main).bpm(120).sn(4).sd(4).play([n(60)^4])</div>
+                        </div>
+                        
+                        <div class="syntaxSection">
+                            <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).ds(delay).pm(prob)</div>
+                            <div class="syntaxDesc">
+                                <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
+                                <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat)<br>
+                                <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
+                                <strong>.co(cutoff):</strong> Duration token for cutoff (bt, br, etc.)<br>
+                                <strong>.ds(delay):</strong> Delay start - duration in ms or tokens (bt, br, etc.)<br>
+                                <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence
+                            </div>
+                            <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).ds(bt/2).pm(0.2)</div>
+                        </div>
+                        
+                        <div class="syntaxSection">
+                            <div class="syntaxSubsectionTitle">1. Note Syntax:</div>
+                            <div class="syntaxChain">n(value).d(duration).v(velocity).c(channel)</div>
+                            <div class="syntaxDesc">
+                                <strong>n(value):</strong> MIDI note (0-127), note token (c4, c#3), or randomizer<br>
+                                <strong>.d(duration):</strong> Duration in ms, bt (duration of one beat)/br (duration of one bar) tokens, optionally add multipliers (*2, /4)<br>
+                                <strong>.v(velocity):</strong> Velocity 0-127 or randomizer<br>
+                                <strong>.c(channel):</strong> MIDI channel 1-16 or randomizer<br>
+                                <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max), .pm(prob), .pr(prob), .nArp(mode), .vArp(mode), .dArp(mode)
+                            </div>
+                            <div class="syntaxExample">n(60).d(bt).v(80).c(1)</div>
+                            
+                            <div class="syntaxSubsection">
+                                <div class="syntaxSubsectionTitle">Randomizers:</div>
+                                <div class="syntaxChain">r</div>
+                                <div class="syntaxDesc">Random value (notes default C1-C8, velocity 0-127)</div>
+                                <div class="syntaxExample">n(r).nRange(c3, c5)</div>
+                                
+                                <div class="syntaxChain">r.o{value1, value2, ...}</div>
+                                <div class="syntaxDesc">Random selection from array</div>
+                                <div class="syntaxExample">n(r.o{c4,d4,e4}).v(r.o{60,80,100})</div>
+                            </div>
+                            
+                            <div class="syntaxSubsection">
+                                <div class="syntaxSubsectionTitle">Chords:</div>
+                                <div class="syntaxChain">chord(root-quality)</div>
+                                <div class="syntaxDesc">
+                                    <strong>root:</strong> Note (c, d#, f, etc.)<br>
+                                    <strong>quality:</strong> Triads: maj, min, dim, aug, sus2, sus4 | 7th: maj7, min7, 7, maj7#5, min7b5, dim7 | 9th: maj9, min9, 9, 9#5, min9b5, b9, #9 | 11th: maj11, min11, 11, #11 | 13th: maj13, min13, 13, 13b9, 13#9, 13#11 | Add: add9, add11, 6, 69, min6, min69 | Altered: alt, 7alt, no3, no5 | Sus: sus9, 7sus4
+                                </div>
+                                <div class="syntaxExample">n(r.o{chord(c-maj7)})</div>
+                            </div>
+                            
+                            <div class="syntaxSubsection">
+                                <div class="syntaxSubsectionTitle">Scale and Chord Preset:</div>
+                                <div class="syntaxChain">scale(root-mode)</div>
+                                <div class="syntaxDesc">
+                                    <strong>root:</strong> Note (c, d#, f, etc.)<br>
+                                    <strong>mode:</strong> Modes: ionian, dorian, phrygian, lydian, mixolydian, aeolian, locrian | Pentatonic: pentatonicMajor, pentatonicMinor, pentatonicBlues | Japanese: iwato, in/insen, yo | Blues: bluesMajor, bluesMinor | Harmonic/Melodic: harmonicMinor, melodicMinor, double-harmonic | Synthetic: whole-tone, diminished, augmented | Exotic: enigmatic, neapolitan, hungarianMinor, persian, arabic<br>
+                                    <strong>.q(quality):</strong> Optional chord quality (any from chord qualities above)
+                                </div>
+                                <div class="syntaxExample">n(r.o{scale(c-ionian)}).nRange(c3, c5)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="syntaxSection">
+                            <div class="syntaxSubsectionTitle">2. Sequence Syntax:</div>
+                            <div class="syntaxChain">n(value1) n(value2) n(value3)^repeat</div>
+                            <div class="syntaxDesc">
+                                Multiple notes form a sequence. Use ^N to repeat a note N times.
+                            </div>
+                            <div class="syntaxExample">n(60).d(bt) n(62).d(bt) n(64)^4</div>
+                        </div>
+                        
+                        <div class="syntaxSection">
+                            <div class="syntaxSubsectionTitle">4. Automation Syntax:</div>
+                            <div class="syntaxChain">a(controller).from(value).to(value).d(duration).e(easing).c(channel)</div>
+                            <div class="syntaxDesc">
+                                <strong>a(controller):</strong> MIDI CC number 0-127<br>
+                                <strong>.from(value):</strong> Start value 0-127 (default: 0)<br>
+                                <strong>.to(value):</strong> End value 0-127 (default: 127)<br>
+                                <strong>.d(duration):</strong> Duration in ms or tokens (bt, br, etc.)<br>
+                                <strong>.e(easing):</strong> Easing function: linear, easeIn, easeOut, easeInOut, easeInQuad, easeOutQuad, easeInOutQuad, easeInCubic, easeOutCubic, easeInOutCubic (default: linear)<br>
+                                <strong>.c(channel):</strong> MIDI channel 1-16 (optional)
+                            </div>
+                            <div class="syntaxExample">[a(7).from(0).to(127).d(bt).e(easeInOut)].t(beat).c(1)</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div id="hintToggle">?</div>
+        <div id="hintToggle" class="visible">?</div>
     <div id="editorContainer">
         <div id="highlightOverlay"></div>
-        <textarea id="commandArea" ></textarea>
+        <textarea id="commandArea" placeholder="Type here to start..."></textarea>
     </div>
 
     <script>
