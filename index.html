@@ -77,8 +77,11 @@
         <div class="status disconnected" id="status">Disconnected</div>
         
         <div class="input-group">
-            <label for="cycleStr">Sequence String:</label>
-            <input type="text" id="cycleStr" placeholder='e.g., "[n(60)^2 n(65)^2].c(1)"' value='[n(60)^2 n(65)^2].c(1)'>
+            <label for="cycleStr">Sequence/Automation String:</label>
+            <input type="text" id="cycleStr" placeholder='e.g., "[n(60)^2 n(65)^2].c(1)"' value='[n(60)^2 n(65)^2].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2)].c(1)'>
+            <small style="color: #888; font-size: 11px;">
+              <strong>Example:</strong> Mix sequences and automation: <code style="background: #333; padding: 2px 4px; border-radius: 2px;">[n(c3) n(c3)].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2).e(easeInOut)].c(1)</code>
+            </small>
         </div>
         
         <div class="input-group">
@@ -108,6 +111,80 @@
         <button onclick="sendUpdateCycle()">5. Update Cycle by ID</button>
         <button onclick="sendRemoveCycle()">6. Remove Cycle by ID</button>
         <button onclick="sendClearAll()">7. Clear All Cycles</button>
+        
+        <hr style="margin: 20px 0; border-color: #4a4a4a;">
+        
+        <h3 style="margin-top: 0;">Example Cycles</h3>
+        <button onclick="loadExample1()" style="background-color: #9c27b0;">📝 Example 1: Notes + Volume Fade</button>
+        <button onclick="loadExample2()" style="background-color: #9c27b0;">📝 Example 2: Automation Only</button>
+        <button onclick="loadExample3()" style="background-color: #9c27b0;">📝 Example 3: Complex Mix</button>
+        
+        <hr style="margin: 20px 0; border-color: #4a4a4a;">
+        
+        <h3 style="margin-top: 0;">MIDI CC Automation</h3>
+        
+        <div class="input-group">
+            <label for="fadeDuration">Fade Duration (ms):</label>
+            <input type="number" id="fadeDuration" placeholder="2000" value="2000" min="100" max="60000">
+        </div>
+        
+        <div class="input-group">
+            <label for="ccChannel">MIDI Channel (0-15):</label>
+            <input type="number" id="ccChannel" placeholder="0" value="0" min="0" max="15">
+        </div>
+        
+        <button onclick="sendFadeIn()" style="background-color: #4caf50;">🎚️ Fade In</button>
+        <button onclick="sendFadeOut()" style="background-color: #f44336;">🎚️ Fade Out</button>
+        
+        <hr style="margin: 20px 0; border-color: #4a4a4a;">
+        
+        <h3 style="margin-top: 0;">Multiple Faders Control</h3>
+        <p style="font-size: 12px; color: #aaa; margin: 5px 0;">
+          <strong>You have 2,048 total parameters!</strong> (16 channels × 128 CC numbers)<br>
+          • <strong>Different CC numbers</strong> (same channel): Volume(7), Pan(10), Filter(74) on one track<br>
+          • <strong>Same CC number</strong> (different channels): Volume(7) on tracks 1, 2, 3... up to 16<br>
+          • <strong>Any combination</strong>: Mix and match any CC (0-127) with any channel (0-15)
+        </p>
+        
+        <div class="input-group">
+            <label for="multiCCConfig">Fader Config (JSON array):</label>
+            <textarea id="multiCCConfig" rows="4" style="font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #4a4a4a; border-radius: 4px; background-color: #2a2a2a; color: #ffffff; resize: vertical;" placeholder='[
+  {"controller": 7, "channel": 0, "startValue": 0, "endValue": 127, "duration": 2000},
+  {"controller": 10, "channel": 0, "startValue": 64, "endValue": 127, "duration": 2000}
+]'>[
+  {"controller": 7, "channel": 0, "startValue": 0, "endValue": 127, "duration": 2000, "easing": "easeInOut"},
+  {"controller": 7, "channel": 1, "startValue": 0, "endValue": 127, "duration": 2000, "easing": "easeInOut"}
+]</textarea>
+            <small style="color: #888; font-size: 11px;">
+              Example: Control volume (CC7) on multiple channels simultaneously
+            </small>
+        </div>
+        
+        <button onclick="sendMultipleFaders()" style="background-color: #9c27b0;">🎚️ Stream Multiple Faders</button>
+        <button onclick="quickMultiChannelFade()" style="background-color: #673ab7;">⚡ Quick Multi-Channel Fade</button>
+        
+        <hr style="margin: 20px 0; border-color: #4a4a4a;">
+        
+        <h3 style="margin-top: 0;">Debug: Set CC Value</h3>
+        
+        <div class="input-group">
+            <label for="debugController">CC Number (0-127):</label>
+            <input type="number" id="debugController" placeholder="7" value="7" min="0" max="127">
+            <small style="color: #888; font-size: 12px;">Common: 7=Volume, 10=Pan, 74=Filter Cutoff</small>
+        </div>
+        
+        <div class="input-group">
+            <label for="debugValue">CC Value (0-127):</label>
+            <input type="number" id="debugValue" placeholder="64" value="64" min="0" max="127">
+        </div>
+        
+        <div class="input-group">
+            <label for="debugChannel">MIDI Channel (0-15):</label>
+            <input type="number" id="debugChannel" placeholder="0" value="0" min="0" max="15">
+        </div>
+        
+        <button onclick="sendDebugCC()" style="background-color: #2196f3;">🔧 Set CC Value</button>
+        <button onclick="testCCRange()" style="background-color: #ff9800;">🧪 Test CC Range (0-127)</button>
     </div>
 
     <script>
@@ -218,6 +295,188 @@
             ws.send(JSON.stringify({
                 action: 'clearAllCycles'
             }));
+        }
+        
+        // Example cycles
+        function loadExample1() {
+            // Simple: Notes with volume fade in/out
+            const example = '[n(c3) n(c3)].c(1) [a(7).from(0).to(127).d(bt/2) a(7).from(127).to(0).d(bt/2).e(easeInOut)].c(1)';
+            document.getElementById('cycleStr').value = example;
+            console.log('Loaded Example 1: Notes with volume fade');
+        }
+        
+        function loadExample2() {
+            // Automation only: Filter sweep
+            const example = '[a(74).from(0).to(127).d(bt).e(easeInOut) a(74).from(127).to(0).d(bt).e(easeInOut)].c(1)';
+            document.getElementById('cycleStr').value = example;
+            console.log('Loaded Example 2: Filter sweep automation');
+        }
+        
+        function loadExample3() {
+            // Complex: Multiple sequences with different automations
+            const example = '[n(60) n(64) n(67)].c(1) [a(7).from(0).to(127).d(bt/4).e(easeIn) a(7).from(127).to(64).d(bt/4).e(easeOut)].c(1) [n(70) n(74)].c(2) [a(10).from(0).to(127).d(bt/2).e(easeInOut)].c(2)';
+            document.getElementById('cycleStr').value = example;
+            console.log('Loaded Example 3: Complex mix with multiple tracks and automations');
+        }
+        
+        function sendFadeIn() {
+            const duration = parseInt(document.getElementById('fadeDuration').value) || 2000;
+            const channel = parseInt(document.getElementById('ccChannel').value) || 0;
+            // First stop any existing fade streams to avoid conflicts
+            ws.send(JSON.stringify({
+                action: 'stopAllCCStreams'
+            }));
+            // Then start fade in: volume goes from 0 (silent) to 127 (max)
+            ws.send(JSON.stringify({
+                action: 'streamCC',
+                controller: 7,           // CC 7 = Volume
+                startValue: 0,           // Start at minimum (silent)
+                endValue: 127,           // End at maximum (loud)
+                duration: duration,
+                channel: channel,
+                easing: 'easeIn',        // Starts slow, speeds up (good for fade in)
+                updateInterval: 10,      // 10ms updates for smooth automation (100fps)
+                streamId: 'fadeIn_' + Date.now()
+            }));
+            console.log(`Fade IN: Volume 0 → 127 over ${duration}ms on channel ${channel}`);
+        }
+        
+        function sendFadeOut() {
+            const duration = parseInt(document.getElementById('fadeDuration').value) || 2000;
+            const channel = parseInt(document.getElementById('ccChannel').value) || 0;
+            // First stop any existing fade streams to avoid conflicts
+            ws.send(JSON.stringify({
+                action: 'stopAllCCStreams'
+            }));
+            // Then start fade out: volume goes from 127 (max) to 0 (silent)
+            ws.send(JSON.stringify({
+                action: 'streamCC',
+                controller: 7,           // CC 7 = Volume
+                startValue: 127,         // Start at maximum (loud)
+                endValue: 0,              // End at minimum (silent)
+                duration: duration,
+                channel: channel,
+                easing: 'easeOut',        // Starts fast, slows down (good for fade out)
+                updateInterval: 10,      // 10ms updates for smooth automation (100fps)
+                streamId: 'fadeOut_' + Date.now()
+            }));
+            console.log(`Fade OUT: Volume 127 → 0 over ${duration}ms on channel ${channel}`);
+        }
+        
+        function sendDebugCC() {
+            const controller = parseInt(document.getElementById('debugController').value) || 7;
+            const value = parseInt(document.getElementById('debugValue').value) || 64;
+            const channel = parseInt(document.getElementById('debugChannel').value) || 0;
+            
+            // Validate ranges
+            const validController = Math.max(0, Math.min(127, controller));
+            const validValue = Math.max(0, Math.min(127, value));
+            const validChannel = Math.max(0, Math.min(15, channel));
+            
+            ws.send(JSON.stringify({
+                action: 'sendCC',
+                controller: validController,
+                value: validValue,
+                channel: validChannel
+            }));
+            
+            console.log(`[DEBUG] Set CC ${validController} = ${validValue} on channel ${validChannel}`);
+        }
+        
+        function testCCRange() {
+            const controller = parseInt(document.getElementById('debugController').value) || 7;
+            const channel = parseInt(document.getElementById('debugChannel').value) || 0;
+            const validController = Math.max(0, Math.min(127, controller));
+            const validChannel = Math.max(0, Math.min(15, channel));
+            
+            console.log(`[DEBUG] Testing CC ${validController} range 0-127 on channel ${validChannel}`);
+            
+            // Test from 0 to 127 in steps
+            let currentValue = 0;
+            const testInterval = setInterval(() => {
+                ws.send(JSON.stringify({
+                    action: 'sendCC',
+                    controller: validController,
+                    value: currentValue,
+                    channel: validChannel
+                }));
+                console.log(`[DEBUG] CC ${validController} = ${currentValue}`);
+                currentValue += 10;
+                if (currentValue > 127) {
+                    clearInterval(testInterval);
+                    console.log(`[DEBUG] Test complete`);
+                }
+            }, 100); // Update every 100ms
+        }
+        
+        function sendMultipleFaders() {
+            const configText = document.getElementById('multiCCConfig').value.trim();
+            if (!configText) {
+                console.error('[ERROR] No configuration provided');
+                alert('Please provide a JSON array configuration');
+                return;
+            }
+            
+            try {
+                const configs = JSON.parse(configText);
+                if (!Array.isArray(configs) || configs.length === 0) {
+                    throw new Error('Configuration must be a non-empty array');
+                }
+                
+                // Validate each config
+                const validatedConfigs = configs.map((cfg, idx) => {
+                    return {
+                        controller: Math.max(0, Math.min(127, cfg.controller || 7)),
+                        startValue: Math.max(0, Math.min(127, cfg.startValue !== undefined ? cfg.startValue : 0)),
+                        endValue: Math.max(0, Math.min(127, cfg.endValue !== undefined ? cfg.endValue : 127)),
+                        duration: Math.max(100, Math.min(60000, cfg.duration || 2000)),
+                        channel: Math.max(0, Math.min(15, cfg.channel !== undefined ? cfg.channel : 0)),
+                        easing: cfg.easing || 'linear',
+                        updateInterval: cfg.updateInterval || 10,
+                        streamId: cfg.streamId || `multi_${idx}_${Date.now()}`
+                    };
+                });
+                
+                ws.send(JSON.stringify({
+                    action: 'streamMultipleCC',
+                    streams: validatedConfigs
+                }));
+                
+                console.log(`[MULTI] Streaming ${validatedConfigs.length} fader(s):`, validatedConfigs);
+            } catch (e) {
+                console.error('[ERROR] Invalid JSON configuration:', e.message);
+                alert('Invalid JSON configuration: ' + e.message);
+            }
+        }
+        
+        function quickMultiChannelFade() {
+            const fadeType = confirm('Fade IN (OK) or Fade OUT (Cancel)?') ? 'in' : 'out';
+            const numChannels = parseInt(prompt('How many channels?', '3')) || 3;
+            const duration = parseInt(document.getElementById('fadeDuration').value) || 2000;
+            const startChannel = parseInt(document.getElementById('ccChannel').value) || 0;
+            
+            const configs = [];
+            for (let i = 0; i < numChannels; i++) {
+                const channel = startChannel + i;
+                if (channel > 15) break; // Max 16 channels
+                
+                configs.push({
+                    controller: 7, // Volume
+                    channel: channel,
+                    startValue: fadeType === 'in' ? 0 : 127,
+                    endValue: fadeType === 'in' ? 127 : 0,
+                    duration: duration,
+                    easing: fadeType === 'in' ? 'easeIn' : 'easeOut',
+                    updateInterval: 10
+                });
+            }
+            
+            ws.send(JSON.stringify({
+                action: 'streamMultipleCC',
+                streams: configs
+            }));
+            
+            console.log(`[QUICK] ${fadeType.toUpperCase()} on ${configs.length} channel(s):`, configs);
         }
     </script>
     <script src="sketch.js"></script>

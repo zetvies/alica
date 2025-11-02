@@ -12,7 +12,17 @@ const {
   generateScaleChordNotes,
   getScaleIntervals
 } = require('./src/modules/musicTheory');
-const { initializeMidi, sendNote, closeMidi } = require('./src/modules/midiHandler');
+const { 
+  initializeMidi, 
+  sendNote, 
+  sendCC,
+  streamCC,
+  streamMultipleCC,
+  stopCCStream,
+  stopAllCCStreams,
+  getActiveCCStreams,
+  closeMidi 
+} = require('./src/modules/midiHandler');
 const app = express();
 const HTTP_PORT = process.env.PORT || 4254;
 const UDP_PORT = 4254;
@@ -1880,8 +1890,205 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   }
 }
 
-// Play multiple sequences in a cycle with per-block modifiers.
-// Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [n(60)^2].t(beat).c(3)
+// Parse and play automation with same timing logic as sequences
+// This is used internally when automation blocks are detected in playTrack
+// Uses same chunk duration, type (fit/beat only), cutoff logic as sequences
+async function playAutomationInSequence(automationStr, type = "fit", cutOff = null, channelOverride = null, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
+  if (!automationStr || typeof automationStr !== 'string') return;
+  
+  // Use provided parameters or fall back to server variables
+  const useTempo = tempoParam !== null ? tempoParam : tempo;
+  const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : signatureNumerator;
+  const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : signatureDenominator;
+  
+  // Calculate timing constants (same as playSequence)
+  const beatsPerBar = useSignatureNumerator || 4;
+  const barDurationMs = (typeof useTempo === 'number' && useTempo > 0) ? (60000 / useTempo) * beatsPerBar : 500;
+  const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar));
+  const br = barDurationMs;
+  
+  // Parse automation chunks similar to note chunks
+  // Split by spaces, but preserve nested parentheses
+  const chunks = [];
+  let currentChunk = '';
+  let parenDepth = 0;
+  let angleDepth = 0;
+  
+  for (let i = 0; i < automationStr.length; i++) {
+    const char = automationStr[i];
+    if (char === '(') parenDepth++;
+    else if (char === ')') parenDepth--;
+    else if (char === '<') angleDepth++;
+    else if (char === '>') angleDepth--;
+    else if (char === ' ' && parenDepth === 0 && angleDepth === 0) {
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      continue;
+    }
+    currentChunk += char;
+  }
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  // Filter to only automation chunks: a(number)
+  const automationChunks = chunks.filter(chunk => /^a\(\d+\)/.test(chunk.trim()));
+  
+  if (automationChunks.length === 0) return;
+  
+  // Calculate timing similar to sequences
+  // Only support 'fit' and 'beat' types for automation chunks
+  const numChunks = automationChunks.length;
+  const ev = Math.max(1, Math.round(barDurationMs / numChunks));
+  // Default to 'fit' if type is 'bar' or invalid
+  const effectiveType = (type === 'fit' || type === 'beat') ? type : 'fit';
+  const defaultDurationMs = effectiveType === 'fit' ? ev : bt;
+  
+  // Parse cutoff
+  let cutoffDurationMs = null;
+  if (cutOff) {
+    const cutoffNorm = cutOff.trim().toLowerCase();
+    const brMatch = cutoffNorm.match(/^br(?:\*(\d+(?:\.\d+)?))?$/);
+    const brDivMatch = cutoffNorm.match(/^br\/(\d+)$/);
+    const btMatch = cutoffNorm.match(/^bt(?:\*(\d+(?:\.\d+)?))?$/);
+    const btDivMatch = cutoffNorm.match(/^bt\/(\d+)$/);
+    
+    if (brMatch) {
+      const multiplier = brMatch[1] ? parseFloat(brMatch[1]) : 1;
+      if (!isNaN(multiplier) && multiplier > 0) cutoffDurationMs = Math.round(br * multiplier);
+    } else if (brDivMatch) {
+      const divisor = parseInt(brDivMatch[1], 10);
+      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) cutoffDurationMs = Math.round(br / divisor);
+    } else if (btMatch) {
+      const multiplier = btMatch[1] ? parseFloat(btMatch[1]) : 1;
+      if (!isNaN(multiplier) && multiplier > 0) cutoffDurationMs = Math.round(bt * multiplier);
+    } else if (btDivMatch) {
+      const divisor = parseInt(btDivMatch[1], 10);
+      if (!isNaN(divisor) && divisor > 0 && divisor % 2 === 0) cutoffDurationMs = Math.round(bt / divisor);
+    }
+  }
+  
+  // Helper to parse duration token (same as playAutomation)
+  const parseDuration = (durationStr, defaultMs) => {
+    if (!durationStr || typeof durationStr !== 'string') return defaultMs;
+    
+    const norm = durationStr.trim().toLowerCase();
+    const baseFromToken = (tok) => (tok === 'bt' ? bt : tok === 'br' ? br : null);
+    
+    const mAbs = norm.match(/^(bt|br)$/);
+    const mTokMul = norm.match(/^(bt|br)\*(\d+(?:\.\d+)?)$/);
+    const mTokDiv = norm.match(/^(bt|br)\/(\d+(?:\.\d+)?)$/);
+    
+    if (mAbs) {
+      const base = baseFromToken(mAbs[1]);
+      return base !== null ? Math.max(1, Math.round(base)) : defaultMs;
+    } else if (mTokMul && mTokMul[2] !== '') {
+      const base = baseFromToken(mTokMul[1]);
+      const f = parseFloat(mTokMul[2]);
+      if (base !== null && !isNaN(f) && f > 0) return Math.max(1, Math.round(base * f));
+    } else if (mTokDiv && mTokDiv[2] !== '') {
+      const base = baseFromToken(mTokDiv[1]);
+      const f = parseFloat(mTokDiv[2]);
+      if (base !== null && !isNaN(f) && f > 0) return Math.max(1, Math.round(base / f));
+    }
+    
+    const ms = parseFloat(norm);
+    if (!isNaN(ms) && ms > 0) return Math.max(1, Math.round(ms));
+    
+    return defaultMs;
+  };
+  
+  // Determine channel (from channelOverride, 1-16 user-facing, convert to 0-15)
+  let channel = 0; // Default
+  if (channelOverride !== null) {
+    if (Array.isArray(channelOverride)) {
+      channel = channelOverride[0] - 1; // Use first channel
+    } else {
+      channel = channelOverride - 1; // Convert 1-16 to 0-15
+    }
+  }
+  channel = Math.max(0, Math.min(15, channel));
+  
+  // Parse each automation chunk and calculate start times
+  const automations = [];
+  let cumulativeTime = 0;
+  
+  for (let idx = 0; idx < automationChunks.length; idx++) {
+    const chunk = automationChunks[idx];
+    
+    // Parse: a(controller).from(value).to(value).d(duration).e(easing)
+    const automationRegex = /a\((\d+)\)(?:\s*\.from\(([^)]+)\))?(?:\s*\.to\(([^)]+)\))?(?:\s*\.d\(([^)]+)\))?(?:\s*\.e\(([^)]+)\))?/i;
+    const match = chunk.match(automationRegex);
+    
+    if (!match) continue;
+    
+    const controller = parseInt(match[1], 10);
+    const fromValue = match[2] !== undefined ? parseFloat(match[2]) : 0;
+    const toValue = match[3] !== undefined ? parseFloat(match[3]) : 127;
+    const durationStr = match[4];
+    const easingStr = match[5] || 'linear';
+    
+    // Calculate duration for this chunk (same logic as sequences)
+    let chunkDuration = defaultDurationMs;
+    if (durationStr) {
+      chunkDuration = parseDuration(durationStr, defaultDurationMs);
+    } else if (effectiveType === 'fit') {
+      chunkDuration = ev; // Use even duration for fit type
+    }
+    
+    // Check cutoff
+    if (cutoffDurationMs !== null && cumulativeTime + chunkDuration > cutoffDurationMs) {
+      chunkDuration = Math.max(0, cutoffDurationMs - cumulativeTime);
+      if (chunkDuration <= 0) break;
+    }
+    
+    if (!isNaN(controller) && controller >= 0 && controller <= 127) {
+      // Validate easing function name
+      const validEasings = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'easeInQuad', 'easeOutQuad', 'easeInOutQuad', 'easeInCubic', 'easeOutCubic', 'easeInOutCubic'];
+      const easing = validEasings.includes(easingStr.toLowerCase()) ? easingStr.toLowerCase() : 'linear';
+      
+      automations.push({
+        controller: controller,
+        channel: channel,
+        startValue: Math.max(0, Math.min(127, Math.round(fromValue))),
+        endValue: Math.max(0, Math.min(127, Math.round(toValue))),
+        duration: chunkDuration,
+        startTime: cumulativeTime,
+        easing: easing
+      });
+    }
+    
+    cumulativeTime += chunkDuration;
+    
+    if (cutoffDurationMs !== null && cumulativeTime >= cutoffDurationMs) break;
+  }
+  
+  // Play automations at their calculated start times (staggered, like sequences)
+  if (automations.length > 0) {
+    automations.forEach((auto, idx) => {
+      setTimeout(() => {
+        const stream = streamCC(
+          auto.controller,
+          auto.startValue,
+          auto.endValue,
+          auto.duration,
+          auto.channel,
+          auto.easing || 'linear',
+          10,
+          `automation_${auto.controller}_${auto.channel}_${Date.now()}_${idx}`
+        );
+      }, auto.startTime);
+    });
+    
+    console.log(`[AUTOMATION] Scheduled ${automations.length} automation(s) on channel ${automations[0].channel} with type ${effectiveType}`);
+  }
+}
+
+
+// Play multiple sequences/automation in a cycle with per-block modifiers.
+// Example: [n(60)^2 n(70)^3.d(/5) n(70).d(*4)].t(fit).c(2).co(2br) [a(7).from(0).to(127)].t(beat).c(1)
 async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
   if (!cycleStr || typeof cycleStr !== 'string') return;
   
@@ -1894,13 +2101,13 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
   const useTempo = tempoParam !== null ? tempoParam : globalTempo;
   const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : globalSignatureNumerator;
   const useSignatureDenominator = signatureDenominatorParam !== null ? signatureDenominatorParam : globalSignatureDenominator;
-  // Match blocks: [sequence] then optional .t(...).c(...).co(...).pm(...)
+  // Match blocks: [sequence or automation] then optional .t(...).c(...).co(...).pm(...)
   const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|pm)\([^)]*\))*)/g;
   const modifierRegex = /\.(t|c|co|pm)\(([^)]+)\)/g;
   let m;
   const plays = [];
   while ((m = blockRegex.exec(cycleStr)) !== null) {
-    const seq = m[1].trim();
+    const content = m[1].trim();
     const mods = m[2] || '';
     let type = 'fit';
     let channelOverride = null;
@@ -1944,7 +2151,18 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
         }
       }
     }
-    plays.push(playSequence(seq, type, cutOff, channelOverride, sequenceMuteProbability, useTempo, useSignatureNumerator, useSignatureDenominator));
+    
+    // Detect if this is an automation block (contains a(...)) or sequence block (contains n(...))
+    const isAutomationBlock = /a\(\d+\)/.test(content);
+    const isSequenceBlock = /n\(/.test(content);
+    
+    if (isAutomationBlock) {
+      // Parse and play automation with same timing logic as sequences
+      plays.push(playAutomationInSequence(content, type, cutOff, channelOverride, useTempo, useSignatureNumerator, useSignatureDenominator));
+    } else if (isSequenceBlock) {
+      // Parse and play sequence
+      plays.push(playSequence(content, type, cutOff, channelOverride, sequenceMuteProbability, useTempo, useSignatureNumerator, useSignatureDenominator));
+    }
   }
   if (plays.length > 0) await Promise.all(plays);
 }
@@ -2004,6 +2222,7 @@ function playCycle(cycleStr, tempoParam = null, signatureNumeratorParam = null, 
   
   return intervalId;
 }
+
 
 // Example queue items - add to queue to play on next bar change
 // Usage: queue.push(...exampleQueue);
@@ -2444,6 +2663,75 @@ wss.on('connection', (ws) => {
         case 'clearAllCycles':
           const clearedCount = clearAllCycles();
           console.log(`[WS] Clear all cycles requested - cleared ${clearedCount} cycle(s)`);
+          break;
+          
+        case 'sendCC':
+          // Send a single CC value instantly
+          // Required: controller, value
+          // Optional: channel (default: 0), debug (default: true for debugging)
+          const ccController = data.controller !== undefined ? data.controller : 7;
+          const ccValue = data.value !== undefined ? data.value : 64;
+          const ccChannel = data.channel !== undefined ? data.channel : 0;
+          const ccDebug = data.debug !== undefined ? data.debug : true; // Enable debug by default
+          
+          sendCC(ccController, ccValue, ccChannel, ccDebug);
+          break;
+          
+        case 'streamCC':
+          // Stream a CC value smoothly
+          // Required: controller, startValue, endValue, duration
+          // Optional: channel (default: 0), easing (default: 'linear'), updateInterval (default: 20), streamId
+          const stream = streamCC(
+            data.controller || 7,
+            data.startValue !== undefined ? data.startValue : 0,
+            data.endValue !== undefined ? data.endValue : 127,
+            data.duration || 2000,
+            data.channel !== undefined ? data.channel : 0,
+            data.easing || 'linear',
+            data.updateInterval || 20,
+            data.streamId || null
+          );
+          if (stream) {
+            console.log(`[WS] streamCC started: id=${stream.id}, controller=${data.controller || 7}`);
+          } else {
+            console.log('[WS] streamCC failed: MIDI not initialized');
+          }
+          break;
+          
+        case 'streamMultipleCC':
+          // Stream multiple CC values simultaneously
+          // Required: streams (array of {controller, startValue, endValue, duration, channel?, easing?, updateInterval?, streamId?})
+          if (Array.isArray(data.streams) && data.streams.length > 0) {
+            const streams = streamMultipleCC(data.streams);
+            console.log(`[WS] streamMultipleCC started: ${streams.length} stream(s)`);
+          } else {
+            console.log('[WS] streamMultipleCC failed: invalid streams array');
+          }
+          break;
+          
+        case 'stopCCStream':
+          // Stop a specific CC stream by ID
+          if (data.streamId) {
+            stopCCStream(data.streamId);
+            console.log(`[WS] stopCCStream: ${data.streamId}`);
+          } else {
+            console.log('[WS] stopCCStream requires streamId');
+          }
+          break;
+          
+        case 'stopAllCCStreams':
+          // Stop all active CC streams
+          stopAllCCStreams();
+          console.log('[WS] stopAllCCStreams: all streams stopped');
+          break;
+          
+        case 'getActiveCCStreams':
+          // Get list of active CC stream IDs
+          const activeStreams = getActiveCCStreams();
+          ws.send(JSON.stringify({
+            type: 'activeCCStreams',
+            streams: activeStreams
+          }));
           break;
           
         default:
