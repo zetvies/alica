@@ -365,7 +365,7 @@
             <div id="hintHeader">
                 <span id="hintTitle">Commands:</span>
                 <button id="hintClose" title="Hide hints">×</button>
-            </div>
+        </div>
             <div id="hintContent">
                 <div class="hintItem">
                     <span class="hintKey">Ctrl+/</span>
@@ -513,6 +513,17 @@
             const isShift = e.shiftKey;
             const isAlt = e.altKey;
             
+            // Ctrl + Shift + S = playCycle for current track immediately
+            // Check this FIRST to catch it before browser intercepts
+            if (isCtrl && !isAlt && isShift && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('Ctrl+Shift+S pressed - playing cycle immediately');
+                playCycleForCurrentTrack();
+                return;
+            }
+            
             // Ctrl + / = toggle comment on selected lines
             if (isCtrl && !isAlt && !isShift && (e.key === '/' || e.key === '?')) {
                 e.preventDefault();
@@ -538,12 +549,27 @@
                 e.preventDefault();
                 playTrackForCurrentTrack();
             }
+        }, true); // Use capture phase to catch earlier
+        
+        // Also listen at window level as backup for Ctrl+Shift+S
+        window.addEventListener('keydown', (e) => {
+            const isCtrl = e.ctrlKey || e.metaKey;
+            const isShift = e.shiftKey;
+            const isAlt = e.altKey;
+            
             // Ctrl + Shift + S = playCycle for current track immediately
-            else if (isCtrl && !isAlt && isShift && e.key === 's') {
-                e.preventDefault();
-                playCycleForCurrentTrack();
+            if (isCtrl && !isAlt && isShift && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
+                // Only handle if the event target is the textarea or its parent
+                const target = e.target;
+                if (target === commandArea || commandArea.contains(target)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    console.log('Ctrl+Shift+S pressed (window handler) - playing cycle immediately');
+                    playCycleForCurrentTrack();
+                }
             }
-        });
+        }, true);
         
         // Get selected text from textarea
         function getSelectedText() {

@@ -3010,35 +3010,27 @@ wss.on('connection', (ws) => {
           
           // Check if cycle with this ID already exists
           const existingCycleIndex = activeCycle.findIndex(c => c.id === playCycleId);
+          const hadExistingCycle = existingCycleIndex !== -1;
           
-          if (existingCycleIndex !== -1) {
-            // Cycle exists - update it
-            const updateResult = updateCycleById(
-              playCycleId,
-              cycleStrInput,
+          if (hadExistingCycle) {
+            // Cycle exists - clear it first (interrupt immediately)
+            console.log(`[WS] playCycle called - interrupting existing cycle '${playCycleId}' to start immediately`);
+            clearInterval(activeCycle[existingCycleIndex].intervalId);
+            activeCycle.splice(existingCycleIndex, 1);
+          }
+          
+          // Always create/start new cycle (immediate)
+          const playCycleIntervalId = playCycle(
+            cycleStrInput,
             data.tempo || null,
             data.signatureNumerator || null,
             data.signatureDenominator || null
           );
-            if (updateResult) {
-              console.log(`[WS] playCycle called - updated existing cycle '${playCycleId}'`);
-            } else {
-              console.log(`[WS] playCycle called - update failed for cycle '${playCycleId}'`);
-            }
+          
+          if (playCycleIntervalId !== null) {
+            console.log(`[WS] playCycle called - ${hadExistingCycle ? 'restarted' : 'created'} cycle '${playCycleId}' immediately (from ${parsedCycle ? 'new syntax' : 'provided/generated'})`);
           } else {
-            // Cycle doesn't exist - create new one
-            const playCycleIntervalId = playCycle(
-              cycleStrInput,
-                  data.tempo || null,
-                  data.signatureNumerator || null,
-                  data.signatureDenominator || null
-            );
-            
-            if (playCycleIntervalId !== null) {
-              console.log(`[WS] playCycle called - created new cycle '${playCycleId}' (from ${parsedCycle ? 'new syntax' : 'provided/generated'})`);
-          } else {
-              console.log('[WS] playCycle called - failed to create cycle');
-            }
+            console.log('[WS] playCycle called - failed to create cycle');
           }
           break;
           
