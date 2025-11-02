@@ -465,9 +465,11 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 
   if (!sequence || typeof sequence !== 'string') return;
   
+  // Remove all whitespace (spaces, line breaks, tabs) - allows sequences to span multiple lines
+  let processedSequence = sequence.replace(/\s+/g, '');
+  
   // Preprocessing: Expand scale/chord inside r.o{...} based on nRange
   // This must happen BEFORE repeat expansion so expanded notes are available for repeats
-  let processedSequence = sequence;
   
   // First, extract nRange from the sequence if it exists
   // Look for .nRange(min, max) pattern
@@ -673,12 +675,12 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     // Now look for parameters after n(...) - they start with a dot
     i = chunkEnd;
     while (i < expandedSequence.length) {
-      // Check if we've hit the start of another chunk or whitespace followed by another chunk
-      if (i < expandedSequence.length - 1 && expandedSequence.substring(i, i + 2) === ' n') {
+      // Check if we've hit the start of another chunk (whitespace already removed)
+      if (i < expandedSequence.length - 1 && expandedSequence.substring(i, i + 2) === 'n(') {
         break;
       }
       
-      // If we find a dot followed by a parameter name, try to match the parameter
+      // If we find a dot, check for parameter name (whitespace already removed)
       if (expandedSequence[i] === '.') {
         const paramMatch = expandedSequence.substring(i + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp)\(/);
         if (paramMatch) {
@@ -703,13 +705,13 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       }
       
       // If we've moved past potential parameters, break
-      if (expandedSequence[i] !== '.' && expandedSequence[i] !== ' ' && expandedSequence[i] !== '\t' && expandedSequence[i] !== '\n') {
+      if (expandedSequence[i] !== '.') {
         break;
       }
       i++;
     }
     
-    const chunk = expandedSequence.substring(nIndex, chunkEnd).trim();
+    const chunk = expandedSequence.substring(nIndex, chunkEnd);
     if (chunk) {
       allChunks.push(chunk);
     }
@@ -1896,6 +1898,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
 async function playAutomationInSequence(automationStr, type = "fit", cutOff = null, channelOverride = null, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
   if (!automationStr || typeof automationStr !== 'string') return;
   
+  // Remove all whitespace (spaces, line breaks, tabs) - allows automation to span multiple lines
+  automationStr = automationStr.replace(/\s+/g, '');
+  
   // Use provided parameters or fall back to server variables
   const useTempo = tempoParam !== null ? tempoParam : tempo;
   const useSignatureNumerator = signatureNumeratorParam !== null ? signatureNumeratorParam : signatureNumerator;
@@ -1907,34 +1912,81 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
   const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar));
   const br = barDurationMs;
   
-  // Parse automation chunks similar to note chunks
-  // Split by spaces, but preserve nested parentheses
+  // Parse automation chunks - find all a(number) patterns
+  // Since all whitespace is removed, we can find chunks by looking for a( pattern
   const chunks = [];
-  let currentChunk = '';
-  let parenDepth = 0;
-  let angleDepth = 0;
-  
-  for (let i = 0; i < automationStr.length; i++) {
-    const char = automationStr[i];
-    if (char === '(') parenDepth++;
-    else if (char === ')') parenDepth--;
-    else if (char === '<') angleDepth++;
-    else if (char === '>') angleDepth--;
-    else if (char === ' ' && parenDepth === 0 && angleDepth === 0) {
-      if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
+  let searchIdx = 0;
+  while (searchIdx < automationStr.length) {
+    const aIndex = automationStr.indexOf('a(', searchIdx);
+    if (aIndex === -1) break;
+    
+    // Find the matching closing parenthesis for a(...)
+    let parenCount = 0;
+    let chunkEnd = aIndex + 2; // After "a("
+    let i = chunkEnd;
+    
+    // First, find the end of a(...)
+    while (i < automationStr.length) {
+      if (automationStr[i] === '(') parenCount++;
+      else if (automationStr[i] === ')') {
+        if (parenCount === 0) {
+          chunkEnd = i + 1;
+          break;
+        }
+        parenCount--;
       }
-      continue;
+      i++;
     }
-    currentChunk += char;
-  }
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
+    
+    // Now look for parameters after a(...) - they start with a dot
+    i = chunkEnd;
+    while (i < automationStr.length) {
+      // Check if we've hit the start of another chunk
+      if (i < automationStr.length - 1 && automationStr.substring(i, i + 2) === 'a(') {
+        break;
+      }
+      
+      // If we find a dot, check for parameter name (whitespace already removed)
+      if (automationStr[i] === '.') {
+        const paramMatch = automationStr.substring(i + 1).match(/^(from|to|d|e|c)\(/);
+        if (paramMatch) {
+          const paramName = paramMatch[1];
+          const paramStart = i + 1 + paramName.length + 1; // After "paramName("
+          parenCount = 1;
+          let j = paramStart;
+          
+          // Find matching closing parenthesis for parameter
+          while (j < automationStr.length && parenCount > 0) {
+            if (automationStr[j] === '(') parenCount++;
+            else if (automationStr[j] === ')') parenCount--;
+            j++;
+          }
+          
+          if (parenCount === 0) {
+            chunkEnd = j;
+            i = j;
+            continue;
+          }
+        }
+      }
+      
+      // If we've moved past potential parameters, break
+      if (automationStr[i] !== '.') {
+        break;
+      }
+      i++;
+    }
+    
+    const chunk = automationStr.substring(aIndex, chunkEnd);
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    
+    searchIdx = chunkEnd;
   }
   
-  // Filter to only automation chunks: a(number)
-  const automationChunks = chunks.filter(chunk => /^a\(\d+\)/.test(chunk.trim()));
+  // Filter to only automation chunks: a(number) (whitespace already removed)
+  const automationChunks = chunks.filter(chunk => /^a\(\d+\)/.test(chunk));
   
   if (automationChunks.length === 0) return;
   
