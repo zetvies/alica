@@ -522,7 +522,7 @@
                                 <strong>.d(duration):</strong> Duration in ms, bt (duration of one beat)/br (duration of one bar) tokens, optionally add multipliers (*2, /4)<br>
                                 <strong>.v(velocity):</strong> Velocity 0-127 or randomizer<br>
                                 <strong>.c(channel):</strong> MIDI channel 1-16 or randomizer<br>
-                                <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max), .pm(prob), .pmRange(min, max), .pr(prob), .prRange(min, max), .nArp(mode), .vArp(mode), .dArp(mode)
+                                <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max), .pm(prob), .pmRange(min, max), .pr(prob), .prRange(min, max), .nArp(mode), .vArp(mode), .dArp(mode), .pmArp(mode), .prArp(mode)
                             </div>
                             <div class="syntaxExample">n(60).d(bt).v(80).c(1)</div>
                             
@@ -556,6 +556,27 @@
                                     <strong>.q(quality):</strong> Optional chord quality (any from chord qualities above)
                                 </div>
                                 <div class="syntaxExample">n(r.o{scale(c-ionian)}).nRange(c3, c5)</div>
+                            </div>
+                            
+                            <div class="syntaxSubsection">
+                                <div class="syntaxSubsectionTitle">Arpeggiators:</div>
+                                <div class="syntaxChain">.nArp(mode) | .vArp(mode) | .dArp(mode) | .pmArp(mode) | .prArp(mode)</div>
+                                <div class="syntaxDesc">
+                                    Control how array values are selected from <strong>r.o{...}</strong>. Each parameter has its own independent arpeggiator.<br>
+                                    <strong>Modes:</strong> random (default), up (ascending), down (descending), up-down (ascending then descending, seamless), down-up (descending then ascending, seamless)<br>
+                                    <strong>.nArp(mode):</strong> Controls note arrays including chords<br>
+                                    <strong>.vArp(mode):</strong> Controls velocity arrays<br>
+                                    <strong>.dArp(mode):</strong> Controls duration arrays<br>
+                                    <strong>.pmArp(mode):</strong> Controls mute probability arrays<br>
+                                    <strong>.prArp(mode):</strong> Controls remove probability arrays<br>
+                                    Arrays are sorted by value, then reordered by mode. Position cycles across chunks and repeats.
+                                </div>
+                                <div class="syntaxExample">
+                                    n(r.o{c4,e4,g4}).nArp(up) - notes ascending<br>
+                                    n(r.o{&lt;chord(c-maj)&gt;,&lt;chord(f-maj)&gt;,&lt;chord(g-maj)&gt;})^3.nArp(up) - chord progression<br>
+                                    n(60).v(r.o{0.3,0.6,0.9}).vArp(down) - velocity descending<br>
+                                    n(r.o{c4,e4,g4})^3.nArp(up) - cycles across repeats
+                                </div>
                             </div>
                         </div>
                         

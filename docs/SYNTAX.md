@@ -417,7 +417,7 @@ bt*4                // Four beats
 
 ## Arpeggiators
 
-Control how array values are selected when using `r.o{...}`. Each parameter has its own independent arpeggiator.
+Arpeggiators control how array values are selected when using `r.o{...}`, providing ordered patterns instead of random selection. Each parameter has its own independent arpeggiator, allowing complex polyrhythmic patterns.
 
 ### Arpeggiator Syntax
 
@@ -427,38 +427,112 @@ Each parameter can have its own arpeggiator:
 .nArp(mode)    // Note arpeggiator
 .dArp(mode)    // Duration arpeggiator
 .vArp(mode)    // Velocity arpeggiator
+.pmArp(mode)   // Mute probability arpeggiator
+.prArp(mode)   // Remove probability arpeggiator
 ```
 
 **Modes:**
-- `random`: Random selection (default)
-- `up`: Ascending order
-- `down`: Descending order
-- `up-down`: Ascending then descending (cyclic)
-- `down-up`: Descending then ascending (cyclic)
+- `random`: Random selection (default when no arpeggiator is specified)
+- `up`: Ascending order (lowest to highest)
+- `down`: Descending order (highest to lowest)
+- `up-down`: Ascending then descending (cyclic, seamless loop)
+- `down-up`: Descending then ascending (cyclic, seamless loop)
 
-**What Each Modulates:**
+### How Arpeggiators Work
 
-- **`.nArp(mode)`**: Controls note arrays `n(r.o{...})`
+When an arpeggiator mode is set, the array values are first sorted by their numeric value, then reordered according to the mode:
+
+1. **Array Sorting**: Arrays are sorted by value:
+   - Notes: Sorted by MIDI number (or lowest note for chords)
+   - Velocities/Durations: Sorted numerically
+   - Chords: Sorted by the lowest MIDI note in each chord
+
+2. **Mode Application**: The sorted array is reordered based on the mode:
+   - `up`: Keep ascending order
+   - `down`: Reverse to descending order
+   - `up-down`: Ascending, then reverse (excluding duplicates for seamless cycling)
+   - `down-up`: Descending, then reverse (excluding duplicates for seamless cycling)
+
+3. **Position Cycling**: Each time a value is needed, the arpeggiator cycles through the ordered array based on the position in the sequence. Positions increment across chunks and repeats, ensuring continuous patterns.
+
+### What Each Modulates
+
+- **`.nArp(mode)`**: Controls note arrays `n(r.o{...})` including chords
 - **`.dArp(mode)`**: Controls duration arrays `.d(r.o{...})`
 - **`.vArp(mode)`**: Controls velocity arrays `.v(r.o{...})`
+- **`.pmArp(mode)`**: Controls mute probability arrays `.pm(r.o{...})`
+- **`.prArp(mode)`**: Controls remove probability arrays `.pr(r.o{...})`
 
-Each arpeggiator operates independently, allowing different patterns for each parameter.
+Each arpeggiator operates independently, allowing different patterns for each parameter simultaneously.
 
-**Examples:**
+### Examples
+
+#### Basic Note Arpeggio
 ```
-// Note arpeggio only
-n(r.o{c4,e4,g4}).nArp(up)           // Play C-E-G ascending, repeat
+// Play C-E-G ascending, then cycle
+n(r.o{c4,e4,g4}).nArp(up)           // C, E, G, C, E, G, ...
+```
 
-// Velocity arpeggio only
-n(60).v(r.o{0.2,0.5,0.8}).vArp(up) // Velocity ascending through array
+#### Velocity Arpeggio
+```
+// Velocity ascending through array
+n(60).v(r.o{0.2,0.5,0.8}).vArp(up) // Velocity: 20%, 50%, 80%, 20%, ...
+```
 
-// Duration arpeggio only
-n(60).d(r.o{bt/4,bt/2,bt}).dArp(down) // Duration decreases through array
+#### Duration Arpeggio
+```
+// Duration decreases through array
+n(60).d(r.o{bt/4,bt/2,bt}).dArp(down) // Duration: bt, bt/2, bt/4, bt, ...
+```
 
-// Multiple independent arpeggiators
-n(r.o{c4,e4,g4}).nArp(up).v(r.o{0.3,0.6,0.9}).vArp(down)
+#### Chord Arpeggios
+```
+// Cycle through chord progressions
+n(r.o{<chord(c-maj)>,<chord(f-maj)>,<chord(g-maj)>}).nArp(up)
+// Plays: C-maj chord, F-maj chord, G-maj chord, then repeats
+
+// With repeat syntax - cycles through chords over multiple repeats
+n(r.o{<chord(c-maj)>,<chord(f-maj)>,<chord(g-maj)>})^3.nArp(up)
+// Position 0: C-maj, Position 1: F-maj, Position 2: G-maj
+```
+
+#### Multiple Independent Arpeggiators
+```
 // Notes go up, velocity goes down - all independently
+n(r.o{c4,e4,g4}).nArp(up).v(r.o{0.3,0.6,0.9}).vArp(down)
+// Notes: C, E, G, C, E, G, ...
+// Velocity: 90%, 60%, 30%, 90%, 60%, 30%, ...
 ```
+
+#### Arpeggio Modes
+```
+// Up-down pattern (seamless cycling)
+n(r.o{c4,e4,g4}).nArp(up-down)
+// Plays: C, E, G, E, C, E, G, E, ... (cycles seamlessly)
+
+// Down-up pattern (seamless cycling)
+n(r.o{c4,e4,g4}).nArp(down-up)
+// Plays: G, E, C, E, G, E, C, E, ... (cycles seamlessly)
+```
+
+#### Combined with Repeat Syntax
+```
+// Arpeggiator position cycles across repeated chunks
+n(r.o{c4,e4,g4})^3.nArp(up)
+// Chunk 0: C, Chunk 1: E, Chunk 2: G
+// Next cycle: Chunk 0: C, Chunk 1: E, Chunk 2: G, ...
+
+// Chord progression with repeats
+n(r.o{<chord(c-maj)>,<chord(f-maj)>,<chord(g-maj)>})^3.nArp(up).c(2)
+// Each repeat plays the next chord in sequence: C-maj → F-maj → G-maj
+```
+
+### Important Notes
+
+- **Chords in Arrays**: When using chord syntax `<chord(c-maj)>` in arrays, arpeggiators sort by the lowest MIDI note in each chord
+- **Position Cycling**: Arpeggiator positions increment across chunks and repeats, ensuring continuous patterns even with repeat syntax (`^N`)
+- **Parameter Order**: Arpeggiators can appear before or after repeat syntax (`^N`). Both `n(...).nArp(up)^3` and `n(...)^3.nArp(up)` work correctly
+- **Independence**: Each parameter's arpeggiator works independently, allowing complex polyrhythmic patterns
 
 ---
 
@@ -532,10 +606,16 @@ n(r).nRange(c3,c5).v(r).vRange(0.5,1.0).d(r.o{bt/4,bt/2,bt})
 n(r.o{scale(c-ionian)}).nRange(c3,c5).v(80).d(bt/4)^16
 ```
 
-### Chord Arpeggio
+### Chord Arpeggio with Multiple Chords
 
 ```
+// Cycle through chord progression
+n(r.o{<chord(c-maj)>,<chord(f-maj)>,<chord(g-maj)>})^3.nArp(up)
+// Each repeat plays the next chord: C-maj → F-maj → G-maj
+
+// Arpeggiate single chord notes
 n(r.o{chord(c-maj7)}).nArp(up-down).d(bt/8)^8
+// Random note from C-maj7 chord, arpeggiated up-down pattern
 ```
 
 ### Complex Cycle
