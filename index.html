@@ -437,7 +437,16 @@
             return filteredLines.join('\n');
         }
         
-        // Find the t(...).play(...) wrapper that contains the cursor/selection
+        // Check if text matches t(...).stop() or t(...).play(...).stop() syntax
+        function isStopSyntax(text) {
+            if (!text) return false;
+            const trimmed = text.trim().replace(/\s+/g, '');
+            // Match: t(...).stop() or t(...).stop or t(...).play(...).stop() or t(...).play(...).stop
+            const stopMatch = trimmed.match(/^t\([^)]+\)(?:\.(?:bpm|sn|sd)\([^)]+\))*(?:\.play\([^)]*\))?\.stop\(?\)?$/);
+            return stopMatch !== null;
+        }
+        
+        // Find the t(...).play(...) or t(...).play(...).stop() wrapper that contains the cursor/selection
         function findCurrentTrack() {
             const fullText = commandArea.value;
             const cursorPos = commandArea.selectionStart;
@@ -451,11 +460,12 @@
                 const tIndex = fullText.indexOf('t(', searchStart);
                 if (tIndex === -1 || tIndex > cursorPos) break;
                 
-                // Find matching closing parenthesis for .play(...)
+                // Find matching closing parenthesis for .play(...) and optionally .stop()
                 let depth = 0;
                 let pos = tIndex;
                 let inPlay = false;
                 let playStartPos = -1;
+                let playEndPos = -1;
                 
                 while (pos < fullText.length) {
                     if (fullText.substring(pos).startsWith('.play(')) {
@@ -471,11 +481,38 @@
                         depth--;
                         if (inPlay && depth === 0) {
                             // Found complete t(...).play(...)
-                            const endPos = pos + 1;
-                            // Check if cursor is within this track
-                            if (cursorPos >= tIndex && cursorPos <= endPos) {
-                                bestMatch = fullText.substring(tIndex, endPos);
-                                bestEnd = endPos;
+                            playEndPos = pos + 1;
+                            
+                            // Check for .stop() after .play(...)
+                            let afterPlayPos = playEndPos;
+                            // Skip whitespace
+                            while (afterPlayPos < fullText.length && /\s/.test(fullText[afterPlayPos])) {
+                                afterPlayPos++;
+                            }
+                            
+                            // Check if .stop() or .stop follows
+                            if (fullText.substring(afterPlayPos).startsWith('.stop()')) {
+                                const stopEnd = afterPlayPos + 7;
+                                // Check if cursor is within this track including stop
+                                if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                    bestMatch = fullText.substring(tIndex, stopEnd);
+                                    bestEnd = stopEnd;
+                                    break;
+                                }
+                            } else if (fullText.substring(afterPlayPos).startsWith('.stop')) {
+                                const stopEnd = afterPlayPos + 6;
+                                // Check if cursor is within this track including stop
+                                if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                    bestMatch = fullText.substring(tIndex, stopEnd);
+                                    bestEnd = stopEnd;
+                                    break;
+                                }
+                            }
+                            
+                            // Check if cursor is within this track (without stop)
+                            if (cursorPos >= tIndex && cursorPos <= playEndPos) {
+                                bestMatch = fullText.substring(tIndex, playEndPos);
+                                bestEnd = playEndPos;
                                 break;
                             }
                             break;
@@ -485,6 +522,52 @@
                 }
                 
                 searchStart = tIndex + 2;
+            }
+            
+            // Also check for standalone t(...).stop() (without .play())
+            if (!bestMatch || cursorPos > bestEnd) {
+                searchStart = 0;
+                while (true) {
+                    const tIndex = fullText.indexOf('t(', searchStart);
+                    if (tIndex === -1 || tIndex > cursorPos) break;
+                    
+                    // Find the end of t(...)
+                    let pos = tIndex + 2;
+                    let depth = 1;
+                    while (pos < fullText.length && depth > 0) {
+                        if (fullText[pos] === '(') depth++;
+                        else if (fullText[pos] === ')') depth--;
+                        pos++;
+                    }
+                    
+                    if (depth === 0) {
+                        // Check for .stop() after t(...)
+                        let afterT = pos;
+                        // Skip whitespace
+                        while (afterT < fullText.length && /\s/.test(fullText[afterT])) {
+                            afterT++;
+                        }
+                        
+                        // Check if .stop() or .stop follows
+                        if (fullText.substring(afterT).startsWith('.stop()')) {
+                            const stopEnd = afterT + 7;
+                            if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                bestMatch = fullText.substring(tIndex, stopEnd);
+                                bestEnd = stopEnd;
+                                break;
+                            }
+                        } else if (fullText.substring(afterT).startsWith('.stop')) {
+                            const stopEnd = afterT + 6;
+                            if (cursorPos >= tIndex && cursorPos <= stopEnd) {
+                                bestMatch = fullText.substring(tIndex, stopEnd);
+                                bestEnd = stopEnd;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    searchStart = tIndex + 2;
+                }
             }
             
             // Remove comments from the found track
@@ -527,9 +610,28 @@
                 return;
             }
             
+            // Check if selected text is a stop command
+            if (isStopSyntax(selectedSeq)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: selectedSeq
+                });
+                return;
+            }
+            
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            
+            // Check again after applying wrapper settings
+            if (isStopSyntax(cleanCommand)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: cleanCommand
+                });
+                return;
+            }
+            
             const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
@@ -547,6 +649,15 @@
             const track = findCurrentTrack();
             if (!track) {
                 console.warn('No t() track found');
+                return;
+            }
+            
+            // Check if it's a stop command
+            if (isStopSyntax(track)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: track
+                });
                 return;
             }
             
@@ -570,9 +681,28 @@
                 return;
             }
             
+            // Check if selected text is a stop command
+            if (isStopSyntax(selectedSeq)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: selectedSeq
+                });
+                return;
+            }
+            
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            
+            // Check again after applying wrapper settings
+            if (isStopSyntax(cleanCommand)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: cleanCommand
+                });
+                return;
+            }
+            
             const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
@@ -590,6 +720,15 @@
             const track = findCurrentTrack();
             if (!track) {
                 console.warn('No t() track found');
+                return;
+            }
+            
+            // Check if it's a stop command
+            if (isStopSyntax(track)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: track
+                });
                 return;
             }
             
@@ -613,9 +752,28 @@
                 return;
             }
             
+            // Check if selected text is a stop command
+            if (isStopSyntax(selectedSeq)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: selectedSeq
+                });
+                return;
+            }
+            
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            
+            // Check again after applying wrapper settings
+            if (isStopSyntax(cleanCommand)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: cleanCommand
+                });
+                return;
+            }
+            
             const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
@@ -633,6 +791,15 @@
             const track = findCurrentTrack();
             if (!track) {
                 console.warn('No t() track found');
+                return;
+            }
+            
+            // Check if it's a stop command
+            if (isStopSyntax(track)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: track
+                });
                 return;
             }
             
@@ -656,9 +823,28 @@
                 return;
             }
             
+            // Check if selected text is a stop command
+            if (isStopSyntax(selectedSeq)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: selectedSeq
+                });
+                return;
+            }
+            
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
+            
+            // Check again after applying wrapper settings
+            if (isStopSyntax(cleanCommand)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: cleanCommand
+                });
+                return;
+            }
+            
             const parsed = parseMethodChain(cleanCommand);
             
             sendToServer({
@@ -676,6 +862,15 @@
             const track = findCurrentTrack();
             if (!track) {
                 console.warn('No t() track found');
+                return;
+            }
+            
+            // Check if it's a stop command
+            if (isStopSyntax(track)) {
+                sendToServer({
+                    action: 'playTrack', // Use any action, server will detect stop syntax
+                    cycleStr: track
+                });
                 return;
             }
             

@@ -2206,6 +2206,54 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
 }
 
 
+// Parse stop syntax: t(cycleId).stop() or t(cycleId).play(...).stop()
+// Returns: { cycleId } or null if doesn't match
+function parseStopSyntax(inputStr) {
+  if (!inputStr || typeof inputStr !== 'string') return null;
+  
+  const trimmed = inputStr.trim();
+  
+  // Must start with t(
+  if (!trimmed.startsWith('t(')) return null;
+  
+  // Find the end of t(...)
+  let pos = 2; // After 't('
+  let depth = 1;
+  while (pos < trimmed.length && depth > 0) {
+    if (trimmed[pos] === '(') depth++;
+    else if (trimmed[pos] === ')') depth--;
+    pos++;
+  }
+  if (depth !== 0) return null; // Unmatched parentheses
+  
+  const cycleId = trimmed.substring(2, pos - 1).trim();
+  
+  // Validate cycleId is alphanumeric (and allow underscores/hyphens)
+  if (!/^[a-zA-Z0-9_-]+$/.test(cycleId)) {
+    console.warn(`[PARSE] Invalid cycleId '${cycleId}': must be alphanumeric with underscores/hyphens`);
+    return null;
+  }
+  
+  // Check if it ends with .stop() or .stop
+  // Can be: t(cycleId).stop() or t(cycleId).play(...).stop()
+  const remaining = trimmed.substring(pos).trim();
+  
+  // Remove whitespace and check for .stop() or .stop at the end
+  const normalized = remaining.replace(/\s+/g, '');
+  
+  // Check if it's a simple .stop() or .stop
+  if (normalized === '.stop()' || normalized === '.stop') {
+    return { cycleId: cycleId };
+  }
+  
+  // Check if it ends with .stop() or .stop after other content (like .play(...))
+  if (normalized.endsWith('.stop()') || normalized.endsWith('.stop')) {
+    return { cycleId: cycleId };
+  }
+  
+  return null;
+}
+
 // Parse new method chaining syntax: t(cycleId).bpm(80).sn(4).sd(8).play([...])
 // Returns: { cycleId, tempo, signatureNumerator, signatureDenominator, playContent } or null if doesn't match
 function parseMethodChainSyntax(inputStr) {
@@ -2925,13 +2973,23 @@ wss.on('connection', (ws) => {
     // Silent error handling
   });
 
-  // Handle incoming messages from client
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message.toString());
-      console.log('[WS] Received action:', data.action, data);
-      
-      switch (data.action) {
+      // Handle incoming messages from client
+      ws.on('message', (message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          console.log('[WS] Received action:', data.action, data);
+          
+          // Check for stop syntax first: t(cycleId).stop()
+          if (data.cycleStr) {
+            const stopParsed = parseStopSyntax(data.cycleStr);
+            if (stopParsed) {
+              const cleared = clearCycleById(stopParsed.cycleId);
+              console.log(`[WS] Stop cycle '${stopParsed.cycleId}' requested - ${cleared ? 'success' : 'failed'}`);
+              return; // Exit early after handling stop
+            }
+          }
+          
+          switch (data.action) {
         case 'playTrack':
           playTrack(
             data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
