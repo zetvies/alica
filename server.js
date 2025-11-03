@@ -89,7 +89,43 @@ initializeMax4Live();
 // Uses scientific pitch: C4 = 60, so C3 = 48
 // Music theory functions and definitions are imported from ./src/modules/musicTheory
 
-// Expand scale syntax: scale(c-ionian).q(maj7) or scale(c-ionian)
+// Helper function to parse root note that might include octave (e.g., "c4" -> {root: "c", octave: 4})
+// Returns {root: string, octave: number} or null if invalid
+function parseRootNote(rootStr) {
+  if (!rootStr || typeof rootStr !== 'string') return null;
+  
+  const trimmed = rootStr.trim();
+  
+  // Try to match note token with octave: c4, c#3, cb4, c#4, etc.
+  const noteMatch = trimmed.match(/^([a-g])([#b])?(\d+)$/i);
+  if (noteMatch) {
+    const letter = noteMatch[1].toLowerCase();
+    const accidental = noteMatch[2] || '';
+    const octave = parseInt(noteMatch[3], 10);
+    
+    if (!isNaN(octave) && octave >= 0 && octave <= 10) {
+      return {
+        root: letter + accidental,
+        octave: octave
+      };
+    }
+  }
+  
+  // If no octave found, try to match just note name (c, c#, cb, etc.)
+  const noteOnlyMatch = trimmed.match(/^([a-g])([#b])?$/i);
+  if (noteOnlyMatch) {
+    const letter = noteOnlyMatch[1].toLowerCase();
+    const accidental = noteOnlyMatch[2] || '';
+    return {
+      root: letter + accidental,
+      octave: null // Will default to 4
+    };
+  }
+  
+  return null;
+}
+
+// Expand scale syntax: scale(c-ionian).q(maj7) or scale(c-ionian) or scale(c4-ionian)
 function expandScale(scaleStr) {
   if (!scaleStr || typeof scaleStr !== 'string') return '';
   
@@ -101,22 +137,29 @@ function expandScale(scaleStr) {
   const args = match[1].trim();
   const quality = match[2] ? match[2].trim() : null;
   
-  // Parse root-mode (e.g., "c-ionian" or "d-dorian")
+  // Parse root-mode (e.g., "c-ionian", "c4-ionian", or "d-dorian")
   const parts = args.split('-');
   if (parts.length !== 2) return scaleStr;
   
-  const root = parts[0].trim();
+  const rootStr = parts[0].trim();
   const mode = parts[1].trim().toLowerCase();
   
+  // Parse root note (might include octave)
+  const rootParsed = parseRootNote(rootStr);
+  if (!rootParsed) return scaleStr;
+  
+  const root = rootParsed.root;
+  const octave = rootParsed.octave !== null ? rootParsed.octave : 4;
+  
   // Get scale notes
-  const scaleNotes = scaleToMidiNotes(root, mode);
+  const scaleNotes = scaleToMidiNotes(root, mode, octave);
   if (scaleNotes.length === 0) return scaleStr;
   
   // If quality specified, build chord on root using quality intervals
   if (quality) {
     const chordIntervals = CHORD_QUALITIES[quality.toLowerCase()];
     if (chordIntervals) {
-      const rootMidi = noteTokenToMidi(`${root}4`);
+      const rootMidi = noteTokenToMidi(`${root}${octave}`);
       if (rootMidi !== null) {
         const chordNotes = chordIntervals.map(interval => {
           const note = rootMidi + interval;
@@ -132,7 +175,7 @@ function expandScale(scaleStr) {
   return scaleNotes.map(n => `n(${n})`).join(' ');
 }
 
-// Expand chord syntax: chord(c-maj7)
+// Expand chord syntax: chord(c-maj7) or chord(c4-maj9)
 function expandChord(chordStr) {
   if (!chordStr || typeof chordStr !== 'string') return '';
   
@@ -143,15 +186,22 @@ function expandChord(chordStr) {
   
   const args = match[1].trim();
   
-  // Parse root-quality (e.g., "c-maj7" or "d-min7")
+  // Parse root-quality (e.g., "c-maj7", "c4-maj9", or "d-min7")
   const parts = args.split('-');
   if (parts.length !== 2) return chordStr;
   
-  const root = parts[0].trim();
+  const rootStr = parts[0].trim();
   const quality = parts[1].trim();
   
+  // Parse root note (might include octave)
+  const rootParsed = parseRootNote(rootStr);
+  if (!rootParsed) return chordStr;
+  
+  const root = rootParsed.root;
+  const octave = rootParsed.octave !== null ? rootParsed.octave : 4;
+  
   // Get chord notes
-  const chordNotes = chordToMidiNotes(root, quality);
+  const chordNotes = chordToMidiNotes(root, quality, octave);
   if (chordNotes.length === 0) return chordStr;
   
   // Return chord notes as note sequence
@@ -177,18 +227,25 @@ function parseChord(chordStr) {
     const args = scaleMatch[1].trim();
     const quality = scaleMatch[2] ? scaleMatch[2].trim() : null;
     
-    // Parse root-mode (e.g., "c-ionian" or "d-dorian")
+    // Parse root-mode (e.g., "c-ionian", "c4-ionian", or "d-dorian")
     const parts = args.split('-');
     if (parts.length !== 2) return null;
     
-    const root = parts[0].trim();
+    const rootStr = parts[0].trim();
     const mode = parts[1].trim().toLowerCase();
+    
+    // Parse root note (might include octave)
+    const rootParsed = parseRootNote(rootStr);
+    if (!rootParsed) return null;
+    
+    const root = rootParsed.root;
+    const octave = rootParsed.octave !== null ? rootParsed.octave : 4;
     
     // If quality specified, build chord on root using quality intervals
     if (quality) {
       const chordIntervals = CHORD_QUALITIES[quality.toLowerCase()];
       if (chordIntervals) {
-        const rootMidi = noteTokenToMidi(`${root}4`);
+        const rootMidi = noteTokenToMidi(`${root}${octave}`);
         if (rootMidi !== null) {
           const chordNotes = chordIntervals.map(interval => {
             const note = rootMidi + interval;
@@ -202,7 +259,7 @@ function parseChord(chordStr) {
     }
     
     // Otherwise, return scale notes
-    const scaleNotes = scaleToMidiNotes(root, mode);
+    const scaleNotes = scaleToMidiNotes(root, mode, octave);
     return scaleNotes.length > 0 ? scaleNotes : null;
   }
   
@@ -211,16 +268,23 @@ function parseChord(chordStr) {
   const chordMatch = content.match(chordRegex);
   
   if (chordMatch) {
-    // Parse root-quality (e.g., "c-maj9" or "d-min7")
+    // Parse root-quality (e.g., "c-maj9", "c4-maj9", or "d-min7")
     const args = chordMatch[1].trim();
     const parts = args.split('-');
     if (parts.length !== 2) return null;
     
-    const root = parts[0].trim();
+    const rootStr = parts[0].trim();
     const quality = parts[1].trim();
     
+    // Parse root note (might include octave)
+    const rootParsed = parseRootNote(rootStr);
+    if (!rootParsed) return null;
+    
+    const root = rootParsed.root;
+    const octave = rootParsed.octave !== null ? rootParsed.octave : 4;
+    
     // Get chord notes using chordToMidiNotes
-    const chordNotes = chordToMidiNotes(root, quality);
+    const chordNotes = chordToMidiNotes(root, quality, octave);
     if (chordNotes.length === 0) return null;
     
     return chordNotes;

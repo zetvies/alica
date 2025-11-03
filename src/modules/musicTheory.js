@@ -295,14 +295,29 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
   
   if (!root || !intervals) return [];
   
-  // Find the closest root note to the minMidi (first note in range)
-  // Root can be like "c", "c#", "cb", etc.
+  // Parse root note to check if it includes octave (e.g., "c4", "c#3")
   const baseMap = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
   let rootLetter = root[0].toLowerCase();
   let accidental = '';
-  if (root.length > 1 && (root[1] === '#' || root[1] === 'b')) {
-    accidental = root[1];
-    rootLetter = root.substring(0, 2).toLowerCase();
+  let specifiedOctave = null;
+  
+  // Try to match note token with octave: c4, c#3, cb4, etc.
+  const noteMatch = root.match(/^([a-g])([#b])?(\d+)$/i);
+  if (noteMatch) {
+    rootLetter = noteMatch[1].toLowerCase();
+    accidental = noteMatch[2] || '';
+    const octaveNum = parseInt(noteMatch[3], 10);
+    if (!isNaN(octaveNum) && octaveNum >= 0 && octaveNum <= 10) {
+      specifiedOctave = octaveNum;
+      // Extract just the note name for further processing
+      root = rootLetter + accidental;
+    }
+  } else {
+    // No octave specified, parse normally
+    if (root.length > 1 && (root[1] === '#' || root[1] === 'b')) {
+      accidental = root[1];
+      rootLetter = root.substring(0, 2).toLowerCase();
+    }
   }
   
   if (!(rootLetter[0] in baseMap)) return [];
@@ -311,21 +326,26 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
   if (accidental === '#') rootSemitone += 1;
   if (accidental === 'b') rootSemitone -= 1;
   
-  // Find the octave that puts the root closest to minMidi
-  // Calculate which octave (0-10) would have this root note closest to minMidi
+  // If octave was specified, use it; otherwise find the closest to minMidi
   let closestRootMidi = null;
-  let bestDiff = Infinity;
   
-  for (let octave = 0; octave <= 10; octave++) {
-    const rootMidi = (octave + 1) * 12 + rootSemitone;
-    const diff = Math.abs(rootMidi - minMidi);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      closestRootMidi = rootMidi;
+  if (specifiedOctave !== null) {
+    // Use the specified octave
+    closestRootMidi = (specifiedOctave + 1) * 12 + rootSemitone;
+    if (closestRootMidi < 0 || closestRootMidi > 127) return [];
+  } else {
+    // Find the octave that puts the root closest to minMidi
+    let bestDiff = Infinity;
+    for (let octave = 0; octave <= 10; octave++) {
+      const rootMidi = (octave + 1) * 12 + rootSemitone;
+      const diff = Math.abs(rootMidi - minMidi);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        closestRootMidi = rootMidi;
+      }
     }
+    if (closestRootMidi === null) return [];
   }
-  
-  if (closestRootMidi === null) return [];
   
   // Generate all notes from intervals within the range [minMidi, maxMidi]
   const notes = [];
