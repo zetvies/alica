@@ -623,8 +623,10 @@
         const statusEl = document.getElementById('status');
         const commandArea = document.getElementById('commandArea');
         
-        // Load content from URL parameter on page load
-        if (commandArea) {
+        // Function to load content from URL parameter
+        function loadContentFromUrl() {
+            if (!commandArea) return;
+            
             const urlParams = new URLSearchParams(window.location.search);
             const codeParam = urlParams.get('code');
             if (codeParam) {
@@ -636,8 +638,39 @@
                 } catch (e) {
                     console.error('Error decoding URL parameter:', e);
                 }
+            } else {
+                // No code parameter, clear the textarea
+                commandArea.value = '';
+                commandArea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
+        
+        // Load content from URL parameter on page load
+        loadContentFromUrl();
+        
+        // Initialize history state with current content (if any) so we can navigate back
+        if (commandArea && commandArea.value.trim()) {
+            const content = commandArea.value;
+            const encoded = encodeURIComponent(content);
+            const newUrl = window.location.origin + window.location.pathname + '?code=' + encoded;
+            // Replace current state with initial content so we have a baseline
+            window.history.replaceState({ code: content, url: newUrl }, '', newUrl);
+        } else {
+            // No content initially, replace with empty state
+            const newUrl = window.location.origin + window.location.pathname;
+            window.history.replaceState({ code: '', url: newUrl }, '', newUrl);
+        }
+        
+        // Handle browser history navigation (back/forward buttons or popstate)
+        window.addEventListener('popstate', (e) => {
+            // If state has code, use it; otherwise load from URL
+            if (e.state && e.state.code !== undefined) {
+                commandArea.value = e.state.code;
+                commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+                loadContentFromUrl();
+            }
+        });
         
         // Initialize highlighting immediately if elements exist
         if (commandArea) {
@@ -823,13 +856,26 @@
                 highlightTrackBriefly();
                 queuePlayCycleForCurrentTrack();
                 
-                // Also save to URL parameter
+                // Save to URL parameter and push to history
                 const content = commandArea.value;
                 if (content.trim()) {
                     const encoded = encodeURIComponent(content);
                     const newUrl = window.location.origin + window.location.pathname + '?code=' + encoded;
-                    window.history.pushState({ path: newUrl }, '', newUrl);
+                    // Push state with content for history navigation
+                    window.history.pushState({ code: content, url: newUrl }, '', newUrl);
                 }
+            }
+            // Ctrl + Z = undo (go back in history)
+            else if (isCtrl && !isAlt && !isShift && (e.key === 'z' || e.key === 'Z')) {
+                e.preventDefault();
+                if (window.history.length > 1) {
+                    window.history.back();
+                }
+            }
+            // Ctrl + Y = redo (go forward in history)
+            else if (isCtrl && !isAlt && !isShift && (e.key === 'y' || e.key === 'Y')) {
+                e.preventDefault();
+                window.history.forward();
             }
             // Enter between matching brackets = split into separate lines
             else if (!isCtrl && !isAlt && e.key === 'Enter') {
