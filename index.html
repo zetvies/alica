@@ -623,6 +623,22 @@
         const statusEl = document.getElementById('status');
         const commandArea = document.getElementById('commandArea');
         
+        // Load content from URL parameter on page load
+        if (commandArea) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const codeParam = urlParams.get('code');
+            if (codeParam) {
+                try {
+                    const decoded = decodeURIComponent(codeParam);
+                    commandArea.value = decoded;
+                    // Trigger input event to update highlighting
+                    commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                } catch (e) {
+                    console.error('Error decoding URL parameter:', e);
+                }
+            }
+        }
+        
         // Initialize highlighting immediately if elements exist
         if (commandArea) {
             // Wait a bit for overlay to be ready
@@ -801,11 +817,19 @@
                 highlightAllText();
                 clearAllCycles();
             }
-            // Ctrl + S = save whole track (queue playCycle for current track)
+            // Ctrl + S = save whole track (queue playCycle for current track + save to URL)
             else if (isCtrl && !isAlt && !isShift && e.key === 's') {
                 e.preventDefault();
                 highlightTrackBriefly();
                 queuePlayCycleForCurrentTrack();
+                
+                // Also save to URL parameter
+                const content = commandArea.value;
+                if (content.trim()) {
+                    const encoded = encodeURIComponent(content);
+                    const newUrl = window.location.origin + window.location.pathname + '?code=' + encoded;
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                }
             }
             // Enter between matching brackets = split into separate lines
             else if (!isCtrl && !isAlt && e.key === 'Enter') {
