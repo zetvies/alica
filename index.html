@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +11,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Courier New', monospace;
             background: #1a1a1a;
@@ -18,53 +19,55 @@
             height: 100vh;
             overflow: hidden;
         }
-        
+
         /* Custom scrollbar styling */
         ::-webkit-scrollbar {
             width: 12px;
             height: 12px;
         }
-        
+
         ::-webkit-scrollbar-track {
             background: #1a1a1a;
             border-left: 1px solid #333;
         }
-        
+
         ::-webkit-scrollbar-thumb {
             background: #444;
             border-radius: 6px;
             border: 2px solid #1a1a1a;
         }
-        
+
         ::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
-        
+
         ::-webkit-scrollbar-thumb:active {
             background: #666;
         }
-        
+
         /* Firefox scrollbar */
         #commandArea,
         #highlightOverlay {
             scrollbar-width: thin;
             scrollbar-color: #444 #1a1a1a;
         }
-        
+
         #editorContainer {
             position: relative;
             width: 100%;
-            margin-top: 50px; /* Account for header */
+            margin-top: 50px;
+            /* Account for header */
             height: calc(100vh - 50px);
         }
-        
+
         #commandArea {
             width: 100%;
             height: 100%;
             padding: 20px;
             background: transparent;
             border: none;
-            color: transparent; /* Make text transparent - overlay shows the text */
+            color: transparent;
+            /* Make text transparent - overlay shows the text */
             font-family: 'Courier New', monospace;
             font-size: 14px;
             line-height: 1.6;
@@ -78,11 +81,11 @@
             z-index: 2;
             caret-color: #e0e0e0;
         }
-        
+
         #commandArea::selection {
             background: rgba(100, 150, 255, 0.3);
         }
-        
+
         #highlightOverlay {
             position: absolute;
             top: 0;
@@ -103,43 +106,77 @@
             pointer-events: none;
             z-index: 1;
             tab-size: 2;
-            color: #e0e0e0; /* Normal text color */
+            color: #e0e0e0;
+            /* Normal text color */
         }
-        
+
         #highlightOverlay .char {
             color: #e0e0e0;
         }
-        
+
         #highlightOverlay .bracket {
             font-weight: bold;
         }
-        
+
         #highlightOverlay .error {
-            color: #ff6b6b; /* Red for syntax errors */
+            color: #ff6b6b;
+            /* Red for syntax errors */
             background: rgba(255, 107, 107, 0.1);
         }
-        
+
         #highlightOverlay .trackHighlight {
             background: rgba(100, 200, 255, 0.3) !important;
             transition: background 0.3s ease-out;
         }
-        
+
         /* Track-level brackets (t(), .play(), .bpm(), etc.) */
-        .bracket-track-0 { color: #ff6b6b; } /* Red */
-        .bracket-track-1 { color: #feca57; } /* Orange Yellow */
-        .bracket-track-2 { color: #ff9ff3; } /* Magenta */
-        .bracket-track-3 { color: #a29bfe; } /* Purple */
-        
+        .bracket-track-0 {
+            color: #ff6b6b;
+        }
+
+        /* Red */
+        .bracket-track-1 {
+            color: #feca57;
+        }
+
+        /* Orange Yellow */
+        .bracket-track-2 {
+            color: #ff9ff3;
+        }
+
+        /* Magenta */
+        .bracket-track-3 {
+            color: #a29bfe;
+        }
+
+        /* Purple */
+
         /* Sequence-level brackets ([...], .c(), .ds(), etc.) */
-        .bracket-seq-0 { color: #00d2d3; } /* Teal */
-        .bracket-seq-1 { color: #fd79a8; } /* Hot Pink */
-        .bracket-seq-2 { color: #fdcb6e; } /* Golden Yellow */
-        .bracket-seq-3 { color: #55efc4; } /* Mint */
-        
+        .bracket-seq-0 {
+            color: #00d2d3;
+        }
+
+        /* Teal */
+        .bracket-seq-1 {
+            color: #fd79a8;
+        }
+
+        /* Hot Pink */
+        .bracket-seq-2 {
+            color: #fdcb6e;
+        }
+
+        /* Golden Yellow */
+        .bracket-seq-3 {
+            color: #55efc4;
+        }
+
+        /* Mint */
+
         #commandArea::placeholder {
             color: #666;
         }
-        
+
         #header {
             position: fixed;
             top: 0;
@@ -155,7 +192,7 @@
             z-index: 1000;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
-        
+
         #headerLeft {
             display: flex;
             align-items: center;
@@ -163,18 +200,18 @@
             font-weight: bold;
             color: #e0e0e0;
         }
-        
+
         #headerLeft .brand {
             font-size: 20px;
         }
-        
+
         #headerLeft .byline {
             font-size: 11px;
             color: #888;
             margin-left: 6px;
             font-weight: normal;
         }
-        
+
         #headerMiddle {
             display: flex;
             align-items: center;
@@ -183,12 +220,12 @@
             font-weight: bold;
             color: #e0e0e0;
         }
-        
+
         #headerRight {
             display: flex;
             align-items: center;
         }
-        
+
         #status {
             padding: 8px 16px;
             border-radius: 4px;
@@ -197,19 +234,19 @@
             background: #333;
             border: 1px solid #555;
         }
-        
+
         #status.connected {
             background: #2d5016;
             border-color: #4a7c2a;
             color: #a5d97a;
         }
-        
+
         #status.disconnected {
             background: #501616;
             border-color: #7c2a2a;
             color: #d97a7a;
         }
-        
+
         #hint {
             position: fixed;
             bottom: 20px;
@@ -224,24 +261,24 @@
             z-index: 1000;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
         }
-        
+
         #hint.hidden {
             display: none;
         }
-        
+
         #hintHeader {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
         }
-        
+
         #hintTitle {
             font-weight: bold;
             color: #e0e0e0;
             font-size: 12px;
         }
-        
+
         #hintClose {
             background: none;
             border: none;
@@ -257,12 +294,12 @@
             border-radius: 2px;
             transition: all 0.2s;
         }
-        
+
         #hintClose:hover {
             background: rgba(255, 255, 255, 0.1);
             color: #e0e0e0;
         }
-        
+
         #hintContent {
             display: flex;
             flex-direction: column;
@@ -270,74 +307,74 @@
             font-size: 11px;
             line-height: 1.6;
         }
-        
+
         .hintSection {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
-        
+
         .hintCommandsGrid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             grid-template-rows: repeat(2, auto);
             gap: 8px 16px;
         }
-        
+
         #hintSyntax {
             max-height: 400px;
             overflow-y: auto;
             padding-right: 4px;
         }
-        
+
         #hintSyntax::-webkit-scrollbar {
             width: 6px;
         }
-        
+
         #hintSyntax::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 3px;
         }
-        
+
         #hintSyntax::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 3px;
         }
-        
+
         #hintSyntax::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.3);
         }
-        
+
         .syntaxSection {
             margin-bottom: 16px;
         }
-        
+
         .syntaxSectionTitle {
             font-weight: bold;
             color: #4a9eff;
             font-size: 12px;
             margin-bottom: 8px;
         }
-        
+
         .syntaxSubsection {
             margin-left: 12px;
             margin-bottom: 12px;
         }
-        
+
         .syntaxSubsectionTitle {
             font-weight: bold;
             color: #9c27b0;
             font-size: 11px;
             margin-bottom: 6px;
         }
-        
+
         .syntaxChain {
             font-family: 'Courier New', monospace;
             color: #e0e0e0;
             font-size: 10px;
             margin-bottom: 4px;
         }
-        
+
         .syntaxDesc {
             color: #aaa;
             font-size: 10px;
@@ -345,7 +382,7 @@
             margin-bottom: 6px;
             line-height: 1.4;
         }
-        
+
         .syntaxExample {
             font-family: 'Courier New', monospace;
             color: #4a9eff;
@@ -354,26 +391,26 @@
             margin-bottom: 8px;
             opacity: 0.8;
         }
-        
+
         .hintItem {
             display: flex;
             flex-direction: column;
             align-items: flex-start;
             gap: 2px;
         }
-        
+
         .hintKey {
             font-family: 'Courier New', monospace;
             color: #4a9eff;
             font-weight: bold;
             white-space: nowrap;
         }
-        
+
         .hintDesc {
             color: #aaa;
             font-size: 10px;
         }
-        
+
         #hintToggle {
             position: fixed;
             bottom: 20px;
@@ -393,32 +430,32 @@
             transition: all 0.2s;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
         }
-        
+
         #hintToggle:hover {
             background: rgba(0, 0, 0, 0.9);
             border-color: #666;
             color: #e0e0e0;
             transform: scale(1.1);
         }
-        
+
         #hintToggle.visible {
             display: flex;
         }
-        
+
         #bpmDisplay {
             color: #4a9eff;
         }
-        
+
         #signatureDisplay {
             color: #9c27b0;
         }
-        
+
         #beatSequencer {
             display: flex;
             gap: 6px;
             align-items: center;
         }
-        
+
         .beatCircle {
             width: 10px;
             height: 10px;
@@ -427,7 +464,7 @@
             border: 1px solid #666;
             transition: all 0.1s ease;
         }
-        
+
         .beatCircle.active {
             background: #4a9eff;
             box-shadow: 0 0 8px #4a9eff;
@@ -436,6 +473,7 @@
         }
     </style>
 </head>
+
 <body>
     <div id="header">
         <div id="headerLeft">
@@ -450,164 +488,194 @@
         <div id="headerRight">
             <div id="status" class="disconnected">Disconnected</div>
         </div>
+    </div>
+    <div id="hint" class="hidden">
+        <div id="hintHeader">
+            <span id="hintTitle">Commands & Syntax</span>
+            <button id="hintClose" title="Hide hints">×</button>
         </div>
-        <div id="hint" class="hidden">
-            <div id="hintHeader">
-                <span id="hintTitle">Commands & Syntax</span>
-                <button id="hintClose" title="Hide hints">×</button>
-        </div>
-            <div id="hintContent">
-                <div class="hintSection">
-                    <div class="syntaxSectionTitle">Commands:</div>
-                    <div class="hintCommandsGrid">
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+/</span>
-                    <span class="hintDesc">Toggle Comment</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+S</span>
-                    <span class="hintDesc">Loop Track in Next Cycle</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+Shift+S</span>
-                    <span class="hintDesc">Loop Track Immediately</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+H</span>
-                    <span class="hintDesc">Stop All Loops</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+Enter</span>
-                    <span class="hintDesc">Play Track in Next Cycle</span>
-                </div>
-                <div class="hintItem">
-                    <span class="hintKey">Ctrl+Shift+Enter</span>
-                    <span class="hintDesc">Play Track Immediately</span>
+        <div id="hintContent">
+            <div class="hintSection">
+                <div class="syntaxSectionTitle">Commands:</div>
+                <div class="hintCommandsGrid">
+                    <div class="hintItem">
+                        <span class="hintKey">Ctrl+/</span>
+                        <span class="hintDesc">Toggle Comment</span>
+                    </div>
+                    <div class="hintItem">
+                        <span class="hintKey">Ctrl+S</span>
+                        <span class="hintDesc">Loop Track in Next Cycle</span>
+                    </div>
+                    <div class="hintItem">
+                        <span class="hintKey">Ctrl+Shift+S</span>
+                        <span class="hintDesc">Loop Track Immediately</span>
+                    </div>
+                    <div class="hintItem">
+                        <span class="hintKey">Ctrl+H</span>
+                        <span class="hintDesc">Stop All Loops</span>
+                    </div>
+                    <div class="hintItem">
+                        <span class="hintKey">Ctrl+Enter</span>
+                        <span class="hintDesc">Play Track in Next Cycle</span>
+                    </div>
+                    <div class="hintItem">
+                        <span class="hintKey">Ctrl+Shift+Enter</span>
+                        <span class="hintDesc">Play Track Immediately</span>
+                    </div>
                 </div>
             </div>
-        </div>
-                <div class="hintSection">
-                    <div class="syntaxSectionTitle">Syntax:</div>
-                    <div id="hintSyntax">
-                        <div class="syntaxSection">
-                            <div class="syntaxChain">t(cycleId).bpm(bpm).sn(num).sd(den).ds(delay).play([...])</div>
-                            <div class="syntaxDesc">
-                                <strong>t(cycleId):</strong> Track identifier (alphanumeric with _/-)<br>
-                                <strong>.bpm(bpm):</strong> Override tempo (number or tmp*2/3*4)<br>
-                                <strong>.sn(num):</strong> Time signature numerator (number or sn*2/3*4)<br>
-                                <strong>.sd(den):</strong> Time signature denominator (number or sd*2/3*4)<br>
-                                <strong>.ds(delay):</strong> Delay start - wait before starting cycle (bt, br, bt*2, br*2, etc. or milliseconds). Can also come after .play()<br>
-                                <strong>.play([...]):</strong> Sequence/automation blocks to play
-                            </div>
-                            <div class="syntaxExample">t(main).bpm(120).sn(4).sd(4).ds(bt*2).play([n(60)^4])</div>
-                            <div class="syntaxExample">t(automation).play([n(60) n(65)].c(2)).ds(bt*2)</div>
+            <div class="hintSection">
+                <div class="syntaxSectionTitle">Syntax:</div>
+                <div id="hintSyntax">
+                    <div class="syntaxSection">
+                        <div class="syntaxChain">t(cycleId).bpm(bpm).sn(num).sd(den).ds(delay).play([...])</div>
+                        <div class="syntaxDesc">
+                            <strong>t(cycleId):</strong> Track identifier (alphanumeric with _/-)<br>
+                            <strong>.bpm(bpm):</strong> Override tempo (number or tmp*2/3*4)<br>
+                            <strong>.sn(num):</strong> Time signature numerator (number or sn*2/3*4)<br>
+                            <strong>.sd(den):</strong> Time signature denominator (number or sd*2/3*4)<br>
+                            <strong>.ds(delay):</strong> Delay start - wait before starting cycle (bt, br, bt*2, br*2,
+                            etc. or milliseconds). Can also come after .play()<br>
+                            <strong>.play([...]):</strong> Sequence/automation blocks to play
                         </div>
-                        
-                        <div class="syntaxSection">
-                            <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).pm(prob)</div>
-                            <div class="syntaxDesc">
-                                <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
-                                <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat)<br>
-                                <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
-                                <strong>.co(cutoff):</strong> Duration token for cutoff: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
-                                <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence
-                            </div>
-                            <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).pm(0.2)</div>
+                        <div class="syntaxExample">t(main).bpm(120).sn(4).sd(4).ds(bt*2).play([n(60)^4])</div>
+                        <div class="syntaxExample">t(automation).play([n(60) n(65)].c(2)).ds(bt*2)</div>
+                    </div>
+
+                    <div class="syntaxSection">
+                        <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).pm(prob)</div>
+                        <div class="syntaxDesc">
+                            <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
+                            <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat)<br>
+                            <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
+                            <strong>.co(cutoff):</strong> Duration token for cutoff: bt, br, or with multipliers (bt*2,
+                            br/2, etc.)<br>
+                            <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence
                         </div>
-                        
-                        <div class="syntaxSection">
-                            <div class="syntaxSubsectionTitle">1. Note Syntax:</div>
-                            <div class="syntaxChain">n(value).d(duration).v(velocity).c(channel)</div>
+                        <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).pm(0.2)</div>
+                    </div>
+
+                    <div class="syntaxSection">
+                        <div class="syntaxSubsectionTitle">1. Note Syntax:</div>
+                        <div class="syntaxChain">n(value).d(duration).v(velocity).c(channel)</div>
+                        <div class="syntaxDesc">
+                            <strong>n(value):</strong> MIDI note (0-127), note token (c4, c#3), or randomizer<br>
+                            <strong>.d(duration):</strong> Duration in ms, bt (duration of one beat)/br (duration of one
+                            bar) tokens, optionally add multipliers (*2, /4)<br>
+                            <strong>.v(velocity):</strong> Velocity 0-127 or randomizer<br>
+                            <strong>.c(channel):</strong> MIDI channel 1-16 or randomizer<br>
+                            <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max),
+                            .pm(prob), .pmRange(min, max), .pr(prob), .prRange(min, max), .nArp(mode), .vArp(mode),
+                            .dArp(mode), .pmArp(mode), .prArp(mode)
+                        </div>
+                        <div class="syntaxExample">n(60).d(bt).v(80).c(1)</div>
+
+                        <div class="syntaxSubsection">
+                            <div class="syntaxSubsectionTitle">Randomizers:</div>
+                            <div class="syntaxChain">r</div>
+                            <div class="syntaxDesc">Random value (notes default C1-C8, velocity 0-127). Use with ranges:
+                                .nRange(min, max), .vRange(min, max), .dRange(min, max), .pmRange(min, max),
+                                .prRange(min, max)</div>
+                            <div class="syntaxExample">n(r).nRange(c3, c5)<br>n(60).v(r).vRange(0.5,
+                                1.0)<br>n(60).d(r).dRange(bt/4, bt*2)<br>n(60).pm(r).pmRange(0.2,
+                                0.8)<br>n(60).pr(r).prRange(0.1, 0.3)</div>
+
+                            <div class="syntaxChain">r.o{value1, value2, ...}</div>
+                            <div class="syntaxDesc">Random selection from array. For notes, can use chord syntax:
+                                &lt;c4,e4,g4&gt;, &lt;chord(c-maj7)&gt;, &lt;scale(c-ionian)&gt;. For duration, only
+                                even multipliers/divisors allowed (bt/2, bt/4, bt*2, bt*4, etc.)</div>
+                            <div class="syntaxExample">n(r.o{c4,d4,e4}) - notes<br>n(60).v(r.o{60,80,100,127}) -
+                                velocity<br>n(60).d(r.o{bt/2,bt/4,bt}) -
+                                duration<br>n(r.o{&lt;c4,e4,g4&gt;,&lt;chord(c-maj7)&gt;}) - chord
+                                syntax<br>n(60).pm(r.o{0.2,0.5,0.8}) - mute probability</div>
+                        </div>
+
+                        <div class="syntaxSubsection">
+                            <div class="syntaxSubsectionTitle">Chords:</div>
+                            <div class="syntaxChain">chord(root-quality)</div>
                             <div class="syntaxDesc">
-                                <strong>n(value):</strong> MIDI note (0-127), note token (c4, c#3), or randomizer<br>
-                                <strong>.d(duration):</strong> Duration in ms, bt (duration of one beat)/br (duration of one bar) tokens, optionally add multipliers (*2, /4)<br>
-                                <strong>.v(velocity):</strong> Velocity 0-127 or randomizer<br>
-                                <strong>.c(channel):</strong> MIDI channel 1-16 or randomizer<br>
-                                <strong>Additional:</strong> .nRange(min, max), .vRange(min, max), .dRange(min, max), .pm(prob), .pmRange(min, max), .pr(prob), .prRange(min, max), .nArp(mode), .vArp(mode), .dArp(mode), .pmArp(mode), .prArp(mode)
+                                <strong>root:</strong> Note (c, d#, f, etc.)<br>
+                                <strong>quality:</strong> Triads: maj, min, dim, aug, sus2, sus4 | 7th: maj7, min7, 7,
+                                maj7#5, min7b5, dim7 | 9th: maj9, min9, 9, 9#5, min9b5, b9, #9 | 11th: maj11, min11, 11,
+                                #11 | 13th: maj13, min13, 13, 13b9, 13#9, 13#11 | Add: add9, add11, 6, 69, min6, min69 |
+                                Altered: alt, 7alt, no3, no5 | Sus: sus9, 7sus4
                             </div>
-                            <div class="syntaxExample">n(60).d(bt).v(80).c(1)</div>
-                            
-                            <div class="syntaxSubsection">
-                                <div class="syntaxSubsectionTitle">Randomizers:</div>
-                                <div class="syntaxChain">r</div>
-                                <div class="syntaxDesc">Random value (notes default C1-C8, velocity 0-127). Use with ranges: .nRange(min, max), .vRange(min, max), .dRange(min, max), .pmRange(min, max), .prRange(min, max)</div>
-                                <div class="syntaxExample">n(r).nRange(c3, c5)<br>n(60).v(r).vRange(0.5, 1.0)<br>n(60).d(r).dRange(bt/4, bt*2)<br>n(60).pm(r).pmRange(0.2, 0.8)<br>n(60).pr(r).prRange(0.1, 0.3)</div>
-                                
-                                <div class="syntaxChain">r.o{value1, value2, ...}</div>
-                                <div class="syntaxDesc">Random selection from array. For notes, can use chord syntax: &lt;c4,e4,g4&gt;, &lt;chord(c-maj7)&gt;, &lt;scale(c-ionian)&gt;. For duration, only even multipliers/divisors allowed (bt/2, bt/4, bt*2, bt*4, etc.)</div>
-                                <div class="syntaxExample">n(r.o{c4,d4,e4}) - notes<br>n(60).v(r.o{60,80,100,127}) - velocity<br>n(60).d(r.o{bt/2,bt/4,bt}) - duration<br>n(r.o{&lt;c4,e4,g4&gt;,&lt;chord(c-maj7)&gt;}) - chord syntax<br>n(60).pm(r.o{0.2,0.5,0.8}) - mute probability</div>
+                            <div class="syntaxExample">n(r.o{chord(c-maj7)})</div>
+                        </div>
+
+                        <div class="syntaxSubsection">
+                            <div class="syntaxSubsectionTitle">Scale and Chord Preset:</div>
+                            <div class="syntaxChain">scale(root-mode)</div>
+                            <div class="syntaxDesc">
+                                <strong>root:</strong> Note (c, d#, f, etc.)<br>
+                                <strong>mode:</strong> Modes: ionian, dorian, phrygian, lydian, mixolydian, aeolian,
+                                locrian | Pentatonic: pentatonicMajor, pentatonicMinor, pentatonicBlues | Japanese:
+                                iwato, in/insen, yo | Blues: bluesMajor, bluesMinor | Harmonic/Melodic: harmonicMinor,
+                                melodicMinor, double-harmonic | Synthetic: whole-tone, diminished, augmented | Exotic:
+                                enigmatic, neapolitan, hungarianMinor, persian, arabic<br>
+                                <strong>.q(quality):</strong> Optional chord quality (any from chord qualities above)
                             </div>
-                            
-                            <div class="syntaxSubsection">
-                                <div class="syntaxSubsectionTitle">Chords:</div>
-                                <div class="syntaxChain">chord(root-quality)</div>
-                                <div class="syntaxDesc">
-                                    <strong>root:</strong> Note (c, d#, f, etc.)<br>
-                                    <strong>quality:</strong> Triads: maj, min, dim, aug, sus2, sus4 | 7th: maj7, min7, 7, maj7#5, min7b5, dim7 | 9th: maj9, min9, 9, 9#5, min9b5, b9, #9 | 11th: maj11, min11, 11, #11 | 13th: maj13, min13, 13, 13b9, 13#9, 13#11 | Add: add9, add11, 6, 69, min6, min69 | Altered: alt, 7alt, no3, no5 | Sus: sus9, 7sus4
-                                </div>
-                                <div class="syntaxExample">n(r.o{chord(c-maj7)})</div>
+                            <div class="syntaxExample">n(r.o{scale(c-ionian)}).nRange(c3, c5)</div>
+                        </div>
+
+                        <div class="syntaxSubsection">
+                            <div class="syntaxSubsectionTitle">Arpeggiators:</div>
+                            <div class="syntaxChain">.nArp(mode) | .vArp(mode) | .dArp(mode) | .pmArp(mode) |
+                                .prArp(mode)</div>
+                            <div class="syntaxDesc">
+                                Control how array values are selected from <strong>r.o{...}</strong>. Each parameter has
+                                its own independent arpeggiator.<br>
+                                <strong>Modes:</strong> random (default), up (ascending), down (descending), up-down
+                                (ascending then descending, seamless), down-up (descending then ascending, seamless)<br>
+                                <strong>.nArp(mode):</strong> Controls note arrays including chords<br>
+                                <strong>.vArp(mode):</strong> Controls velocity arrays<br>
+                                <strong>.dArp(mode):</strong> Controls duration arrays<br>
+                                <strong>.pmArp(mode):</strong> Controls mute probability arrays<br>
+                                <strong>.prArp(mode):</strong> Controls remove probability arrays<br>
+                                Arrays are sorted by value, then reordered by mode. Position cycles across chunks and
+                                repeats.
                             </div>
-                            
-                            <div class="syntaxSubsection">
-                                <div class="syntaxSubsectionTitle">Scale and Chord Preset:</div>
-                                <div class="syntaxChain">scale(root-mode)</div>
-                                <div class="syntaxDesc">
-                                    <strong>root:</strong> Note (c, d#, f, etc.)<br>
-                                    <strong>mode:</strong> Modes: ionian, dorian, phrygian, lydian, mixolydian, aeolian, locrian | Pentatonic: pentatonicMajor, pentatonicMinor, pentatonicBlues | Japanese: iwato, in/insen, yo | Blues: bluesMajor, bluesMinor | Harmonic/Melodic: harmonicMinor, melodicMinor, double-harmonic | Synthetic: whole-tone, diminished, augmented | Exotic: enigmatic, neapolitan, hungarianMinor, persian, arabic<br>
-                                    <strong>.q(quality):</strong> Optional chord quality (any from chord qualities above)
-                                </div>
-                                <div class="syntaxExample">n(r.o{scale(c-ionian)}).nRange(c3, c5)</div>
-                            </div>
-                            
-                            <div class="syntaxSubsection">
-                                <div class="syntaxSubsectionTitle">Arpeggiators:</div>
-                                <div class="syntaxChain">.nArp(mode) | .vArp(mode) | .dArp(mode) | .pmArp(mode) | .prArp(mode)</div>
-                                <div class="syntaxDesc">
-                                    Control how array values are selected from <strong>r.o{...}</strong>. Each parameter has its own independent arpeggiator.<br>
-                                    <strong>Modes:</strong> random (default), up (ascending), down (descending), up-down (ascending then descending, seamless), down-up (descending then ascending, seamless)<br>
-                                    <strong>.nArp(mode):</strong> Controls note arrays including chords<br>
-                                    <strong>.vArp(mode):</strong> Controls velocity arrays<br>
-                                    <strong>.dArp(mode):</strong> Controls duration arrays<br>
-                                    <strong>.pmArp(mode):</strong> Controls mute probability arrays<br>
-                                    <strong>.prArp(mode):</strong> Controls remove probability arrays<br>
-                                    Arrays are sorted by value, then reordered by mode. Position cycles across chunks and repeats.
-                                </div>
-                                <div class="syntaxExample">
-                                    n(r.o{c4,e4,g4}).nArp(up) - notes ascending<br>
-                                    n(r.o{&lt;chord(c-maj)&gt;,&lt;chord(f-maj)&gt;,&lt;chord(g-maj)&gt;})^3.nArp(up) - chord progression<br>
-                                    n(60).v(r.o{0.3,0.6,0.9}).vArp(down) - velocity descending<br>
-                                    n(r.o{c4,e4,g4})^3.nArp(up) - cycles across repeats
-                                </div>
+                            <div class="syntaxExample">
+                                n(r.o{c4,e4,g4}).nArp(up) - notes ascending<br>
+                                n(r.o{&lt;chord(c-maj)&gt;,&lt;chord(f-maj)&gt;,&lt;chord(g-maj)&gt;})^3.nArp(up) -
+                                chord progression<br>
+                                n(60).v(r.o{0.3,0.6,0.9}).vArp(down) - velocity descending<br>
+                                n(r.o{c4,e4,g4})^3.nArp(up) - cycles across repeats
                             </div>
                         </div>
-                        
-                        <div class="syntaxSection">
-                            <div class="syntaxSubsectionTitle">2. Sequence Syntax:</div>
-                            <div class="syntaxChain">n(value1) n(value2) n(value3)^repeat</div>
-                            <div class="syntaxDesc">
-                                Multiple notes form a sequence. Use ^N to repeat a note N times.
-                            </div>
-                            <div class="syntaxExample">n(60).d(bt) n(62).d(bt) n(64)^4</div>
+                    </div>
+
+                    <div class="syntaxSection">
+                        <div class="syntaxSubsectionTitle">2. Sequence Syntax:</div>
+                        <div class="syntaxChain">n(value1) n(value2) n(value3)^repeat</div>
+                        <div class="syntaxDesc">
+                            Multiple notes form a sequence. Use ^N to repeat a note N times.
                         </div>
-                        
-                        <div class="syntaxSection">
-                            <div class="syntaxSubsectionTitle">4. Automation Syntax:</div>
-                            <div class="syntaxChain">a(controller).from(value).to(value).d(duration).e(easing).c(channel)</div>
-                            <div class="syntaxDesc">
-                                <strong>a(controller):</strong> MIDI CC number 0-127<br>
-                                <strong>.from(value):</strong> Start value 0-127 (default: 0)<br>
-                                <strong>.to(value):</strong> End value 0-127 (default: 127)<br>
-                                <strong>.d(duration):</strong> Duration in ms or tokens: bt, br, or with multipliers (bt*2, br/2, etc.)<br>
-                                <strong>.e(easing):</strong> Easing function: linear, easeIn, easeOut, easeInOut, easeInQuad, easeOutQuad, easeInOutQuad, easeInCubic, easeOutCubic, easeInOutCubic (default: linear)<br>
-                                <strong>.c(channel):</strong> MIDI channel 1-16 (optional)
-                            </div>
-                            <div class="syntaxExample">[a(7).from(0).to(127).d(bt).e(easeInOut)].t(beat).c(1)</div>
+                        <div class="syntaxExample">n(60).d(bt) n(62).d(bt) n(64)^4</div>
+                    </div>
+
+                    <div class="syntaxSection">
+                        <div class="syntaxSubsectionTitle">4. Automation Syntax:</div>
+                        <div class="syntaxChain">a(controller).from(value).to(value).d(duration).e(easing).c(channel)
                         </div>
+                        <div class="syntaxDesc">
+                            <strong>a(controller):</strong> MIDI CC number 0-127<br>
+                            <strong>.from(value):</strong> Start value 0-127 (default: 0)<br>
+                            <strong>.to(value):</strong> End value 0-127 (default: 127)<br>
+                            <strong>.d(duration):</strong> Duration in ms or tokens: bt, br, or with multipliers (bt*2,
+                            br/2, etc.)<br>
+                            <strong>.e(easing):</strong> Easing function: linear, easeIn, easeOut, easeInOut,
+                            easeInQuad, easeOutQuad, easeInOutQuad, easeInCubic, easeOutCubic, easeInOutCubic (default:
+                            linear)<br>
+                            <strong>.c(channel):</strong> MIDI channel 1-16 (optional)
+                        </div>
+                        <div class="syntaxExample">[a(7).from(0).to(127).d(bt).e(easeInOut)].t(beat).c(1)</div>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="hintToggle" class="visible">?</div>
+    </div>
+    <div id="hintToggle" class="visible">?</div>
     <div id="editorContainer">
         <div id="highlightOverlay"></div>
         <textarea id="commandArea" placeholder="Type here to start..."></textarea>
@@ -622,11 +690,11 @@
         const maxReconnectDelay = 30000; // Max 30 seconds
         const statusEl = document.getElementById('status');
         const commandArea = document.getElementById('commandArea');
-        
+
         // Function to load content from URL parameter
         function loadContentFromUrl() {
             if (!commandArea) return;
-            
+
             const urlParams = new URLSearchParams(window.location.search);
             const codeParam = urlParams.get('code');
             if (codeParam) {
@@ -644,10 +712,10 @@
                 commandArea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
-        
+
         // Load content from URL parameter on page load
         loadContentFromUrl();
-        
+
         // Initialize history state with current content (if any) so we can navigate back
         if (commandArea && commandArea.value.trim()) {
             const content = commandArea.value;
@@ -660,7 +728,7 @@
             const newUrl = window.location.origin + window.location.pathname;
             window.history.replaceState({ code: '', url: newUrl }, '', newUrl);
         }
-        
+
         // Handle browser history navigation (back/forward buttons or popstate)
         window.addEventListener('popstate', (e) => {
             // If state has code, use it; otherwise load from URL
@@ -671,7 +739,7 @@
                 loadContentFromUrl();
             }
         });
-        
+
         // Initialize highlighting immediately if elements exist
         if (commandArea) {
             // Wait a bit for overlay to be ready
@@ -683,51 +751,51 @@
                 }
             }, 50);
         }
-        
+
         function connect() {
             // Clear any existing reconnect timeout
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
                 reconnectTimeout = null;
             }
-            
+
             // Close existing connection if any
             if (ws) {
                 ws.onclose = null; // Prevent infinite loop
                 ws.close();
             }
-            
+
             try {
                 ws = new WebSocket(`ws://localhost:4254`);
-        
-        ws.onopen = () => {
-            statusEl.textContent = 'Connected';
-            statusEl.className = 'status connected';
+
+                ws.onopen = () => {
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'status connected';
                     reconnectAttempts = 0; // Reset on successful connection
-            console.log('WebSocket connected');
-        };
-        
+                    console.log('WebSocket connected');
+                };
+
                 ws.onclose = (event) => {
-            statusEl.textContent = 'Disconnected';
-            statusEl.className = 'status disconnected';
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'status disconnected';
                     console.log('WebSocket disconnected', event.code, event.reason);
-                    
+
                     // Attempt to reconnect (unless it was a clean close or manual close)
                     if (event.code !== 1000) { // 1000 = normal closure
                         scheduleReconnect();
                     }
-        };
-        
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
                     statusEl.textContent = 'Error';
                     statusEl.className = 'status disconnected';
-        };
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log('Received:', data);
-                    
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    console.log('Received:', data);
+
                     // Handle BPM and signature updates
                     if (data.type === 'tempoAndSignature') {
                         updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
@@ -736,46 +804,46 @@
                             updateBeatSequencer(data.signatureNumerator);
                         }
                     }
-                    
+
                     // Handle beat updates
                     if (data.type === 'beat' && data.beatNumber !== undefined) {
                         updateBeatIndicator(data.beatNumber, data.bar);
                     }
                 };
-                
+
             } catch (error) {
                 console.error('Failed to create WebSocket:', error);
                 scheduleReconnect();
             }
         }
-        
+
         function scheduleReconnect() {
             // Don't schedule if already scheduled
             if (reconnectTimeout) return;
-            
+
             reconnectAttempts++;
-            
+
             // Calculate delay with exponential backoff (capped at maxReconnectDelay)
             const delay = Math.min(reconnectDelay * Math.pow(1.5, reconnectAttempts - 1), maxReconnectDelay);
-            
+
             statusEl.textContent = `Reconnecting... (attempt ${reconnectAttempts})`;
             console.log(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttempts})`);
-            
+
             reconnectTimeout = setTimeout(() => {
                 reconnectTimeout = null;
                 connect();
             }, delay);
         }
-        
+
         // Initial connection
         connect();
-        
+
         // Handle keyboard shortcuts
         commandArea.addEventListener('keydown', (e) => {
             const isCtrl = e.ctrlKey || e.metaKey;
             const isShift = e.shiftKey;
             const isAlt = e.altKey;
-            
+
             // Tab = insert 3 spaces
             if (!isCtrl && !isAlt && e.key === 'Tab') {
                 e.preventDefault();
@@ -783,7 +851,7 @@
                 const end = commandArea.selectionEnd;
                 const text = commandArea.value;
                 const spaces = '   '; // 3 spaces
-                
+
                 // Insert spaces at cursor position
                 commandArea.value = text.substring(0, start) + spaces + text.substring(end);
                 // Set cursor position after inserted spaces
@@ -792,7 +860,7 @@
                 commandArea.dispatchEvent(new Event('input', { bubbles: true }));
                 return;
             }
-            
+
             // Auto-complete brackets: ( ) [ ] { } < >
             const bracketPairs = {
                 '(': ')',
@@ -805,7 +873,7 @@
                 const end = commandArea.selectionEnd;
                 const text = commandArea.value;
                 const closingBracket = bracketPairs[e.key];
-                
+
                 if (start === end) {
                     // No text selected: Insert opening bracket and closing bracket
                     commandArea.value = text.substring(0, start) + e.key + closingBracket + text.substring(end);
@@ -819,13 +887,13 @@
                     commandArea.selectionStart = start;
                     commandArea.selectionEnd = start + 1 + selectedText.length + 1;
                 }
-                
+
                 // Trigger input event for highlighting
                 commandArea.dispatchEvent(new Event('input', { bubbles: true }));
                 e.preventDefault();
                 return;
             }
-            
+
             // Ctrl + Shift + S = playCycle for current track immediately
             // Check this FIRST to catch it before browser intercepts
             if (isCtrl && !isAlt && isShift && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
@@ -837,7 +905,7 @@
                 playCycleForCurrentTrack();
                 return;
             }
-            
+
             // Ctrl + / = toggle comment on selected lines
             if (isCtrl && !isAlt && !isShift && (e.key === '/' || e.key === '?')) {
                 e.preventDefault();
@@ -855,7 +923,7 @@
                 e.preventDefault();
                 highlightTrackBriefly();
                 queuePlayCycleForCurrentTrack();
-                
+
                 // Save to URL parameter and push to history
                 const content = commandArea.value;
                 if (content.trim()) {
@@ -882,7 +950,7 @@
                 const start = commandArea.selectionStart;
                 const end = commandArea.selectionEnd;
                 const text = commandArea.value;
-                
+
                 // Only handle if cursor is at single position (no selection)
                 if (start === end && start > 0 && start < text.length) {
                     // Check if we're between matching brackets
@@ -892,7 +960,7 @@
                         '{': '}',
                         '<': '>'
                     };
-                    
+
                     // Find the opening bracket to the left
                     let openBracket = null;
                     let openPos = -1;
@@ -912,41 +980,41 @@
                             depth++;
                         }
                     }
-                    
+
                     if (openBracket && openPos !== -1) {
                         // Check if the next closing bracket matches
                         const closingBracket = bracketPairs[openBracket];
                         const afterCursor = text.substring(start);
                         const nextCloseMatch = afterCursor.match(new RegExp('^\\s*\\' + closingBracket));
-                        
+
                         if (nextCloseMatch) {
                             // Check if there's any content (including spaces/line breaks) between brackets
                             const between = text.substring(openPos + 1, start);
                             const hasContent = between.trim().length > 0 || between.includes('\n') || between.includes('\r');
-                            
+
                             // Only proceed if there's no content between brackets
                             if (!hasContent) {
                                 e.preventDefault();
-                                
+
                                 // Get indentation from the line with the opening bracket
                                 const lineStart = text.lastIndexOf('\n', openPos) + 1;
                                 const lineBeforeOpen = text.substring(lineStart, openPos);
                                 const indent = lineBeforeOpen.match(/^(\s*)/)[1];
-                                
+
                                 // Create the new content
                                 const beforeOpen = text.substring(0, openPos + 1);
                                 const afterClose = text.substring(start + nextCloseMatch[0].length);
-                                
+
                                 // Build new text (no indentation on middle line)
                                 const newText = beforeOpen + '\n' + '\n' + indent + closingBracket + afterClose;
-                                
+
                                 // Update textarea
                                 commandArea.value = newText;
-                                
+
                                 // Position cursor on the middle line (empty line)
                                 const cursorPos = beforeOpen.length + 1;
                                 commandArea.selectionStart = commandArea.selectionEnd = cursorPos;
-                                
+
                                 // Trigger input event for highlighting
                                 commandArea.dispatchEvent(new Event('input', { bubbles: true }));
                                 return;
@@ -955,7 +1023,7 @@
                     }
                 }
             }
-            
+
             // Ctrl + Enter = queue playTrack for current track (SWAPPED)
             else if (isCtrl && !isAlt && !isShift && e.key === 'Enter') {
                 e.preventDefault();
@@ -969,13 +1037,13 @@
                 playTrackForCurrentTrack();
             }
         }, true); // Use capture phase to catch earlier
-        
+
         // Also listen at window level as backup for Ctrl+Shift+S
         window.addEventListener('keydown', (e) => {
             const isCtrl = e.ctrlKey || e.metaKey;
             const isShift = e.shiftKey;
             const isAlt = e.altKey;
-            
+
             // Ctrl + Shift + S = playCycle for current track immediately
             if (isCtrl && !isAlt && isShift && (e.code === 'KeyS' || e.key === 's' || e.key === 'S')) {
                 // Only handle if the event target is the textarea or its parent
@@ -990,7 +1058,7 @@
                 }
             }
         }, true);
-        
+
         // Get selected text from textarea
         function getSelectedText() {
             const start = commandArea.selectionStart;
@@ -998,31 +1066,31 @@
             if (start === end) return null; // No selection
             return commandArea.value.substring(start, end);
         }
-        
+
         // Toggle comment on selected lines
         function toggleComment() {
             const fullText = commandArea.value;
             const start = commandArea.selectionStart;
             const end = commandArea.selectionEnd;
-            
+
             // Find the lines that contain the selection
             let lineStart = start;
             let lineEnd = end;
-            
+
             // Find start of first line containing selection
             while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
                 lineStart--;
             }
-            
+
             // Find end of last line containing selection
             while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
                 lineEnd++;
             }
-            
+
             // Get all lines in the selection
             const selectedText = fullText.substring(lineStart, lineEnd);
             const lines = selectedText.split('\n');
-            
+
             // Determine if all selected lines are commented (to decide toggle direction)
             let allCommented = true;
             let someCommented = false;
@@ -1034,14 +1102,14 @@
                     someCommented = true;
                 }
             }
-            
+
             // Process each line
             const processedLines = lines.map(line => {
                 const trimmed = line.trim();
-                
+
                 // Empty line - return as-is
                 if (!trimmed) return line;
-                
+
                 // If line starts with //, remove comment
                 if (trimmed.startsWith('//')) {
                     // Remove // and any space after it, but preserve indentation
@@ -1056,52 +1124,52 @@
                     return leadingWhitespace + '//' + restOfLine;
                 }
             });
-            
+
             // Replace the selected lines
-            const newText = fullText.substring(0, lineStart) + 
-                          processedLines.join('\n') + 
-                          fullText.substring(lineEnd);
-            
+            const newText = fullText.substring(0, lineStart) +
+                processedLines.join('\n') +
+                fullText.substring(lineEnd);
+
             // Update textarea
             commandArea.value = newText;
-            
+
             // Restore selection (adjust for length changes)
             const lengthDiff = newText.length - fullText.length;
             commandArea.selectionStart = lineStart;
             commandArea.selectionEnd = lineEnd + lengthDiff;
         }
-        
+
         // Get selected lines or line containing cursor
         function getSelectedLines() {
             const fullText = commandArea.value;
             const start = commandArea.selectionStart;
             const end = commandArea.selectionEnd;
-            
+
             // Check if there's actual text selection (not just cursor position)
             const hasSelection = start !== end;
-            
+
             if (hasSelection) {
                 // Use actual selection boundaries
                 let lineStart = start;
                 let lineEnd = end;
-                
+
                 // Find start of first line containing selection
                 while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
                     lineStart--;
                 }
-                
+
                 // Find end of last line containing selection
                 while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
                     lineEnd++;
                 }
-                
+
                 const selectedText = fullText.substring(lineStart, lineEnd);
                 // Get all lines within selection, filtering empty and comments
                 const lines = selectedText.split('\n').filter(line => {
                     const trimmed = line.trim();
                     return trimmed && !trimmed.startsWith('//');
                 });
-                
+
                 if (lines.length === 0) return null;
                 // Join all selected lines
                 return lines.join(' ');
@@ -1110,24 +1178,24 @@
                 const cursorPos = start;
                 let lineStart = cursorPos;
                 let lineEnd = cursorPos;
-                
+
                 // Find start of line containing cursor
                 while (lineStart > 0 && fullText[lineStart - 1] !== '\n') {
                     lineStart--;
                 }
-                
+
                 // Find end of line containing cursor
                 while (lineEnd < fullText.length && fullText[lineEnd] !== '\n') {
                     lineEnd++;
                 }
-                
+
                 const lineText = fullText.substring(lineStart, lineEnd).trim();
                 if (!lineText || lineText.startsWith('//')) return null;
-                
+
                 return lineText;
             }
         }
-        
+
         // Remove comments (lines starting with //) from text
         function removeComments(text) {
             if (!text) return text;
@@ -1144,14 +1212,14 @@
             });
             return filteredLines.join('\n');
         }
-        
+
         // Remove line breaks and normalize whitespace
         function normalizeWhitespace(text) {
             if (!text) return text;
             // Remove all newlines and normalize other whitespace
             return text.replace(/\n/g, '').replace(/\r/g, '').replace(/\s+/g, ' ').trim();
         }
-        
+
         // Check if text matches t(...).stop() or t(...).play(...).stop() syntax
         function isStopSyntax(text) {
             if (!text) return false;
@@ -1160,28 +1228,28 @@
             const stopMatch = trimmed.match(/^t\([^)]+\)(?:\.(?:bpm|sn|sd)\([^)]+\))*(?:\.play\([^)]*\))?\.stop\(?\)?$/);
             return stopMatch !== null;
         }
-        
+
         // Find the t(...).play(...) or t(...).play(...).stop() wrapper that contains the cursor/selection
         function findCurrentTrack() {
             const fullText = commandArea.value;
             const cursorPos = commandArea.selectionStart;
-            
+
             // Find the nearest t(...) before cursor
             let searchStart = 0;
             let bestMatch = null;
             let bestEnd = -1;
-            
+
             while (true) {
                 const tIndex = fullText.indexOf('t(', searchStart);
                 if (tIndex === -1 || tIndex > cursorPos) break;
-                
+
                 // Find matching closing parenthesis for .play(...) and optionally .stop()
                 let depth = 0;
                 let pos = tIndex;
                 let inPlay = false;
                 let playStartPos = -1;
                 let playEndPos = -1;
-                
+
                 while (pos < fullText.length) {
                     if (fullText.substring(pos).startsWith('.play(')) {
                         inPlay = true;
@@ -1190,21 +1258,21 @@
                         depth = 1;
                         continue;
                     }
-                    
+
                     if (fullText[pos] === '(') depth++;
                     else if (fullText[pos] === ')') {
                         depth--;
                         if (inPlay && depth === 0) {
                             // Found complete t(...).play(...)
                             playEndPos = pos + 1;
-                            
+
                             // Check for .stop() after .play(...)
                             let afterPlayPos = playEndPos;
                             // Skip whitespace
                             while (afterPlayPos < fullText.length && /\s/.test(fullText[afterPlayPos])) {
                                 afterPlayPos++;
                             }
-                            
+
                             // Check if .stop() or .stop follows
                             if (fullText.substring(afterPlayPos).startsWith('.stop()')) {
                                 const stopEnd = afterPlayPos + 7;
@@ -1223,7 +1291,7 @@
                                     break;
                                 }
                             }
-                            
+
                             // Check if cursor is within this track (without stop)
                             if (cursorPos >= tIndex && cursorPos <= playEndPos) {
                                 bestMatch = fullText.substring(tIndex, playEndPos);
@@ -1235,17 +1303,17 @@
                     }
                     pos++;
                 }
-                
+
                 searchStart = tIndex + 2;
             }
-            
+
             // Also check for standalone t(...).stop() (without .play())
             if (!bestMatch || cursorPos > bestEnd) {
                 searchStart = 0;
                 while (true) {
                     const tIndex = fullText.indexOf('t(', searchStart);
                     if (tIndex === -1 || tIndex > cursorPos) break;
-                    
+
                     // Find the end of t(...)
                     let pos = tIndex + 2;
                     let depth = 1;
@@ -1254,7 +1322,7 @@
                         else if (fullText[pos] === ')') depth--;
                         pos++;
                     }
-                    
+
                     if (depth === 0) {
                         // Check for .stop() after t(...)
                         let afterT = pos;
@@ -1262,7 +1330,7 @@
                         while (afterT < fullText.length && /\s/.test(fullText[afterT])) {
                             afterT++;
                         }
-                        
+
                         // Check if .stop() or .stop follows
                         if (fullText.substring(afterT).startsWith('.stop()')) {
                             const stopEnd = afterT + 7;
@@ -1280,41 +1348,41 @@
                             }
                         }
                     }
-                    
+
                     searchStart = tIndex + 2;
                 }
             }
-            
+
             // Remove comments from the found track
             if (bestMatch) {
                 bestMatch = removeComments(bestMatch);
             }
-            
+
             return bestMatch;
         }
-        
+
         // Find current track and return both the track string and its position in the text
         function findCurrentTrackWithPosition() {
             const fullText = commandArea.value;
             const cursorPos = commandArea.selectionStart;
-            
+
             // Find the nearest t(...) before cursor
             let searchStart = 0;
             let bestMatch = null;
             let bestStart = -1;
             let bestEnd = -1;
-            
+
             while (true) {
                 const tIndex = fullText.indexOf('t(', searchStart);
                 if (tIndex === -1 || tIndex > cursorPos) break;
-                
+
                 // Find matching closing parenthesis for .play(...) and optionally .stop()
                 let depth = 0;
                 let pos = tIndex;
                 let inPlay = false;
                 let playStartPos = -1;
                 let playEndPos = -1;
-                
+
                 while (pos < fullText.length) {
                     if (fullText.substring(pos).startsWith('.play(')) {
                         inPlay = true;
@@ -1323,21 +1391,21 @@
                         depth = 1;
                         continue;
                     }
-                    
+
                     if (fullText[pos] === '(') depth++;
                     else if (fullText[pos] === ')') {
                         depth--;
                         if (inPlay && depth === 0) {
                             // Found complete t(...).play(...)
                             playEndPos = pos + 1;
-                            
+
                             // Check for .stop() after .play(...)
                             let afterPlayPos = playEndPos;
                             // Skip whitespace
                             while (afterPlayPos < fullText.length && /\s/.test(fullText[afterPlayPos])) {
                                 afterPlayPos++;
                             }
-                            
+
                             // Check if .stop() or .stop follows
                             if (fullText.substring(afterPlayPos).startsWith('.stop()')) {
                                 const stopEnd = afterPlayPos + 7;
@@ -1358,7 +1426,7 @@
                                     break;
                                 }
                             }
-                            
+
                             // Check if cursor is within this track (without stop)
                             if (cursorPos >= tIndex && cursorPos <= playEndPos) {
                                 bestMatch = fullText.substring(tIndex, playEndPos);
@@ -1371,17 +1439,17 @@
                     }
                     pos++;
                 }
-                
+
                 searchStart = tIndex + 2;
             }
-            
+
             // Also check for standalone t(...).stop() (without .play())
             if (!bestMatch || cursorPos > bestEnd) {
                 searchStart = 0;
                 while (true) {
                     const tIndex = fullText.indexOf('t(', searchStart);
                     if (tIndex === -1 || tIndex > cursorPos) break;
-                    
+
                     // Find the end of t(...)
                     let pos = tIndex + 2;
                     let depth = 1;
@@ -1390,7 +1458,7 @@
                         else if (fullText[pos] === ')') depth--;
                         pos++;
                     }
-                    
+
                     if (depth === 0) {
                         // Check for .stop() after t(...)
                         let afterT = pos;
@@ -1398,7 +1466,7 @@
                         while (afterT < fullText.length && /\s/.test(fullText[afterT])) {
                             afterT++;
                         }
-                        
+
                         // Check if .stop() or .stop follows
                         if (fullText.substring(afterT).startsWith('.stop()')) {
                             const stopEnd = afterT + 7;
@@ -1418,11 +1486,11 @@
                             }
                         }
                     }
-                    
+
                     searchStart = tIndex + 2;
                 }
             }
-            
+
             if (bestMatch && bestStart !== -1 && bestEnd !== -1) {
                 return {
                     track: bestMatch,
@@ -1432,62 +1500,62 @@
             }
             return null;
         }
-        
+
         // Highlight the current track for a brief moment
         function highlightTrackBriefly() {
             if (!highlightOverlay) {
                 highlightOverlay = document.getElementById('highlightOverlay');
                 if (!highlightOverlay) return;
             }
-            
+
             const trackInfo = findCurrentTrackWithPosition();
             if (!trackInfo) return;
-            
+
             // Get all character spans in the overlay
             const chars = highlightOverlay.querySelectorAll('.char, .bracket, .error');
-            
+
             if (chars.length === 0) return;
-            
+
             const fullText = commandArea.value;
             const trackStart = trackInfo.start;
             const trackEnd = trackInfo.end;
-            
+
             // Find spans that correspond to the track range
             // Since spans are in order and map 1:1 with characters, we can use position counting
             let charCount = 0;
             let startSpanIndex = -1;
             let endSpanIndex = -1;
-            
+
             for (let i = 0; i < chars.length; i++) {
                 const span = chars[i];
                 const text = span.textContent || '';
-                
+
                 // Check if we've reached the start of the track
                 if (startSpanIndex === -1 && charCount >= trackStart) {
                     startSpanIndex = i;
                 }
-                
+
                 // Count characters (newlines count as 1)
                 charCount += text.length || 1;
-                
+
                 // Check if we've passed the end of the track
                 if (charCount >= trackEnd && endSpanIndex === -1) {
                     endSpanIndex = i;
                     break;
                 }
             }
-            
+
             // If we found the range, highlight all spans in between
             if (startSpanIndex !== -1) {
                 const endIndex = endSpanIndex !== -1 ? endSpanIndex : chars.length;
                 const spansToHighlight = [];
-                
+
                 for (let i = startSpanIndex; i <= endIndex && i < chars.length; i++) {
                     const span = chars[i];
                     span.classList.add('trackHighlight');
                     spansToHighlight.push(span);
                 }
-                
+
                 // Remove highlight after 500ms
                 setTimeout(() => {
                     spansToHighlight.forEach(span => {
@@ -1496,26 +1564,26 @@
                 }, 500);
             }
         }
-        
+
         // Highlight all text for a brief moment
         function highlightAllText() {
             if (!highlightOverlay) {
                 highlightOverlay = document.getElementById('highlightOverlay');
                 if (!highlightOverlay) return;
             }
-            
+
             // Get all character spans in the overlay
             const chars = highlightOverlay.querySelectorAll('.char, .bracket, .error');
-            
+
             if (chars.length === 0) return;
-            
+
             // Highlight all spans
             const spansToHighlight = [];
             chars.forEach(span => {
                 span.classList.add('trackHighlight');
                 spansToHighlight.push(span);
             });
-            
+
             // Remove highlight after 500ms
             setTimeout(() => {
                 spansToHighlight.forEach(span => {
@@ -1523,31 +1591,31 @@
                 });
             }, 500);
         }
-        
+
         // Apply t() wrapper settings to a sequence string
         function applyWrapperSettings(sequenceStr, wrapperStr) {
             if (!wrapperStr || !wrapperStr.startsWith('t(')) {
                 return sequenceStr; // No wrapper, return as-is
             }
-            
+
             const parsed = parseMethodChain(wrapperStr);
             if (!parsed) return sequenceStr;
-            
+
             // Extract cycleId and build new t() wrapper with sequence
             const match = wrapperStr.match(/^t\(([^)]+)\)/);
             if (!match) return sequenceStr;
-            
+
             const cycleId = match[1];
             let result = `t(${cycleId})`;
-            
+
             if (parsed.tempo !== null) result += `.bpm(${parsed.tempo})`;
             if (parsed.sn !== null) result += `.sn(${parsed.sn})`;
             if (parsed.sd !== null) result += `.sd(${parsed.sd})`;
-            
+
             result += `.play(${sequenceStr})`;
             return result;
         }
-        
+
         // Queue playCycle for selected lines
         function queuePlayCycleForSelection() {
             const selectedSeq = getSelectedLines();
@@ -1555,7 +1623,7 @@
                 console.warn('No valid sequence selected');
                 return;
             }
-            
+
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
                 const normalized = normalizeWhitespace(selectedSeq);
@@ -1565,12 +1633,12 @@
                 });
                 return;
             }
-            
+
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
             const normalizedCommand = normalizeWhitespace(cleanCommand);
-            
+
             // Check again after applying wrapper settings
             if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
@@ -1579,9 +1647,9 @@
                 });
                 return;
             }
-            
+
             const parsed = parseMethodChain(normalizedCommand);
-            
+
             sendToServer({
                 action: 'addCycleToQueue',
                 id: null,
@@ -1591,7 +1659,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Queue playCycle for current track
         function queuePlayCycleForCurrentTrack() {
             const track = findCurrentTrack();
@@ -1599,7 +1667,7 @@
                 console.warn('No t() track found');
                 return;
             }
-            
+
             // Check if it's a stop command
             if (isStopSyntax(track)) {
                 const normalized = normalizeWhitespace(track);
@@ -1609,7 +1677,7 @@
                 });
                 return;
             }
-            
+
             const cleanTrack = removeComments(track);
             const normalizedTrack = normalizeWhitespace(cleanTrack);
             const parsed = parseMethodChain(normalizedTrack);
@@ -1622,7 +1690,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Queue playTrack for selected lines
         function queuePlayTrackForSelection() {
             const selectedSeq = getSelectedLines();
@@ -1630,7 +1698,7 @@
                 console.warn('No valid sequence selected');
                 return;
             }
-            
+
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
                 sendToServer({
@@ -1639,12 +1707,12 @@
                 });
                 return;
             }
-            
+
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
             const normalizedCommand = normalizeWhitespace(cleanCommand);
-            
+
             // Check again after applying wrapper settings
             if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
@@ -1653,9 +1721,9 @@
                 });
                 return;
             }
-            
+
             const parsed = parseMethodChain(normalizedCommand);
-            
+
             sendToServer({
                 action: 'addTrackToQueue',
                 id: null,
@@ -1665,7 +1733,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Queue playTrack for current track
         function queuePlayTrackForCurrentTrack() {
             const track = findCurrentTrack();
@@ -1673,7 +1741,7 @@
                 console.warn('No t() track found');
                 return;
             }
-            
+
             // Check if it's a stop command
             if (isStopSyntax(track)) {
                 const normalized = normalizeWhitespace(track);
@@ -1683,7 +1751,7 @@
                 });
                 return;
             }
-            
+
             const cleanTrack = removeComments(track);
             const normalizedTrack = normalizeWhitespace(cleanTrack);
             const parsed = parseMethodChain(normalizedTrack);
@@ -1696,7 +1764,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Play playCycle for selected lines (immediate)
         function playCycleForSelection() {
             const selectedSeq = getSelectedLines();
@@ -1704,7 +1772,7 @@
                 console.warn('No valid sequence selected');
                 return;
             }
-            
+
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
                 const normalized = normalizeWhitespace(selectedSeq);
@@ -1714,12 +1782,12 @@
                 });
                 return;
             }
-            
+
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
             const normalizedCommand = normalizeWhitespace(cleanCommand);
-            
+
             // Check again after applying wrapper settings
             if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
@@ -1728,9 +1796,9 @@
                 });
                 return;
             }
-            
+
             const parsed = parseMethodChain(normalizedCommand);
-            
+
             sendToServer({
                 action: 'playCycle',
                 id: null,
@@ -1740,7 +1808,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Play playCycle for current track (immediate)
         function playCycleForCurrentTrack() {
             const track = findCurrentTrack();
@@ -1748,7 +1816,7 @@
                 console.warn('No t() track found');
                 return;
             }
-            
+
             // Check if it's a stop command
             if (isStopSyntax(track)) {
                 sendToServer({
@@ -1757,7 +1825,7 @@
                 });
                 return;
             }
-            
+
             const cleanTrack = removeComments(track);
             const normalizedTrack = normalizeWhitespace(cleanTrack);
             const parsed = parseMethodChain(normalizedTrack);
@@ -1770,7 +1838,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Play playTrack for selected lines (immediate)
         function playTrackForSelection() {
             const selectedSeq = getSelectedLines();
@@ -1778,7 +1846,7 @@
                 console.warn('No valid sequence selected');
                 return;
             }
-            
+
             // Check if selected text is a stop command
             if (isStopSyntax(selectedSeq)) {
                 const normalized = normalizeWhitespace(selectedSeq);
@@ -1788,12 +1856,12 @@
                 });
                 return;
             }
-            
+
             const wrapper = findCurrentTrack();
             const fullCommand = applyWrapperSettings(selectedSeq, wrapper);
             const cleanCommand = removeComments(fullCommand);
             const normalizedCommand = normalizeWhitespace(cleanCommand);
-            
+
             // Check again after applying wrapper settings
             if (isStopSyntax(normalizedCommand)) {
                 sendToServer({
@@ -1802,9 +1870,9 @@
                 });
                 return;
             }
-            
+
             const parsed = parseMethodChain(normalizedCommand);
-            
+
             sendToServer({
                 action: 'playTrack',
                 id: null,
@@ -1814,7 +1882,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Play playTrack for current track (immediate)
         function playTrackForCurrentTrack() {
             const track = findCurrentTrack();
@@ -1822,7 +1890,7 @@
                 console.warn('No t() track found');
                 return;
             }
-            
+
             // Check if it's a stop command
             if (isStopSyntax(track)) {
                 const normalized = normalizeWhitespace(track);
@@ -1832,7 +1900,7 @@
                 });
                 return;
             }
-            
+
             const cleanTrack = removeComments(track);
             const normalizedTrack = normalizeWhitespace(cleanTrack);
             const parsed = parseMethodChain(normalizedTrack);
@@ -1845,7 +1913,7 @@
                 signatureDenominator: parsed?.sd || null
             });
         }
-        
+
         // Join multi-line commands by tracking parentheses depth
         function joinMultiLineCommand(text) {
             const lines = text.split('\n');
@@ -1854,10 +1922,10 @@
             let parenDepth = 0;
             let inString = false;
             let stringChar = null;
-            
+
             for (const line of lines) {
                 const trimmed = line.trim();
-                
+
                 // Skip empty lines and comments (but only when not in the middle of a command)
                 if (!trimmed || trimmed.startsWith('//')) {
                     if (currentCommand && parenDepth === 0) {
@@ -1866,12 +1934,12 @@
                     }
                     continue;
                 }
-                
+
                 // Track parentheses and strings across the entire line
                 for (let i = 0; i < line.length; i++) {
                     const char = line[i];
-                    const prevChar = i > 0 ? line[i-1] : null;
-                    
+                    const prevChar = i > 0 ? line[i - 1] : null;
+
                     if (!inString && (char === '"' || char === "'")) {
                         inString = true;
                         stringChar = char;
@@ -1883,14 +1951,14 @@
                         else if (char === ')') parenDepth--;
                     }
                 }
-                
+
                 // Add line to current command
                 if (currentCommand) {
                     currentCommand += ' ' + trimmed;
                 } else {
                     currentCommand = trimmed;
                 }
-                
+
                 // If we've closed all parentheses and not in a string, command is complete
                 if (parenDepth === 0 && !inString && currentCommand) {
                     commands.push(currentCommand.trim());
@@ -1898,15 +1966,15 @@
                     parenDepth = 0;
                 }
             }
-            
+
             // Add any remaining command
             if (currentCommand.trim()) {
                 commands.push(currentCommand.trim());
             }
-            
+
             return commands.filter(cmd => cmd.length > 0);
         }
-        
+
         // Split text into individual commands (now simplified since joinMultiLineCommand handles it)
         function splitCommands(text) {
             // The joinMultiLineCommand already returns an array of commands
@@ -1914,18 +1982,18 @@
             const commands = Array.isArray(text) ? text : [text];
             return commands.filter(cmd => cmd.trim() && !cmd.trim().startsWith('//'));
         }
-        
+
         // Helper function to evaluate chained multiplication/division expressions
         // Supports: baseValue*2/3*4, where baseValue can be tmp, sn, sd, or a number
         function evaluateExpression(expr, context = {}) {
             if (!expr || typeof expr !== 'string') return null;
-            
+
             const norm = expr.trim().toLowerCase();
-            
+
             // Parse base value: tmp, sn, sd, or a number
             let baseValue = null;
             let remainingExpr = '';
-            
+
             if (norm === 'tmp' && context.tmp !== undefined && context.tmp !== null) {
                 baseValue = context.tmp;
             } else if (norm === 'sn' && context.sn !== undefined && context.sn !== null) {
@@ -1955,58 +2023,58 @@
                     remainingExpr = norm.substring(numMatch[1].length);
                 }
             }
-            
+
             if (baseValue === null || isNaN(baseValue)) return null;
-            
+
             // If no remaining expression, return base value
             if (!remainingExpr) return baseValue;
-            
+
             // Parse and apply operations from left to right
             // Pattern: *N or /N, where N can be any number
             const operationRegex = /([*\/])(\d+(?:\.\d+)?)/g;
             let result = baseValue;
             let match;
             let lastIndex = 0;
-            
+
             while ((match = operationRegex.exec(remainingExpr)) !== null) {
                 // Check that we're starting where we left off (no gaps)
                 if (match.index !== lastIndex) {
                     return null; // Invalid - there's text between operations
                 }
-                
+
                 const op = match[1];
                 const num = parseFloat(match[2]);
-                
+
                 if (isNaN(num) || num <= 0) return null; // Invalid operation
-                
+
                 if (op === '*') {
                     result = result * num;
                 } else if (op === '/') {
                     result = result / num;
                 }
-                
+
                 lastIndex = match.index + match[0].length;
             }
-            
+
             // Check if we consumed the entire expression
             if (lastIndex !== remainingExpr.length) {
                 // There's extra text that wasn't consumed - invalid expression
                 return null;
             }
-            
+
             return result;
         }
-        
+
         // Simple parser for new syntax (client-side helper)
         function parseMethodChain(str) {
             if (!str || !str.trim().startsWith('t(')) return null;
-            
+
             const match = str.match(/^t\(([^)]+)\)/);
             if (!match) return null;
-            
+
             const cycleId = match[1].trim();
             let bpm = null, sn = null, sd = null;
-            
+
             // Parse .bpm(...)
             const bpmMatch = str.match(/\.bpm\(([^)]+)\)/);
             if (bpmMatch) {
@@ -2017,7 +2085,7 @@
                     bpm = exprResult;
                 }
             }
-            
+
             // Parse .sn(...)
             const snMatch = str.match(/\.sn\(([^)]+)\)/);
             if (snMatch) {
@@ -2028,7 +2096,7 @@
                     sn = Math.round(exprResult);
                 }
             }
-            
+
             // Parse .sd(...)
             const sdMatch = str.match(/\.sd\(([^)]+)\)/);
             if (sdMatch) {
@@ -2039,17 +2107,17 @@
                     sd = Math.round(exprResult);
                 }
             }
-            
+
             return { cycleId, tempo: bpm, sn, sd };
         }
-        
+
         // Update Ableton info display
         let currentBeatNumber = 0;
         let currentBarNumber = 0;
         let currentAbletonTempo = null; // Store current Ableton tempo for tmp*f syntax
         let currentAbletonSignatureNumerator = null; // Store for sn*f syntax
         let currentAbletonSignatureDenominator = null; // Store for sd*f syntax
-        
+
         function updateAbletonInfo(bpm, numerator, denominator) {
             // Store tempo for tmp*f syntax support
             if (bpm !== null && bpm !== undefined) {
@@ -2064,56 +2132,56 @@
             }
             const bpmDisplay = document.getElementById('bpmDisplay');
             const signatureDisplay = document.getElementById('signatureDisplay');
-            
+
             if (bpm !== null && bpm !== undefined) {
                 bpmDisplay.textContent = `BPM: ${Math.round(bpm)}`;
             } else {
-                bpmDisplay.textContent = 'BPM: --';
+                bpmDisplay.textContent = 'Please open Max4Live plugin in Ableton';
             }
-            
+
             if (numerator !== null && numerator !== undefined && denominator !== null && denominator !== undefined) {
                 signatureDisplay.textContent = `Signature: ${numerator}/${denominator}`;
                 updateBeatSequencer(numerator);
             } else {
-                signatureDisplay.textContent = 'Signature: --/--';
+                signatureDisplay.textContent = '';
             }
         }
-        
+
         // Create/update beat sequencer circles
         function updateBeatSequencer(beatsPerBar) {
             const sequencer = document.getElementById('beatSequencer');
             sequencer.innerHTML = '';
-            
+
             for (let i = 1; i <= beatsPerBar; i++) {
                 const circle = document.createElement('div');
                 circle.className = 'beatCircle';
                 circle.id = `beat-${i}`;
                 sequencer.appendChild(circle);
             }
-            
+
             // Update active beat if we have current beat info
             if (currentBeatNumber > 0) {
                 updateBeatIndicator(currentBeatNumber, currentBarNumber);
             }
         }
-        
+
         // Update which beat circle is active
         function updateBeatIndicator(beatNumber, barNumber) {
             currentBeatNumber = beatNumber;
             currentBarNumber = barNumber || 0;
-            
+
             // Remove active class from all circles
             document.querySelectorAll('.beatCircle').forEach(circle => {
                 circle.classList.remove('active');
             });
-            
+
             // Add active class to current beat
             const activeCircle = document.getElementById(`beat-${beatNumber}`);
             if (activeCircle) {
                 activeCircle.classList.add('active');
             }
         }
-        
+
         // Helper function to send messages with connection check
         function sendToServer(data) {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -2126,17 +2194,17 @@
                 statusEl.className = 'status disconnected';
             }
         }
-        
+
         function clearAllCycles() {
             sendToServer({
                 action: 'clearAllCycles'
             });
             console.log('Clear all cycles requested');
         }
-        
+
         // Syntax highlighting for brackets/parentheses
         let highlightOverlay = null;
-        
+
         // Initialize overlay after DOM is ready
         function initHighlighting() {
             highlightOverlay = document.getElementById('highlightOverlay');
@@ -2144,67 +2212,67 @@
                 highlightBrackets();
             }
         }
-        
+
         function highlightBrackets() {
             if (!highlightOverlay) {
                 // Try to get overlay if not set
                 highlightOverlay = document.getElementById('highlightOverlay');
                 if (!highlightOverlay) return;
             }
-            
+
             const text = commandArea.value || '';
-            
+
             // Process entire text for multiline bracket matching
             const highlighted = highlightText(text);
-            
+
             // Clear overlay and add highlighted content
             highlightOverlay.innerHTML = '';
             if (highlighted) {
                 highlightOverlay.appendChild(highlighted);
             }
         }
-        
+
         function highlightText(text) {
             if (!text) {
                 return document.createDocumentFragment();
             }
-            
+
             // First, process the entire text as a whole for bracket context
             // Then highlight character by character while maintaining line structure
             return highlightTextWithContext(text);
         }
-        
+
         function highlightTextWithContext(text) {
             const result = document.createDocumentFragment();
             const bracketChars = { '(': ')', '[': ']', '{': '}', '<': '>' };
             const closingBrackets = { ')': '(', ']': '[', '}': '{', '>': '<' };
-            
+
             // Process entire text for bracket matching across lines
             const lines = text.split('\n');
             const fullText = text;
-            
+
             // Track bracket state across all lines
             const brackets = []; // Track current bracket stack: { char, index, isSeqBracket, level }
             let trackLevel = 0; // Track level for track brackets (t(), .play(), etc.)
             let seqLevel = 0; // Sequence level for sequence brackets ([...], .c(), etc.)
             let insideSeqBlock = false; // Track if we're currently inside a [ ... ] block
-            
+
             // First pass: validate brackets across entire text
             const errors = new Set();
             const stack = [];
             let charIndex = 0;
-            
+
             for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
                 const line = lines[lineIndex];
                 for (let i = 0; i < line.length; i++) {
                     const char = line[i];
                     const nextChar = i < line.length - 1 ? line[i + 1] : '';
-                    
+
                     // Skip comments
                     if (char === '/' && nextChar === '/') {
                         break;
                     }
-                    
+
                     if (bracketChars[char]) {
                         stack.push({ char, index: charIndex });
                     } else if (closingBrackets[char]) {
@@ -2218,30 +2286,30 @@
                 }
                 charIndex++; // For newline
             }
-            
+
             // Mark unmatched opening brackets
             stack.forEach(item => errors.add(item.index));
-            
+
             // Helper to determine bracket type - now uses full text context
             function determineBracketType(char, globalIndex) {
                 // [ and ] are ALWAYS sequence level
                 if (char === '[' || char === ']') {
                     return { isSeq: true, reason: 'sequence-block' };
                 }
-                
+
                 if (char === '(' || char === ')') {
                     const lookback = fullText.substring(0, globalIndex);
-                    
+
                     // Sequence modifiers
                     const seqModifiers = ['.c', '.ds', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
                     // Track modifiers
                     const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.stop'];
-                    
+
                     // Check what comes immediately before this bracket
                     const modifierMatch = lookback.match(/([a-zA-Z0-9_]+|\.\w+)\s*$/);
                     if (modifierMatch) {
                         const modifier = modifierMatch[1];
-                        
+
                         // Check for function calls like n(, a(
                         if (modifier.match(/^(n|a)$/)) {
                             // n( or a( - check if inside sequence block
@@ -2259,7 +2327,7 @@
                             }
                             return { isSeq: inSeq, reason: inSeq ? 'sequence-function' : 'track-function' };
                         }
-                        
+
                         // Check for dot modifiers
                         if (modifier.startsWith('.')) {
                             if (seqModifiers.some(m => modifier === m)) {
@@ -2269,22 +2337,22 @@
                             }
                         }
                     }
-                    
+
                     // Check for track-level function calls FIRST (before checking sequence blocks)
                     // This ensures t(), .play(), etc. are always track-level even after sequence blocks
                     const lookbackTrimmed = lookback.trim();
                     const lookbackNoWS = lookback.replace(/\s+/g, '');
-                    
+
                     // Check if this is t( - remove whitespace for matching
                     if (lookbackNoWS.match(/t$/)) {
                         return { isSeq: false, reason: 'track-declaration-t' };
                     }
-                    
+
                     // Check for other track-level functions
                     if (lookbackTrimmed.match(/(\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
                         return { isSeq: false, reason: 'track-declaration-or-modifier' };
                     }
-                    
+
                     // Check if we're inside a sequence block [ ... ]
                     let bracketDepth = 0;
                     let foundSeqBlock = false;
@@ -2298,27 +2366,27 @@
                             }
                         }
                     }
-                    
+
                     if (foundSeqBlock) {
                         return { isSeq: true, reason: 'inside-sequence-block' };
                     }
-                    
+
                     // Default to track level
                     return { isSeq: false, reason: 'default-track' };
                 }
-                
+
                 return { isSeq: false, reason: 'unknown' };
             }
-            
+
             // Second pass: highlight character by character
             charIndex = 0;
             for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
                 const line = lines[lineIndex];
-                
+
                 for (let i = 0; i < line.length; i++) {
                     const char = line[i];
                     const nextChar = i < line.length - 1 ? line[i + 1] : '';
-                    
+
                     // Check for comment start
                     if (char === '/' && nextChar === '/') {
                         // Add rest of line as plain text
@@ -2331,148 +2399,148 @@
                         charIndex += (line.length - i);
                         break;
                     }
-                    
+
                     // Check if this character is an error
                     const isError = errors.has(charIndex);
-                    
-                     // Check if it's an opening bracket
-                     if (bracketChars[char]) {
-                         const bracketInfo = determineBracketType(char, charIndex);
-                         const isSeqBracket = bracketInfo.isSeq;
-                         
-                         // Check if this is part of a chain inside a sequence block
-                         // All chained items (.nRange(), .nArp(), .n(), .a(), etc.) should share level 1 with n()/a()
-                         let isModifier = false;
-                         let modifierParentLevel = null;
-                         if (char === '(' && isSeqBracket && insideSeqBlock) {
-                             // Look back to see if this is a modifier or chained function
-                             // Get text before this position, remove all whitespace for matching
-                             const lookbackRaw = fullText.substring(0, charIndex);
-                             const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
-                             
-                             // Match modifiers like .nRange, .nArp, etc. at the end of the lookback
-                             const modifierMatch = lookbackNoWS.match(/(\.(?:nRange|vRange|dRange|nArp|vArp|dArp|pm|pr|v|d|p))$/);
-                             
-                             // Also check if this is .n() or .a() that comes after a closing parenthesis
-                             const chainFunctionMatch = lookbackNoWS.match(/(\.(?:n|a))$/);
-                             
-                             let isChainItem = false;
-                             
-                             if (modifierMatch) {
-                                 // This is definitely a modifier
-                                 isChainItem = true;
-                             } else if (chainFunctionMatch) {
-                                 // This might be a chained .n() or .a()
-                                 // Check if it comes after a closing parenthesis (meaning it's chained)
-                                 // Look backwards in the original text (with whitespace) to find the previous )
-                                 let searchPos = charIndex - 1;
-                                 let parenDepth = 0;
-                                 let foundClosingParen = false;
-                                 
-                                 while (searchPos >= 0) {
-                                     const charAtPos = fullText[searchPos];
-                                     if (charAtPos === ')') {
-                                         parenDepth++;
-                                         foundClosingParen = true;
-                                         break;
-                                     } else if (charAtPos === '(') {
-                                         if (parenDepth > 0) parenDepth--;
-                                         else break; // Hit the opening of current function
-                                     }
-                                     searchPos--;
-                                 }
-                                 
-                                 if (foundClosingParen) {
-                                     // This .n() or .a() comes after a closing ), so it's chained
-                                     isChainItem = true;
-                                 }
-                             }
-                             
-                             if (isChainItem) {
-                                 // All chained items inside sequence blocks share level 1
-                                 modifierParentLevel = 0;
-                                 isModifier = true;
-                             }
-                         }
-                         
-                         let level;
-                         // For [ brackets, ALWAYS sequence level 0
-                         if (char === '[') {
-                             level = 0;
-                             insideSeqBlock = true;
-                             seqLevel = 1;
-                         } else if (isSeqBracket) {
-                             if (isModifier && modifierParentLevel !== null) {
-                                 // Use level 1 for all chained items (modifiers and chained functions)
-                                 level = modifierParentLevel;
-                                 // Don't increment seqLevel - chained items share the same level
-                             } else if (insideSeqBlock) {
-                                 // Check if this is the first n() or a() in the sequence block
-                                 const lookbackRaw = fullText.substring(0, charIndex);
-                                 const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
-                                 
-                                 // Check if this is directly after [ (first function in sequence)
-                                 const firstFuncMatch = lookbackNoWS.match(/\[[^[]*(n|a)$/);
-                                 
-                                 // OR check if this is n() or a() that comes after something ending with )
-                                 // (meaning it might be chained but not detected yet)
-                                 const afterClosingParenMatch = lookbackNoWS.match(/\)(n|a)$/);
-                                 
-                                 if (firstFuncMatch || afterClosingParenMatch) {
-                                     // First n() or a() in sequence block, or chained n()/a() gets level 1
-                                     level = 1;
-                                     seqLevel = 2; // Keep seqLevel at 2 for nested brackets
-                                 } else {
-                                     // Other brackets inside sequence block (nested content)
-                                     level = seqLevel;
-                                     seqLevel++;
-                                 }
-                             } else {
-                                 level = 2;
-                                 seqLevel = 0;
-                                 insideSeqBlock = false;
-                             }
-                         } else {
-                             // Check if this is t() - always use level 0 (same color)
-                             if (char === '(') {
-                                 const lookbackRaw = fullText.substring(0, charIndex);
-                                 // Remove whitespace for matching
-                                 const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
-                                 
-                                 // Check if this is t( - must end with "t" (optionally with whitespace removed)
-                                 // This means the last non-whitespace character before this ( is "t"
-                                 const isTFunction = lookbackNoWS.match(/t$/) !== null;
-                                 
-                                 if (isTFunction) {
-                                     level = 0; // t() always uses level 0 (Red)
-                                     // Reset trackLevel to 1 for the next track-level bracket
-                                     // This ensures each t() chain starts fresh
-                                     trackLevel = 1;
-                                 } else {
-                                     level = trackLevel;
-                                     trackLevel++;
-                                 }
-                             } else {
-                                 level = trackLevel;
-                                 trackLevel++;
-                             }
-                             
-                             if (char === '(' && !isSeqBracket) {
-                                 insideSeqBlock = false;
-                             }
-                         }
-                         
-                         brackets.push({ 
-                             char, 
-                             index: charIndex, 
-                             isSeqBracket: isSeqBracket, 
-                             level: level,
-                             modifierParentLevel: isModifier ? modifierParentLevel : undefined
-                         });
-                        
+
+                    // Check if it's an opening bracket
+                    if (bracketChars[char]) {
+                        const bracketInfo = determineBracketType(char, charIndex);
+                        const isSeqBracket = bracketInfo.isSeq;
+
+                        // Check if this is part of a chain inside a sequence block
+                        // All chained items (.nRange(), .nArp(), .n(), .a(), etc.) should share level 1 with n()/a()
+                        let isModifier = false;
+                        let modifierParentLevel = null;
+                        if (char === '(' && isSeqBracket && insideSeqBlock) {
+                            // Look back to see if this is a modifier or chained function
+                            // Get text before this position, remove all whitespace for matching
+                            const lookbackRaw = fullText.substring(0, charIndex);
+                            const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+
+                            // Match modifiers like .nRange, .nArp, etc. at the end of the lookback
+                            const modifierMatch = lookbackNoWS.match(/(\.(?:nRange|vRange|dRange|nArp|vArp|dArp|pm|pr|v|d|p))$/);
+
+                            // Also check if this is .n() or .a() that comes after a closing parenthesis
+                            const chainFunctionMatch = lookbackNoWS.match(/(\.(?:n|a))$/);
+
+                            let isChainItem = false;
+
+                            if (modifierMatch) {
+                                // This is definitely a modifier
+                                isChainItem = true;
+                            } else if (chainFunctionMatch) {
+                                // This might be a chained .n() or .a()
+                                // Check if it comes after a closing parenthesis (meaning it's chained)
+                                // Look backwards in the original text (with whitespace) to find the previous )
+                                let searchPos = charIndex - 1;
+                                let parenDepth = 0;
+                                let foundClosingParen = false;
+
+                                while (searchPos >= 0) {
+                                    const charAtPos = fullText[searchPos];
+                                    if (charAtPos === ')') {
+                                        parenDepth++;
+                                        foundClosingParen = true;
+                                        break;
+                                    } else if (charAtPos === '(') {
+                                        if (parenDepth > 0) parenDepth--;
+                                        else break; // Hit the opening of current function
+                                    }
+                                    searchPos--;
+                                }
+
+                                if (foundClosingParen) {
+                                    // This .n() or .a() comes after a closing ), so it's chained
+                                    isChainItem = true;
+                                }
+                            }
+
+                            if (isChainItem) {
+                                // All chained items inside sequence blocks share level 1
+                                modifierParentLevel = 0;
+                                isModifier = true;
+                            }
+                        }
+
+                        let level;
+                        // For [ brackets, ALWAYS sequence level 0
+                        if (char === '[') {
+                            level = 0;
+                            insideSeqBlock = true;
+                            seqLevel = 1;
+                        } else if (isSeqBracket) {
+                            if (isModifier && modifierParentLevel !== null) {
+                                // Use level 1 for all chained items (modifiers and chained functions)
+                                level = modifierParentLevel;
+                                // Don't increment seqLevel - chained items share the same level
+                            } else if (insideSeqBlock) {
+                                // Check if this is the first n() or a() in the sequence block
+                                const lookbackRaw = fullText.substring(0, charIndex);
+                                const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+
+                                // Check if this is directly after [ (first function in sequence)
+                                const firstFuncMatch = lookbackNoWS.match(/\[[^[]*(n|a)$/);
+
+                                // OR check if this is n() or a() that comes after something ending with )
+                                // (meaning it might be chained but not detected yet)
+                                const afterClosingParenMatch = lookbackNoWS.match(/\)(n|a)$/);
+
+                                if (firstFuncMatch || afterClosingParenMatch) {
+                                    // First n() or a() in sequence block, or chained n()/a() gets level 1
+                                    level = 1;
+                                    seqLevel = 2; // Keep seqLevel at 2 for nested brackets
+                                } else {
+                                    // Other brackets inside sequence block (nested content)
+                                    level = seqLevel;
+                                    seqLevel++;
+                                }
+                            } else {
+                                level = 2;
+                                seqLevel = 0;
+                                insideSeqBlock = false;
+                            }
+                        } else {
+                            // Check if this is t() - always use level 0 (same color)
+                            if (char === '(') {
+                                const lookbackRaw = fullText.substring(0, charIndex);
+                                // Remove whitespace for matching
+                                const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+
+                                // Check if this is t( - must end with "t" (optionally with whitespace removed)
+                                // This means the last non-whitespace character before this ( is "t"
+                                const isTFunction = lookbackNoWS.match(/t$/) !== null;
+
+                                if (isTFunction) {
+                                    level = 0; // t() always uses level 0 (Red)
+                                    // Reset trackLevel to 1 for the next track-level bracket
+                                    // This ensures each t() chain starts fresh
+                                    trackLevel = 1;
+                                } else {
+                                    level = trackLevel;
+                                    trackLevel++;
+                                }
+                            } else {
+                                level = trackLevel;
+                                trackLevel++;
+                            }
+
+                            if (char === '(' && !isSeqBracket) {
+                                insideSeqBlock = false;
+                            }
+                        }
+
+                        brackets.push({
+                            char,
+                            index: charIndex,
+                            isSeqBracket: isSeqBracket,
+                            level: level,
+                            modifierParentLevel: isModifier ? modifierParentLevel : undefined
+                        });
+
                         const span = document.createElement('span');
                         span.className = isError ? 'bracket error' : 'bracket';
-                        
+
                         if (isError) {
                             span.style.color = '#ff6b6b';
                         } else if (isSeqBracket) {
@@ -2480,7 +2548,7 @@
                         } else {
                             span.className += ` bracket-track-${level % 4}`;
                         }
-                        
+
                         span.textContent = char;
                         result.appendChild(span);
                     }
@@ -2493,7 +2561,7 @@
                                 const wasSeqBracket = lastBracket.isSeqBracket;
                                 const bracketLevel = lastBracket.level;
                                 brackets.pop();
-                                
+
                                 // Update levels
                                 if (wasSeqBracket) {
                                     if (char === ']') {
@@ -2528,11 +2596,11 @@
                                         trackLevel = Math.max(0, trackLevel - 1);
                                     }
                                 }
-                                
+
                                 matched = true;
                                 const span = document.createElement('span');
                                 span.className = isError ? 'bracket error' : 'bracket';
-                                
+
                                 if (isError) {
                                     span.style.color = '#ff6b6b';
                                 } else if (wasSeqBracket) {
@@ -2540,7 +2608,7 @@
                                 } else {
                                     span.className += ` bracket-track-${bracketLevel % 4}`;
                                 }
-                                
+
                                 span.textContent = char;
                                 result.appendChild(span);
                             }
@@ -2559,10 +2627,10 @@
                         span.textContent = char;
                         result.appendChild(span);
                     }
-                    
+
                     charIndex++;
                 }
-                
+
                 // Add newline (except after last line)
                 if (lineIndex < lines.length - 1) {
                     const newlineSpan = document.createElement('span');
@@ -2572,16 +2640,16 @@
                     charIndex++;
                 }
             }
-            
+
             return result;
         }
-        
+
         // Legacy function for backward compatibility - now calls the new function
         function highlightLine(line) {
             if (!line) {
                 return document.createDocumentFragment();
             }
-            
+
             const result = document.createDocumentFragment();
             const bracketChars = { '(': ')', '[': ']', '{': '}', '<': '>' };
             const closingBrackets = { ')': '(', ']': '[', '}': '{', '>': '<' };
@@ -2591,27 +2659,27 @@
                 '#ffd93d', /* Yellow */
                 '#6bcf7f'  /* Green */
             ];
-            
+
             const seqColors = [
                 '#ff8c42', /* Orange */
                 '#9b59b6', /* Purple */
                 '#00d9ff', /* Cyan */
                 '#ff44aa'  /* Pink */
             ];
-            
+
             const stack = []; // Track bracket pairs: { char, index, level }
             const errors = new Set(); // Track error positions
-            
+
             // First pass: validate brackets from front to back
             for (let i = 0; i < line.length; i++) {
                 const char = line[i];
                 const nextChar = i < line.length - 1 ? line[i + 1] : '';
-                
+
                 // Skip comments - no bracket validation inside comments
                 if (char === '/' && nextChar === '/') {
                     break; // Rest of line is comment, stop validation
                 }
-                
+
                 if (bracketChars[char]) {
                     // Opening bracket
                     stack.push({ char, index: i, level: stack.length });
@@ -2625,34 +2693,34 @@
                     }
                 }
             }
-            
+
             // Mark any unmatched opening brackets as errors
             stack.forEach(item => errors.add(item.index));
-            
+
             // Second pass: build the HTML with spans for each character
             const brackets = []; // Track current bracket stack: { char, index, isSeqBracket, level }
             let trackLevel = 0; // Track level for track brackets (t(), .play(), etc.)
             let seqLevel = 0; // Sequence level for sequence brackets ([...], .c(), etc.)
             let insideSeqBlock = false; // Track if we're currently inside a [ ... ] block
-            
+
             // Helper to determine if a bracket is sequence-level
             function determineBracketType(char, lookback) {
                 // [ and ] are ALWAYS sequence level, regardless of context
                 if (char === '[' || char === ']') {
                     return { isSeq: true, reason: 'sequence-block' };
                 }
-                
+
                 if (char === '(' || char === ')') {
                     // Sequence modifiers - these are always sequence level
                     const seqModifiers = ['.c', '.ds', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
                     // Track modifiers - these are always track level
                     const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.stop'];
-                    
+
                     // Check what comes immediately before this bracket
                     const modifierMatch = lookback.match(/([a-zA-Z0-9_]+|\.\w+)\s*$/);
                     if (modifierMatch) {
                         const modifier = modifierMatch[1];
-                        
+
                         // Check for function calls like n(, a(
                         if (modifier.match(/^(n|a)$/)) {
                             // n( or a( - check if inside sequence block
@@ -2671,7 +2739,7 @@
                             }
                             return { isSeq: inSeq, reason: inSeq ? 'sequence-function' : 'track-function' };
                         }
-                        
+
                         // Check for dot modifiers
                         if (modifier.startsWith('.')) {
                             if (seqModifiers.some(m => modifier === m)) {
@@ -2681,7 +2749,7 @@
                             }
                         }
                     }
-                    
+
                     // Check if we're inside a sequence block [ ... ]
                     let bracketDepth = 0;
                     let foundSeqBlock = false;
@@ -2695,28 +2763,28 @@
                             }
                         }
                     }
-                    
+
                     // Check for track-level function calls first (before checking sequence block)
                     // Check if it's t(, .play(, .bpm(, .sn(, .sd(, .stop(
                     if (lookback.trim().match(/(t|\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
                         return { isSeq: false, reason: 'track-declaration-or-modifier' };
                     }
-                    
+
                     if (foundSeqBlock) {
                         return { isSeq: true, reason: 'inside-sequence-block' };
                     }
-                    
+
                     // Default to track level
                     return { isSeq: false, reason: 'default-track' };
                 }
-                
+
                 return { isSeq: false, reason: 'unknown' };
             }
-            
+
             for (let i = 0; i < line.length; i++) {
                 const char = line[i];
                 const nextChar = i < line.length - 1 ? line[i + 1] : '';
-                
+
                 // Check for comment start
                 if (char === '/' && nextChar === '/') {
                     // Add rest of line character by character as normal text (comment)
@@ -2728,16 +2796,16 @@
                     }
                     break;
                 }
-                
+
                 // Check if this character is an error
                 const isError = errors.has(i);
-                
+
                 // Check if it's an opening bracket
                 if (bracketChars[char]) {
                     const lookback = line.substring(0, i);
                     const bracketInfo = determineBracketType(char, lookback);
                     const isSeqBracket = bracketInfo.isSeq;
-                    
+
                     let level;
                     // For [ brackets, ALWAYS sequence level 0, regardless of any previous state
                     if (char === '[') {
@@ -2762,13 +2830,13 @@
                             insideSeqBlock = false;
                         }
                     }
-                    
+
                     // Store bracket with its type and level
                     brackets.push({ char, index: i, isSeqBracket: isSeqBracket, level: level });
-                    
+
                     const span = document.createElement('span');
                     span.className = isError ? 'bracket error' : 'bracket';
-                    
+
                     if (isError) {
                         span.style.color = '#ff6b6b';
                     } else if (isSeqBracket) {
@@ -2776,7 +2844,7 @@
                     } else {
                         span.className += ` bracket-track-${level % 4}`;
                     }
-                    
+
                     span.textContent = char;
                     result.appendChild(span);
                 }
@@ -2790,7 +2858,7 @@
                             const wasSeqBracket = lastBracket.isSeqBracket;
                             const bracketLevel = lastBracket.level; // Use stored level, not current
                             brackets.pop();
-                            
+
                             // Update levels AFTER using the stored level
                             if (wasSeqBracket) {
                                 if (char === ']') {
@@ -2803,11 +2871,11 @@
                             } else {
                                 trackLevel = Math.max(0, trackLevel - 1);
                             }
-                            
+
                             matched = true;
                             const span = document.createElement('span');
                             span.className = isError ? 'bracket error' : 'bracket';
-                            
+
                             if (isError) {
                                 span.style.color = '#ff6b6b';
                             } else if (wasSeqBracket) {
@@ -2815,7 +2883,7 @@
                             } else {
                                 span.className += ` bracket-track-${bracketLevel % 4}`;
                             }
-                            
+
                             span.textContent = char;
                             result.appendChild(span);
                         }
@@ -2836,23 +2904,23 @@
                     result.appendChild(span);
                 }
             }
-            
+
             return result;
         }
-        
+
         // Update highlighting on any text change
         commandArea.addEventListener('input', () => {
             if (highlightOverlay) {
                 highlightBrackets();
             }
         });
-        
+
         commandArea.addEventListener('keyup', () => {
             if (highlightOverlay) {
                 highlightBrackets();
             }
         });
-        
+
         commandArea.addEventListener('paste', () => {
             setTimeout(() => {
                 if (highlightOverlay) {
@@ -2860,14 +2928,14 @@
                 }
             }, 0);
         });
-        
+
         // Also update on change event
         commandArea.addEventListener('change', () => {
             if (highlightOverlay) {
                 highlightBrackets();
             }
         });
-        
+
         // Sync scroll between textarea and overlay
         commandArea.addEventListener('scroll', () => {
             if (highlightOverlay) {
@@ -2875,7 +2943,7 @@
                 highlightOverlay.scrollLeft = commandArea.scrollLeft;
             }
         });
-        
+
         // Initialize highlighting when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
@@ -2884,7 +2952,7 @@
         } else {
             initHighlighting();
         }
-        
+
         // Focus textarea on load and ensure highlighting is active
         window.addEventListener('load', () => {
             if (!highlightOverlay) {
@@ -2893,30 +2961,30 @@
             commandArea.focus();
             highlightBrackets();
         });
-        
+
         // Hint show/hide functionality
         const hint = document.getElementById('hint');
         const hintClose = document.getElementById('hintClose');
         const hintToggle = document.getElementById('hintToggle');
-        
+
         function hideHint() {
             hint.classList.add('hidden');
             hintToggle.classList.add('visible');
         }
-        
+
         function showHint() {
             hint.classList.remove('hidden');
             hintToggle.classList.remove('visible');
         }
-        
+
         if (hintClose) {
             hintClose.addEventListener('click', hideHint);
         }
-        
+
         if (hintToggle) {
             hintToggle.addEventListener('click', showHint);
         }
-        
+
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
             if (reconnectTimeout) {
@@ -2929,6 +2997,5 @@
         });
     </script>
 </body>
+
 </html>
-
-
