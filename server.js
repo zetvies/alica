@@ -2301,11 +2301,59 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
     }
   }
   
-  // Helper to parse duration token - supports: bt, br, bt*2/3*4, br*2/3*4, or number*2/3*4
+  // For type=fit, pre-compute weights from d(*f) / d(/f). Default weight=1.
+  let weights = null;
+  let totalWeight = 0;
+  if (effectiveType === 'fit') {
+    weights = automationChunks.map((chunk) => {
+      let weight = 1;
+      const paramRegexW = /\.(d)\(([^)]+)\)/g;
+      let mw;
+      while ((mw = paramRegexW.exec(chunk)) !== null) {
+        const rawW = (mw[2] || '').trim();
+        const normW = rawW.replace(/\s+/g, '').toLowerCase();
+        const wMul = normW.match(/^\*(\d*(?:\.\d+)?)$/);
+        const wDiv = normW.match(/^\/(\d*(?:\.\d+)?)$/);
+        if (wMul && wMul[1] !== '') {
+          const f = parseFloat(wMul[1]);
+          if (!isNaN(f) && f > 0) weight = f;
+        } else if (wDiv && wDiv[1] !== '') {
+          const f = parseFloat(wDiv[1]);
+          if (!isNaN(f) && f > 0) weight = 1 / f;
+        }
+      }
+      return weight;
+    });
+    totalWeight = weights.reduce((a, b) => a + b, 0);
+    if (!isFinite(totalWeight) || totalWeight <= 0) totalWeight = numChunks;
+  }
+  
+  // Helper to parse duration token - supports: bt, br, bt*2/3*4, br*2/3*4, number*2/3*4, *f, or /f
   const parseDuration = (durationStr, defaultMs) => {
     if (!durationStr || typeof durationStr !== 'string') return defaultMs;
     
     const norm = durationStr.trim().toLowerCase();
+    
+    // Allowed patterns: *f or /f - multiply/divide default duration (for beat type)
+    // For fit type, *f and /f are used as weights (handled separately above)
+    const mMul = norm.match(/^\*(\d*(?:\.\d+)?)$/);
+    const mDiv = norm.match(/^\/(\d*(?:\.\d+)?)$/);
+    
+    if (mMul && mMul[1] !== '') {
+      // d(*f) - multiply default duration (beat type only)
+      const f = parseFloat(mMul[1]);
+      if (effectiveType !== 'fit' && !isNaN(f) && f > 0) {
+        return Math.max(1, Math.round(defaultMs * f));
+      }
+    } else if (mDiv && mDiv[1] !== '') {
+      // d(/f) - divide default duration (beat type only)
+      const f = parseFloat(mDiv[1]);
+      if (effectiveType !== 'fit' && !isNaN(f) && f > 0) {
+        return Math.max(1, Math.round(defaultMs / f));
+      }
+    }
+    
+    // Try to evaluate as expression: bt, br, bt*2/3*4, br*2/3*4, or number*2/3*4
     const exprResult = evaluateExpression(norm, { bt, br });
     
     if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
@@ -2376,10 +2424,27 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
     
     // Calculate duration for this chunk (same logic as sequences)
     let chunkDuration = defaultDurationMs;
+    
     if (durationStr) {
-      chunkDuration = parseDuration(durationStr, defaultDurationMs);
+      // Check if duration is *f or /f (used as weights in fit type)
+      const normDur = durationStr.trim().toLowerCase();
+      const isWeightDur = /^\*[\d.]+$/.test(normDur) || /^\/[\d.]+$/.test(normDur);
+      
+      if (effectiveType === 'fit' && isWeightDur && weights) {
+        // For fit type with d(*f) or d(/f), use weight calculation
+        const weightedTotalForChunk = weights[idx] || 1;
+        chunkDuration = Math.max(1, Math.round(barDurationMs * (weightedTotalForChunk / totalWeight)));
+      } else {
+        // For explicit durations (bt, br, numbers) or beat type, use parseDuration
+        chunkDuration = parseDuration(durationStr, defaultDurationMs);
+      }
+    } else if (effectiveType === 'fit' && weights) {
+      // For fit type without explicit duration, use weight calculation if weights exist
+      const weightedTotalForChunk = weights[idx] || 1;
+      chunkDuration = Math.max(1, Math.round(barDurationMs * (weightedTotalForChunk / totalWeight)));
     } else if (effectiveType === 'fit') {
-      chunkDuration = ev; // Use even duration for fit type
+      // For fit type without weights and without explicit duration, use even duration
+      chunkDuration = ev;
     }
     
     // Check cutoff
