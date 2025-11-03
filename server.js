@@ -419,6 +419,140 @@ function parseChord(chordStr) {
       chordNotes = applyInversion(chordNotes, inversion);
     }
     
+    // Check for slash chord syntax: chord(...),note1,note2,... or chord(...),chord(...)
+    // Remove the .i() part from remaining before checking for comma
+    const remainingAfterInv = remaining.replace(/\.i\([^)]+\)/i, '').trim();
+    if (remainingAfterInv.startsWith(',')) {
+      // Slash chord: parse additional bass/notes/chords after comma
+      const slashNotesStr = remainingAfterInv.substring(1).trim(); // Remove comma
+      if (slashNotesStr) {
+        // Parse comma-separated items (could be notes or chords)
+        // Need to handle: chord(...).i(...), chord(...), etc.
+        const slashItems = [];
+        let currentItem = '';
+        let parenDepth = 0;
+        let afterChordExpr = false; // Track if we're right after a chord(...) expression
+        
+        for (let i = 0; i < slashNotesStr.length; i++) {
+          const char = slashNotesStr[i];
+          if (char === '(') {
+            parenDepth++;
+            afterChordExpr = false;
+            currentItem += char;
+          } else if (char === ')') {
+            parenDepth--;
+            // Check if we just closed a chord(...) expression
+            if (parenDepth === 0) {
+              const beforeParen = slashNotesStr.substring(Math.max(0, i - 10), i).toLowerCase();
+              if (beforeParen.includes('chord')) {
+                afterChordExpr = true;
+              }
+            }
+            currentItem += char;
+          } else if (char === ',' && parenDepth === 0) {
+            // Check if comma is right after chord expression (or .i() modifier)
+            if (afterChordExpr) {
+              // This comma is part of separating multiple slash items
+              slashItems.push(currentItem.trim());
+              currentItem = '';
+              afterChordExpr = false;
+            } else {
+              // Normal comma separator
+              slashItems.push(currentItem.trim());
+              currentItem = '';
+            }
+          } else {
+            // Check if we're reading .i() after chord(...)
+            if (afterChordExpr && parenDepth === 0 && char === '.') {
+              const nextChars = slashNotesStr.substring(i, Math.min(i + 3, slashNotesStr.length));
+              if (nextChars === '.i(') {
+                // Keep afterChordExpr true, we're reading .i() modifier
+                currentItem += char;
+                continue;
+              }
+            }
+            // Any other character after chord resets the flag (unless we're in .i())
+            if (parenDepth === 0 && afterChordExpr && char !== '.' && char !== 'i' && char !== '(' && char !== ')') {
+              afterChordExpr = false;
+            }
+            currentItem += char;
+          }
+        }
+        if (currentItem.trim()) {
+          slashItems.push(currentItem.trim());
+        }
+        
+        const slashMidiNotes = [];
+        
+        for (const item of slashItems) {
+          // First try to parse as chord syntax
+          const chordMatch = item.match(/^chord\(([^)]+)\)/i);
+          if (chordMatch) {
+            // Parse the chord
+            const args = chordMatch[1].trim();
+            const remainingForSlashChord = item.substring(chordMatch[0].length);
+            
+            // Extract .i(inversion) if present
+            let slashInversion = 0;
+            const slashInvMatch = remainingForSlashChord.match(/\.i\(([^)]+)\)/i);
+            if (slashInvMatch) {
+              const invValue = parseInt(slashInvMatch[1].trim(), 10);
+              if (!isNaN(invValue) && invValue >= 0) {
+                slashInversion = invValue;
+              }
+            }
+            
+            const slashParts = args.split('-');
+            if (slashParts.length === 2) {
+              const slashRootStr = slashParts[0].trim();
+              const slashQuality = slashParts[1].trim();
+              
+              const slashRootParsed = parseRootNote(slashRootStr);
+              if (slashRootParsed) {
+                const slashRoot = slashRootParsed.root;
+                const slashOctave = slashRootParsed.octave !== null ? slashRootParsed.octave : 4;
+                
+                let slashChordNotes = chordToMidiNotes(slashRoot, slashQuality, slashOctave);
+                if (slashChordNotes.length > 0) {
+                  slashChordNotes.sort((a, b) => a - b);
+                  if (slashInversion > 0) {
+                    slashChordNotes = applyInversion(slashChordNotes, slashInversion);
+                  }
+                  slashMidiNotes.push(...slashChordNotes);
+                  continue;
+                }
+              }
+            }
+          }
+          
+          // Not a chord, try as single note
+          const midiNote = noteTokenToMidi(item);
+          if (midiNote !== null) {
+            slashMidiNotes.push(midiNote);
+          } else {
+            // Try as MIDI note number
+            const midiNum = parseInt(item, 10);
+            if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
+              slashMidiNotes.push(midiNum);
+            }
+          }
+        }
+        
+        if (slashMidiNotes.length > 0) {
+          // Combine chord notes with slash notes
+          // Put slash notes at the bottom (lowest octave positions)
+          const allNotes = [...chordNotes, ...slashMidiNotes];
+          // Remove duplicates and sort, ensuring bass notes are lowest
+          const uniqueNotes = [...new Set(allNotes)];
+          uniqueNotes.sort((a, b) => a - b);
+          
+          // Move slash notes to the bottom if they're lower than chord notes
+          // For slash chords, bass note should be the lowest
+          return uniqueNotes;
+        }
+      }
+    }
+    
     return chordNotes;
   }
   
@@ -562,22 +696,65 @@ function parseArrayRandomizer(str, context = {}) {
   
   // Handle comma-separated items, but be careful with nested angle brackets
   // Parse items by splitting on commas, but preserve chord syntax <...>
+  // Also preserve slash chord syntax: chord(...),note
   const items = [];
   let currentItem = '';
   let angleBracketDepth = 0;
+  let parenDepth = 0;
+  let afterChordExpr = false; // Track if we're right after a chord(...) expression
   
   for (let i = 0; i < arrayStr.length; i++) {
     const char = arrayStr[i];
     if (char === '<') {
       angleBracketDepth++;
+      afterChordExpr = false;
       currentItem += char;
     } else if (char === '>') {
       angleBracketDepth--;
+      afterChordExpr = false;
+      currentItem += char;
+    } else if (char === '(') {
+      parenDepth++;
+      afterChordExpr = false;
+      currentItem += char;
+    } else if (char === ')') {
+      parenDepth--;
+      // Check if we just closed a chord(...) expression
+      if (parenDepth === 0) {
+        const beforeParen = arrayStr.substring(Math.max(0, i - 10), i).toLowerCase();
+        if (beforeParen.includes('chord')) {
+          afterChordExpr = true;
+        }
+      }
       currentItem += char;
     } else if (char === ',' && angleBracketDepth === 0) {
-      items.push(currentItem.trim());
-      currentItem = '';
+      // Check if comma is part of slash chord syntax (immediately after chord(...) or chord(...).i(...))
+      if (afterChordExpr && parenDepth === 0) {
+        // This comma is part of slash chord, don't split
+        currentItem += char;
+        afterChordExpr = false; // Reset after comma (comma consumed as part of slash chord)
+      } else {
+        // Normal comma, split here
+        items.push(currentItem.trim());
+        currentItem = '';
+        afterChordExpr = false;
+      }
     } else {
+      // Check if we're reading .i() after chord(...)
+      // If we see .i( after a chord expression, keep the "after chord" flag
+      if (afterChordExpr && parenDepth === 0 && char === '.') {
+        const nextChars = arrayStr.substring(i, Math.min(i + 3, arrayStr.length));
+        if (nextChars === '.i(') {
+          // Keep afterChordExpr true, we're reading .i() modifier
+          currentItem += char;
+          continue;
+        }
+      }
+      // Any other character after chord resets the flag (unless we're in .i())
+      if (parenDepth === 0 && afterChordExpr && char !== '.' && char !== 'i' && char !== '(' && char !== ')') {
+        // We've moved past the .i() section, reset flag if we hit something else
+        afterChordExpr = false;
+      }
       currentItem += char;
     }
   }
@@ -596,8 +773,26 @@ function parseArrayRandomizer(str, context = {}) {
     }
     
     // Check for scale/chord syntax in individual items
-    const scaleChordItemMatch = item.match(/^(scale\(.+?\)(?:\.q\(.+?\))?|chord\(.+?\))$/i);
+    // Also handle slash chord syntax: chord(...),note or chord(...),chord(...)
+    const scaleChordItemMatch = item.match(/^(scale\(.+?\)(?:\.q\(.+?\))?(?:\.i\(.+?\))?|chord\(.+?\)(?:\.i\(.+?\))?(?:,.+)?)$/i);
     if (scaleChordItemMatch) {
+      // Check if it's a slash chord (has comma after chord)
+      const slashChordMatch = item.match(/^(chord\(.+?\))(?:\.i\(.+?\))?(,.+)$/i);
+      if (slashChordMatch) {
+        // Slash chord: parse the chord part and additional notes/chords
+        const chordPart = slashChordMatch[1];
+        const slashNotesStr = slashChordMatch[2].substring(1).trim(); // Remove leading comma
+        
+        // Try to parse as a chord with slash notes/chords
+        const chordWithSlash = `<${item}>`;
+        const parsedSlashChord = parseChord(chordWithSlash);
+        if (parsedSlashChord) {
+          result.push({ type: 'chord', value: parsedSlashChord, original: item });
+          continue;
+        }
+      }
+      
+      // Regular scale/chord (no slash notes)
       // This will be expanded later when nRange is available
       result.push({ type: 'scaleChord', value: item, original: item });
       continue;
