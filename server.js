@@ -125,17 +125,62 @@ function parseRootNote(rootStr) {
   return null;
 }
 
-// Expand scale syntax: scale(c-ionian).q(maj7) or scale(c-ionian) or scale(c4-ionian)
+// Helper function to apply inversion to an array of MIDI notes
+// inversion: 0 = no change, 1 = first inversion, 2 = second inversion, etc.
+// Inversion means: rotate the array N positions, and move wrapped notes up an octave (+12)
+function applyInversion(notes, inversion) {
+  if (!Array.isArray(notes) || notes.length === 0 || !inversion || inversion === 0) {
+    return notes;
+  }
+  
+  const inversionCount = Math.abs(Math.floor(inversion));
+  if (inversionCount === 0 || inversionCount >= notes.length) {
+    return notes;
+  }
+  
+  const result = [...notes];
+  
+  // Rotate the array
+  for (let i = 0; i < inversionCount; i++) {
+    const first = result.shift();
+    // Move the wrapped note up an octave
+    const raisedNote = Math.min(127, first + 12);
+    result.push(raisedNote);
+  }
+  
+  return result;
+}
+
+// Expand scale syntax: scale(c-ionian).q(maj7).i(1) or scale(c-ionian) or scale(c4-ionian)
 function expandScale(scaleStr) {
   if (!scaleStr || typeof scaleStr !== 'string') return '';
   
-  // Match scale(root-mode).q(quality) or scale(root-mode)
-  const scaleRegex = /scale\(([^)]+)\)(?:\.q\(([^)]+)\))?/i;
-  const match = scaleStr.match(scaleRegex);
-  if (!match) return scaleStr;
+  // Match scale(root-mode) with optional .q(quality) and .i(inversion)
+  // Pattern: scale(...).q(...).i(...) or scale(...).i(...).q(...) or any combination
+  const scaleMatch = scaleStr.match(/scale\(([^)]+)\)/i);
+  if (!scaleMatch) return scaleStr;
   
-  const args = match[1].trim();
-  const quality = match[2] ? match[2].trim() : null;
+  const args = scaleMatch[1].trim();
+  const remaining = scaleStr.substring(scaleMatch[0].length);
+  
+  // Extract .q(quality) and .i(inversion) - order doesn't matter
+  let quality = null;
+  let inversion = 0;
+  
+  // Extract .q(...)
+  const qualityMatch = remaining.match(/\.q\(([^)]+)\)/i);
+  if (qualityMatch) {
+    quality = qualityMatch[1].trim();
+  }
+  
+  // Extract .i(...)
+  const inversionMatch = remaining.match(/\.i\(([^)]+)\)/i);
+  if (inversionMatch) {
+    const invValue = parseInt(inversionMatch[1].trim(), 10);
+    if (!isNaN(invValue) && invValue >= 0) {
+      inversion = invValue;
+    }
+  }
   
   // Parse root-mode (e.g., "c-ionian", "c4-ionian", or "d-dorian")
   const parts = args.split('-');
@@ -161,30 +206,56 @@ function expandScale(scaleStr) {
     if (chordIntervals) {
       const rootMidi = noteTokenToMidi(`${root}${octave}`);
       if (rootMidi !== null) {
-        const chordNotes = chordIntervals.map(interval => {
+        let chordNotes = chordIntervals.map(interval => {
           const note = rootMidi + interval;
           return Math.max(0, Math.min(127, note));
         });
+        
+        // Sort notes to ensure proper ordering before inversion
+        chordNotes.sort((a, b) => a - b);
+        
+        // Apply inversion if specified
+        if (inversion > 0) {
+          chordNotes = applyInversion(chordNotes, inversion);
+        }
         
         return chordNotes.map(n => `n(${n})`).join(' ');
       }
     }
   }
   
+  // Sort scale notes to ensure proper ordering before inversion
+  scaleNotes.sort((a, b) => a - b);
+  
+  // Apply inversion if specified
+  if (inversion > 0) {
+    scaleNotes = applyInversion(scaleNotes, inversion);
+  }
+  
   // Return scale notes as note sequence
   return scaleNotes.map(n => `n(${n})`).join(' ');
 }
 
-// Expand chord syntax: chord(c-maj7) or chord(c4-maj9)
+// Expand chord syntax: chord(c-maj7).i(1) or chord(c4-maj9)
 function expandChord(chordStr) {
   if (!chordStr || typeof chordStr !== 'string') return '';
   
-  // Match chord(root-quality)
-  const chordRegex = /chord\(([^)]+)\)/i;
-  const match = chordStr.match(chordRegex);
-  if (!match) return chordStr;
+  // Match chord(root-quality) with optional .i(inversion)
+  const chordMatch = chordStr.match(/chord\(([^)]+)\)/i);
+  if (!chordMatch) return chordStr;
   
-  const args = match[1].trim();
+  const args = chordMatch[1].trim();
+  const remaining = chordStr.substring(chordMatch[0].length);
+  
+  // Extract .i(inversion)
+  let inversion = 0;
+  const inversionMatch = remaining.match(/\.i\(([^)]+)\)/i);
+  if (inversionMatch) {
+    const invValue = parseInt(inversionMatch[1].trim(), 10);
+    if (!isNaN(invValue) && invValue >= 0) {
+      inversion = invValue;
+    }
+  }
   
   // Parse root-quality (e.g., "c-maj7", "c4-maj9", or "d-min7")
   const parts = args.split('-');
@@ -201,8 +272,16 @@ function expandChord(chordStr) {
   const octave = rootParsed.octave !== null ? rootParsed.octave : 4;
   
   // Get chord notes
-  const chordNotes = chordToMidiNotes(root, quality, octave);
+  let chordNotes = chordToMidiNotes(root, quality, octave);
   if (chordNotes.length === 0) return chordStr;
+  
+  // Sort notes to ensure proper ordering before inversion
+  chordNotes.sort((a, b) => a - b);
+  
+  // Apply inversion if specified
+  if (inversion > 0) {
+    chordNotes = applyInversion(chordNotes, inversion);
+  }
   
   // Return chord notes as note sequence
   return chordNotes.map(n => `n(${n})`).join(' ');
@@ -219,13 +298,30 @@ function parseChord(chordStr) {
   
   const content = match[1].trim();
   
-  // Check if content is scale syntax: scale(c-ionian).q(maj9) or scale(c-ionian)
-  const scaleRegex = /^scale\(([^)]+)\)(?:\.q\(([^)]+)\))?$/i;
-  const scaleMatch = content.match(scaleRegex);
+  // Check if content is scale syntax: scale(c-ionian).q(maj9).i(1) or scale(c-ionian)
+  // Need to match scale(...) followed by optional .q(...) and .i(...) in any order
+  const scaleMatch = content.match(/^scale\(([^)]+)\)/i);
   
   if (scaleMatch) {
     const args = scaleMatch[1].trim();
-    const quality = scaleMatch[2] ? scaleMatch[2].trim() : null;
+    const remaining = content.substring(scaleMatch[0].length);
+    
+    // Extract .q(quality) and .i(inversion) - order doesn't matter
+    let quality = null;
+    let inversion = 0;
+    
+    const qualityMatch = remaining.match(/\.q\(([^)]+)\)/i);
+    if (qualityMatch) {
+      quality = qualityMatch[1].trim();
+    }
+    
+    const inversionMatch = remaining.match(/\.i\(([^)]+)\)/i);
+    if (inversionMatch) {
+      const invValue = parseInt(inversionMatch[1].trim(), 10);
+      if (!isNaN(invValue) && invValue >= 0) {
+        inversion = invValue;
+      }
+    }
     
     // Parse root-mode (e.g., "c-ionian", "c4-ionian", or "d-dorian")
     const parts = args.split('-');
@@ -247,10 +343,18 @@ function parseChord(chordStr) {
       if (chordIntervals) {
         const rootMidi = noteTokenToMidi(`${root}${octave}`);
         if (rootMidi !== null) {
-          const chordNotes = chordIntervals.map(interval => {
+          let chordNotes = chordIntervals.map(interval => {
             const note = rootMidi + interval;
             return Math.max(0, Math.min(127, note));
           });
+          
+          // Sort notes to ensure proper ordering before inversion
+          chordNotes.sort((a, b) => a - b);
+          
+          // Apply inversion if specified
+          if (inversion > 0) {
+            chordNotes = applyInversion(chordNotes, inversion);
+          }
           
           return chordNotes;
         }
@@ -259,17 +363,37 @@ function parseChord(chordStr) {
     }
     
     // Otherwise, return scale notes
-    const scaleNotes = scaleToMidiNotes(root, mode, octave);
-    return scaleNotes.length > 0 ? scaleNotes : null;
+    let scaleNotes = scaleToMidiNotes(root, mode, octave);
+    if (scaleNotes.length === 0) return null;
+    
+    // Sort scale notes to ensure proper ordering before inversion
+    scaleNotes.sort((a, b) => a - b);
+    
+    // Apply inversion if specified
+    if (inversion > 0) {
+      scaleNotes = applyInversion(scaleNotes, inversion);
+    }
+    
+    return scaleNotes;
   }
   
-  // Check if content is chord syntax: chord(c-maj9)
-  const chordRegex = /^chord\(([^)]+)\)$/i;
-  const chordMatch = content.match(chordRegex);
+  // Check if content is chord syntax: chord(c-maj9).i(1)
+  const chordMatch = content.match(/^chord\(([^)]+)\)/i);
   
   if (chordMatch) {
     // Parse root-quality (e.g., "c-maj9", "c4-maj9", or "d-min7")
     const args = chordMatch[1].trim();
+    const remaining = content.substring(chordMatch[0].length);
+    
+    // Extract .i(inversion)
+    let inversion = 0;
+    const inversionMatch = remaining.match(/\.i\(([^)]+)\)/i);
+    if (inversionMatch) {
+      const invValue = parseInt(inversionMatch[1].trim(), 10);
+      if (!isNaN(invValue) && invValue >= 0) {
+        inversion = invValue;
+      }
+    }
     const parts = args.split('-');
     if (parts.length !== 2) return null;
     
@@ -284,8 +408,16 @@ function parseChord(chordStr) {
     const octave = rootParsed.octave !== null ? rootParsed.octave : 4;
     
     // Get chord notes using chordToMidiNotes
-    const chordNotes = chordToMidiNotes(root, quality, octave);
+    let chordNotes = chordToMidiNotes(root, quality, octave);
     if (chordNotes.length === 0) return null;
+    
+    // Sort notes to ensure proper ordering before inversion
+    chordNotes.sort((a, b) => a - b);
+    
+    // Apply inversion if specified
+    if (inversion > 0) {
+      chordNotes = applyInversion(chordNotes, inversion);
+    }
     
     return chordNotes;
   }
@@ -745,10 +877,10 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       j++;
     }
     
-    // Now find optional .q() modifier after the closing paren
+    // Now find optional .q() and .i() modifiers after the closing paren
     let modifierEnd = j;
     while (modifierEnd < processedSequence.length) {
-      const modMatch = processedSequence.substring(modifierEnd).match(/^\s*\.q\([^)]*\)/);
+      const modMatch = processedSequence.substring(modifierEnd).match(/^\s*\.(q|i)\([^)]*\)/);
       if (modMatch) {
         modifierEnd += modMatch[0].length;
       } else {
@@ -811,10 +943,21 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       j++;
     }
     
-    const chordStr = processedSequence.substring(chordIndex, j);
+    // Now find optional .i() modifier after the closing paren
+    let modifierEnd = j;
+    while (modifierEnd < processedSequence.length) {
+      const modMatch = processedSequence.substring(modifierEnd).match(/^\s*\.i\([^)]*\)/);
+      if (modMatch) {
+        modifierEnd += modMatch[0].length;
+      } else {
+        break;
+      }
+    }
+    
+    const chordStr = processedSequence.substring(chordIndex, modifierEnd);
     const expanded = expandChord(chordStr);
     tempSequence += expanded;
-    i = j;
+    i = modifierEnd;
   }
   processedSequence = tempSequence;
   

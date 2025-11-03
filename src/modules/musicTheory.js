@@ -36,6 +36,32 @@ function noteTokenToMidi(value) {
   return midi;
 }
 
+// Helper function to apply inversion to an array of MIDI notes
+// inversion: 0 = no change, 1 = first inversion, 2 = second inversion, etc.
+// Inversion means: rotate the array N positions, and move wrapped notes up an octave (+12)
+function applyInversion(notes, inversion) {
+  if (!Array.isArray(notes) || notes.length === 0 || !inversion || inversion === 0) {
+    return notes;
+  }
+  
+  const inversionCount = Math.abs(Math.floor(inversion));
+  if (inversionCount === 0 || inversionCount >= notes.length) {
+    return notes;
+  }
+  
+  const result = [...notes];
+  
+  // Rotate the array
+  for (let i = 0; i < inversionCount; i++) {
+    const first = result.shift();
+    // Move the wrapped note up an octave
+    const raisedNote = Math.min(127, first + 12);
+    result.push(raisedNote);
+  }
+  
+  return result;
+}
+
 // Scale definitions - intervals relative to root (0 = root, 1 = semitone up, etc.)
 const SCALE_DEFINITIONS = {
   // Modes
@@ -216,6 +242,7 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
   let scaleName = null;
   let quality = null;
   let intervals = null;
+  let inversionValue = 0; // Store inversion value for later use
   
   if (scaleChordLower.startsWith('scale(')) {
     // Find matching closing parenthesis for scale(
@@ -231,9 +258,12 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
       scaleArgsEnd = i - 1;
       const args = scaleChordLower.substring(6, scaleArgsEnd); // Extract content inside scale(...)
       
-      // Check for optional .q(...) modifier
+      // Check for optional .q(...) and .i(...) modifiers
       let qualityPart = null;
-      if (scaleChordLower.length > scaleArgsEnd + 1 && scaleChordLower.substring(scaleArgsEnd + 1).startsWith('.q(')) {
+      let remainingAfterScale = scaleChordLower.substring(scaleArgsEnd + 1);
+      
+      // Extract .q(...)
+      if (remainingAfterScale.startsWith('.q(')) {
         let qParenCount = 1;
         let qStart = scaleArgsEnd + 4; // ".q(".length after scale(...)
         let qEnd = -1;
@@ -249,6 +279,25 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
         }
         if (qEnd !== -1) {
           qualityPart = scaleChordLower.substring(qStart, qEnd);
+          remainingAfterScale = scaleChordLower.substring(qEnd + 1);
+        }
+      }
+      
+      // Extract .i(...) - could be before or after .q(...)
+      const inversionMatch = remainingAfterScale.match(/\.i\(([^)]+)\)/);
+      if (!inversionMatch && scaleChordLower.substring(scaleArgsEnd + 1).match(/\.i\(/)) {
+        // Try matching from the original position if not found in remaining
+        const altInversionMatch = scaleChordLower.substring(scaleArgsEnd + 1).match(/\.i\(([^)]+)\)/);
+        if (altInversionMatch) {
+          const invVal = parseInt(altInversionMatch[1].trim(), 10);
+          if (!isNaN(invVal) && invVal >= 0) {
+            inversionValue = invVal;
+          }
+        }
+      } else if (inversionMatch) {
+        const invVal = parseInt(inversionMatch[1].trim(), 10);
+        if (!isNaN(invVal) && invVal >= 0) {
+          inversionValue = invVal;
         }
       }
       
@@ -283,6 +332,16 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
     if (parenCount === 0) {
       chordArgsEnd = i - 1;
       const args = scaleChordLower.substring(6, chordArgsEnd); // Extract content inside chord(...)
+      
+      // Check for optional .i(...) modifier
+      const remainingAfterChord = scaleChordLower.substring(chordArgsEnd + 1);
+      const inversionMatch = remainingAfterChord.match(/\.i\(([^)]+)\)/);
+      if (inversionMatch) {
+        const invVal = parseInt(inversionMatch[1].trim(), 10);
+        if (!isNaN(invVal) && invVal >= 0) {
+          inversionValue = invVal;
+        }
+      }
       
       const parts = args.split('-');
       if (parts.length === 2) {
@@ -347,14 +406,35 @@ function generateScaleChordNotes(scaleChordStr, minMidi, maxMidi) {
     if (closestRootMidi === null) return [];
   }
   
-  // Generate all notes from intervals within the range [minMidi, maxMidi]
+  // Apply inversion to base intervals if specified
+  // First, generate base notes (one octave) from intervals
+  let baseNotes = intervals.map(interval => {
+    let note = closestRootMidi + interval;
+    // Ensure within MIDI range
+    if (note > 127) note -= 12;
+    if (note < 0) note += 12;
+    return Math.max(0, Math.min(127, note));
+  });
+  
+  // Sort base notes before inversion
+  baseNotes.sort((a, b) => a - b);
+  
+  // Apply inversion if specified (using inversionValue captured earlier)
+  if (inversionValue > 0) {
+    baseNotes = applyInversion(baseNotes, inversionValue);
+  }
+  
+  // Extract base intervals from inverted notes (relative to closestRootMidi)
+  const invertedIntervals = baseNotes.map(note => note - closestRootMidi);
+  
+  // Generate all notes from inverted intervals within the range [minMidi, maxMidi]
   const notes = [];
   
-  // Generate notes across multiple octaves
+  // Generate notes across multiple octaves using inverted intervals
   for (let octaveOffset = -2; octaveOffset <= 2; octaveOffset++) {
     const baseRoot = closestRootMidi + (octaveOffset * 12);
     
-    for (const interval of intervals) {
+    for (const interval of invertedIntervals) {
       const noteMidi = baseRoot + interval;
       if (noteMidi >= minMidi && noteMidi <= maxMidi && noteMidi >= 0 && noteMidi <= 127) {
         // Avoid duplicates
