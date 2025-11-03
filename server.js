@@ -729,26 +729,34 @@ function parseArrayRandomizer(str, context = {}) {
       currentItem += char;
     } else if (char === ',' && angleBracketDepth === 0) {
       // Check if comma is part of slash chord syntax (immediately after chord(...) or chord(...).i(...))
+      // Only treat as slash chord if we're inside angle brackets context, otherwise split
       if (afterChordExpr && parenDepth === 0) {
-        // Check what comes after the comma - peek ahead to see if it's another chord
-        // If it's another chord(...), this should be split (two randomizer items)
-        // If it's a note, it's slash chord syntax (don't split)
+        // Check what comes after the comma - peek ahead
         let peekIdx = i + 1;
         // Skip whitespace
         while (peekIdx < arrayStr.length && /\s/.test(arrayStr[peekIdx])) {
           peekIdx++;
         }
-        // Check if next non-whitespace chars are "chord("
+        // Check if next non-whitespace chars are "chord(" or "<"
         const remainingAfterComma = arrayStr.substring(peekIdx).toLowerCase();
         if (remainingAfterComma.startsWith('chord(')) {
           // Another chord follows - this should be split (two separate randomizer items)
           items.push(currentItem.trim());
           currentItem = '';
           afterChordExpr = false;
+        } else if (remainingAfterComma.startsWith('<')) {
+          // An angle bracket chord follows - this should be split (two separate randomizer items)
+          items.push(currentItem.trim());
+          currentItem = '';
+          afterChordExpr = false;
         } else {
-          // Not another chord - likely slash chord syntax, don't split
-          currentItem += char;
-          afterChordExpr = false; // Reset after comma (comma consumed as part of slash chord)
+          // Could be a note or other syntax
+          // In r.o{...}, we want to split on commas unless we're definitely in slash chord syntax
+          // Slash chord syntax only makes sense inside angle brackets: <chord(...),note>
+          // Since we're not inside angle brackets (angleBracketDepth === 0), split here
+          items.push(currentItem.trim());
+          currentItem = '';
+          afterChordExpr = false;
         }
       } else {
         // Normal comma, split here
