@@ -752,22 +752,29 @@
                 '<': '>'
             };
             if (!isCtrl && !isAlt && bracketPairs.hasOwnProperty(e.key) && e.key.length === 1) {
-                // Only auto-complete if no text is selected
                 const start = commandArea.selectionStart;
                 const end = commandArea.selectionEnd;
+                const text = commandArea.value;
+                const closingBracket = bracketPairs[e.key];
+                
                 if (start === end) {
-                    const text = commandArea.value;
-                    const closingBracket = bracketPairs[e.key];
-                    
-                    // Insert opening bracket and closing bracket
+                    // No text selected: Insert opening bracket and closing bracket
                     commandArea.value = text.substring(0, start) + e.key + closingBracket + text.substring(end);
                     // Position cursor between the brackets
                     commandArea.selectionStart = commandArea.selectionEnd = start + 1;
-                    // Trigger input event for highlighting
-                    commandArea.dispatchEvent(new Event('input', { bubbles: true }));
-                    e.preventDefault();
-                    return;
+                } else {
+                    // Text is selected: Wrap selected text in brackets
+                    const selectedText = text.substring(start, end);
+                    commandArea.value = text.substring(0, start) + e.key + selectedText + closingBracket + text.substring(end);
+                    // Select the wrapped text (including brackets)
+                    commandArea.selectionStart = start;
+                    commandArea.selectionEnd = start + 1 + selectedText.length + 1;
                 }
+                
+                // Trigger input event for highlighting
+                commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                e.preventDefault();
+                return;
             }
             
             // Ctrl + Shift + S = playCycle for current track immediately
