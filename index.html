@@ -5,531 +5,149 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ALiCA - Command Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'dark-bg': '#1a1a1a',
+                        'dark-bg-alt': '#0f0f0f',
+                        'dark-border': '#444',
+                        'dark-text': '#e0e0e0',
+                        'dark-text-muted': '#888',
+                        'blue-accent': '#4a9eff',
+                        'purple-accent': '#9c27b0',
+                    },
+                    fontFamily: {
+                        'mono': ['Courier New', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Courier New', monospace;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        /* Custom scrollbar styling */
+        /* Custom scrollbar styling - Tailwind doesn't support this */
         ::-webkit-scrollbar {
             width: 12px;
             height: 12px;
         }
-
         ::-webkit-scrollbar-track {
             background: #1a1a1a;
             border-left: 1px solid #333;
         }
-
         ::-webkit-scrollbar-thumb {
             background: #444;
             border-radius: 6px;
             border: 2px solid #1a1a1a;
         }
-
         ::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
-
         ::-webkit-scrollbar-thumb:active {
             background: #666;
         }
-
-        /* Firefox scrollbar */
         #commandArea,
         #highlightOverlay {
             scrollbar-width: thin;
             scrollbar-color: #444 #1a1a1a;
         }
-
-        #editorContainer {
-            position: relative;
-            width: 100%;
-            margin-top: 50px;
-            /* Account for header */
-            height: calc(100vh - 50px);
-        }
-
-        #commandArea {
-            width: 100%;
-            height: 100%;
-            padding: 20px;
-            background: transparent;
-            border: none;
-            color: transparent;
-            /* Make text transparent - overlay shows the text */
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            resize: none;
-            outline: none;
-            tab-size: 2;
-            white-space: pre;
-            overflow-wrap: normal;
-            overflow-x: auto;
-            position: relative;
-            z-index: 2;
-            caret-color: #e0e0e0;
-        }
-
         #commandArea::selection {
             background: rgba(100, 150, 255, 0.3);
         }
-
-        #highlightOverlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            padding: 20px;
-            margin: 0;
-            background: #0f0f0f;
-            box-sizing: border-box;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            white-space: pre;
-            overflow-wrap: normal;
-            overflow-x: auto;
-            overflow-y: hidden;
-            pointer-events: none;
-            z-index: 1;
-            tab-size: 2;
-            color: #e0e0e0;
-            /* Normal text color */
-        }
-
-        #highlightOverlay .char {
-            color: #e0e0e0;
-        }
-
-        #highlightOverlay .bracket {
-            font-weight: bold;
-        }
-
-        #highlightOverlay .error {
-            color: #ff6b6b;
-            /* Red for syntax errors */
-            background: rgba(255, 107, 107, 0.1);
-        }
-
-        #highlightOverlay .trackHighlight {
-            background: rgba(100, 200, 255, 0.3) !important;
-            transition: background 0.3s ease-out;
-        }
-
-        /* Track-level brackets (t(), .play(), .bpm(), etc.) */
-        .bracket-track-0 {
-            color: #ff6b6b;
-        }
-
-        /* Red */
-        .bracket-track-1 {
-            color: #feca57;
-        }
-
-        /* Orange Yellow */
-        .bracket-track-2 {
-            color: #ff9ff3;
-        }
-
-        /* Magenta */
-        .bracket-track-3 {
-            color: #a29bfe;
-        }
-
-        /* Purple */
-
-        /* Sequence-level brackets ([...], .c(), etc.) */
-        .bracket-seq-0 {
-            color: #00d2d3;
-        }
-
-        /* Teal */
-        .bracket-seq-1 {
-            color: #fd79a8;
-        }
-
-        /* Hot Pink */
-        .bracket-seq-2 {
-            color: #fdcb6e;
-        }
-
-        /* Golden Yellow */
-        .bracket-seq-3 {
-            color: #55efc4;
-        }
-
-        /* Mint */
-
-        #commandArea::placeholder {
-            color: #666;
-        }
-
-        #header {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 50px;
-            background: #1a1a1a;
-            border-bottom: 1px solid #444;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 20px;
-            z-index: 1000;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        }
-
-        #headerLeft {
-            display: flex;
-            align-items: center;
-            font-size: 20px;
-            font-weight: bold;
-            color: #e0e0e0;
-        }
-
-        #headerLeft .brand {
-            font-size: 20px;
-        }
-
-        #headerLeft .byline {
-            font-size: 11px;
-            color: #888;
-            margin-left: 6px;
-            font-weight: normal;
-        }
-
-        #headerMiddle {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            font-size: 13px;
-            font-weight: bold;
-            color: #e0e0e0;
-        }
-
-        #headerRight {
-            display: flex;
-            align-items: center;
-        }
-
-        #status {
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-            background: #333;
-            border: 1px solid #555;
-        }
-
-        #status.connected {
-            background: #2d5016;
-            border-color: #4a7c2a;
-            color: #a5d97a;
-        }
-
-        #status.disconnected {
-            background: #501616;
-            border-color: #7c2a2a;
-            color: #d97a7a;
-        }
-
-        #hint {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 500px;
-            max-width: calc(100vw - 40px);
-            padding: 12px 16px;
-            background: rgba(0, 0, 0, 0.85);
-            border-radius: 4px;
-            font-size: 11px;
-            color: #888;
-            z-index: 1000;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-        }
-
-        #hint.hidden {
-            display: none;
-        }
-
-        #hintHeader {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        #hintTitle {
-            font-weight: bold;
-            color: #e0e0e0;
-            font-size: 12px;
-        }
-
-        #hintClose {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 16px;
-            cursor: pointer;
-            padding: 0;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 2px;
-            transition: all 0.2s;
-        }
-
-        #hintClose:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #e0e0e0;
-        }
-
-        #hintContent {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            font-size: 11px;
-            line-height: 1.6;
-        }
-
-        .hintSection {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .hintCommandsGrid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            grid-template-rows: repeat(2, auto);
-            gap: 8px 16px;
-        }
-
-        #hintSyntax {
-            max-height: 400px;
-            overflow-y: auto;
-            padding-right: 4px;
-        }
-
         #hintSyntax::-webkit-scrollbar {
             width: 6px;
         }
-
         #hintSyntax::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 3px;
         }
-
         #hintSyntax::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 3px;
         }
-
         #hintSyntax::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.3);
         }
-
-        .syntaxSection {
-            margin-bottom: 16px;
-        }
-
-        .syntaxSectionTitle {
+        /* Syntax highlighting colors */
+        #highlightOverlay .bracket {
             font-weight: bold;
-            color: #4a9eff;
-            font-size: 12px;
-            margin-bottom: 8px;
         }
-
-        .syntaxSubsection {
-            margin-left: 12px;
-            margin-bottom: 12px;
+        #highlightOverlay .error {
+            color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
         }
-
-        .syntaxSubsectionTitle {
-            font-weight: bold;
-            color: #9c27b0;
-            font-size: 11px;
-            margin-bottom: 6px;
+        #highlightOverlay .trackHighlight {
+            background: rgba(100, 200, 255, 0.3) !important;
+            transition: background 0.3s ease-out;
         }
-
-        .syntaxChain {
-            font-family: 'Courier New', monospace;
-            color: #e0e0e0;
-            font-size: 10px;
-            margin-bottom: 4px;
-        }
-
-        .syntaxDesc {
-            color: #aaa;
-            font-size: 10px;
-            margin-left: 12px;
-            margin-bottom: 6px;
-            line-height: 1.4;
-        }
-
-        .syntaxExample {
-            font-family: 'Courier New', monospace;
-            color: #4a9eff;
-            font-size: 9px;
-            margin-left: 12px;
-            margin-bottom: 8px;
-            opacity: 0.8;
-        }
-
-        .hintItem {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 2px;
-        }
-
-        .hintKey {
-            font-family: 'Courier New', monospace;
-            color: #4a9eff;
-            font-weight: bold;
-            white-space: nowrap;
-        }
-
-        .hintDesc {
-            color: #aaa;
-            font-size: 10px;
-        }
-
-        #hintToggle {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(0, 0, 0, 0.7);
-            border: 2px solid #444;
-            color: #888;
-            font-size: 20px;
-            cursor: pointer;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            transition: all 0.2s;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-        }
-
-        #hintToggle:hover {
-            background: rgba(0, 0, 0, 0.9);
-            border-color: #666;
-            color: #e0e0e0;
-            transform: scale(1.1);
-        }
-
-        #hintToggle.visible {
-            display: flex;
-        }
-
-        #bpmDisplay {
-            color: #4a9eff;
-        }
-
-        #signatureDisplay {
-            color: #9c27b0;
-        }
-
-        #beatSequencer {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .beatCircle {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #444;
-            border: 1px solid #666;
-            transition: all 0.1s ease;
-        }
-
-        .beatCircle.active {
-            background: #4a9eff;
-            box-shadow: 0 0 8px #4a9eff;
-            border-color: #6bb5ff;
-            transform: scale(1.2);
-        }
+        .bracket-track-0 { color: #ff6b6b; }
+        .bracket-track-1 { color: #feca57; }
+        .bracket-track-2 { color: #ff9ff3; }
+        .bracket-track-3 { color: #a29bfe; }
+        .bracket-seq-0 { color: #00d2d3; }
+        .bracket-seq-1 { color: #fd79a8; }
+        .bracket-seq-2 { color: #fdcb6e; }
+        .bracket-seq-3 { color: #55efc4; }
     </style>
 </head>
 
-<body>
-    <div id="header">
-        <div id="headerLeft">
-            <span class="brand">ALiCA</span>
-            <span class="byline">by Zetvies</span>
+<body class="font-mono bg-dark-bg text-dark-text h-screen overflow-hidden">
+    <div id="header" class="flex fixed top-0 left-0 right-0 h-[50px] bg-dark-bg border-b border-dark-border flex items-center justify-between px-5 z-[1000] shadow-lg">
+        <div id="headerLeft" class="flex items-center text-xl font-bold text-dark-text">
+            <span class="brand text-xl">ALiCA</span>
+            <span class="byline text-[11px] text-dark-text-muted ml-1.5 font-normal">by Zetvies</span>
         </div>
-        <div id="headerMiddle">
-            <span id="bpmDisplay">BPM: --</span>
-            <span id="signatureDisplay">Signature: --/--</span>
-            <div id="beatSequencer"></div>
+        <div id="headerMiddle" class="flex items-center gap-5 text-[13px] font-bold text-dark-text">
+            <span id="bpmDisplay" class="text-blue-accent">BPM: --</span>
+            <span id="signatureDisplay" class="text-purple-accent">Signature: --/--</span>
+            <div id="beatSequencer" class="flex gap-1.5 items-center"></div>
         </div>
-        <div id="headerRight">
-            <div id="status" class="disconnected">Disconnected</div>
+        <div id="headerRight" class="flex items-center">
+            <div id="status" class="px-4 py-2 rounded text-xs font-bold bg-red-900/50 border border-red-700 text-red-300">Disconnected</div>
         </div>
     </div>
-    <div id="hint" class="hidden">
-        <div id="hintHeader">
-            <span id="hintTitle">Commands & Syntax</span>
-            <button id="hintClose" title="Hide hints">×</button>
+    <div id="hint" class="hidden fixed bottom-5 right-5 w-[500px] max-w-[calc(100vw-40px)] p-3 bg-black/85 rounded text-[11px] text-dark-text-muted z-[1000] shadow-xl">
+        <div id="hintHeader" class="flex justify-between items-center mb-2">
+            <span id="hintTitle" class="font-bold text-dark-text text-xs">Commands & Syntax</span>
+            <button id="hintClose" class="bg-transparent border-none text-dark-text-muted text-base cursor-pointer p-0 w-5 h-5 flex items-center justify-center rounded transition-all hover:bg-white/10 hover:text-dark-text" title="Hide hints">×</button>
         </div>
-        <div id="hintContent">
-            <div class="hintSection">
-                <div class="syntaxSectionTitle">Commands:</div>
-                <div class="hintCommandsGrid">
-                    <div class="hintItem">
-                        <span class="hintKey">Ctrl+/</span>
-                        <span class="hintDesc">Toggle Comment</span>
+        <div id="hintContent" class="flex flex-col gap-4 text-[11px] leading-relaxed">
+            <div class="hintSection flex flex-col gap-2">
+                <div class="syntaxSectionTitle font-bold text-blue-accent text-xs mb-2">Commands:</div>
+                <div class="hintCommandsGrid grid grid-cols-3 grid-rows-2 gap-2 gap-x-4">
+                    <div class="hintItem flex flex-col items-start gap-0.5">
+                        <span class="hintKey font-mono text-blue-accent font-bold whitespace-nowrap">Ctrl+/</span>
+                        <span class="hintDesc text-gray-400 text-[10px]">Toggle Comment</span>
                     </div>
-                    <div class="hintItem">
-                        <span class="hintKey">Ctrl+S</span>
-                        <span class="hintDesc">Loop Track in Next Cycle</span>
+                    <div class="hintItem flex flex-col items-start gap-0.5">
+                        <span class="hintKey font-mono text-blue-accent font-bold whitespace-nowrap">Ctrl+S</span>
+                        <span class="hintDesc text-gray-400 text-[10px]">Loop Track in Next Cycle</span>
                     </div>
-                    <div class="hintItem">
-                        <span class="hintKey">Ctrl+Shift+S</span>
-                        <span class="hintDesc">Loop Track Immediately</span>
+                    <div class="hintItem flex flex-col items-start gap-0.5">
+                        <span class="hintKey font-mono text-blue-accent font-bold whitespace-nowrap">Ctrl+Shift+S</span>
+                        <span class="hintDesc text-gray-400 text-[10px]">Loop Track Immediately</span>
                     </div>
-                    <div class="hintItem">
-                        <span class="hintKey">Ctrl+H</span>
-                        <span class="hintDesc">Stop All Loops</span>
+                    <div class="hintItem flex flex-col items-start gap-0.5">
+                        <span class="hintKey font-mono text-blue-accent font-bold whitespace-nowrap">Ctrl+H</span>
+                        <span class="hintDesc text-gray-400 text-[10px]">Stop All Loops</span>
                     </div>
-                    <div class="hintItem">
-                        <span class="hintKey">Ctrl+Enter</span>
-                        <span class="hintDesc">Play Track in Next Cycle</span>
+                    <div class="hintItem flex flex-col items-start gap-0.5">
+                        <span class="hintKey font-mono text-blue-accent font-bold whitespace-nowrap">Ctrl+Enter</span>
+                        <span class="hintDesc text-gray-400 text-[10px]">Play Track in Next Cycle</span>
                     </div>
-                    <div class="hintItem">
-                        <span class="hintKey">Ctrl+Shift+Enter</span>
-                        <span class="hintDesc">Play Track Immediately</span>
+                    <div class="hintItem flex flex-col items-start gap-0.5">
+                        <span class="hintKey font-mono text-blue-accent font-bold whitespace-nowrap">Ctrl+Shift+Enter</span>
+                        <span class="hintDesc text-gray-400 text-[10px]">Play Track Immediately</span>
                     </div>
                 </div>
             </div>
-            <div class="hintSection">
-                <div class="syntaxSectionTitle">Syntax:</div>
-                <div id="hintSyntax">
-                    <div class="syntaxSection">
-                        <div class="syntaxChain">t(cycleId).bpm(bpm).sn(num).sd(den).ds(delay).play([...])</div>
-                        <div class="syntaxDesc">
+            <div class="hintSection flex flex-col gap-2">
+                <div class="syntaxSectionTitle font-bold text-blue-accent text-xs mb-2">Syntax:</div>
+                <div id="hintSyntax" class="max-h-[400px] overflow-y-auto pr-1">
+                    <div class="syntaxSection mb-4">
+                        <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">t(cycleId).bpm(bpm).sn(num).sd(den).ds(delay).play([...])</div>
+                        <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                             <strong>t(cycleId):</strong> Track identifier (alphanumeric with _/-)<br>
                             <strong>.bpm(bpm):</strong> Override tempo (number or tmp*2/3*4)<br>
                             <strong>.sn(num):</strong> Time signature numerator (number or sn*2/3*4)<br>
@@ -538,13 +156,13 @@
                             etc. or milliseconds). Can also come after .play()<br>
                             <strong>.play([...]):</strong> Sequence/automation blocks to play
                         </div>
-                        <div class="syntaxExample">t(main).bpm(120).sn(4).sd(4).ds(bt*2).play([n(60)^4])</div>
-                        <div class="syntaxExample">t(automation).play([n(60) n(65)].c(2)).ds(bt*2)</div>
+                        <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">t(main).bpm(120).sn(4).sd(4).ds(bt*2).play([n(60)^4])</div>
+                        <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">t(automation).play([n(60) n(65)].c(2)).ds(bt*2)</div>
                     </div>
 
-                    <div class="syntaxSection">
-                        <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).pm(prob)</div>
-                        <div class="syntaxDesc">
+                    <div class="syntaxSection mb-4">
+                        <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">[sequence].t(type).c(channel).co(cutoff).pm(prob)</div>
+                        <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                             <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
                             <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat), bar (per bar)<br>
                             <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
@@ -553,13 +171,13 @@
                             <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence<br>
                             <strong>Note:</strong> Sequences can contain both notes and automation commands. Notes use Sequence MIDI output, automation uses Automation MIDI output.
                         </div>
-                        <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).pm(0.2)</div>
+                        <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">[n(60)^4 n(62)^4].t(fit).c(1).pm(0.2)</div>
                     </div>
 
-                    <div class="syntaxSection">
-                        <div class="syntaxSubsectionTitle">1. Note Syntax:</div>
-                        <div class="syntaxChain">n(value).d(duration).v(velocity).c(channel)</div>
-                        <div class="syntaxDesc">
+                    <div class="syntaxSection mb-4">
+                        <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">1. Note Syntax:</div>
+                        <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">n(value).d(duration).v(velocity).c(channel)</div>
+                        <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                             <strong>n(value):</strong> MIDI note (0-127), note token (c4, c#3), or randomizer<br>
                             <strong>.d(duration):</strong> Duration in ms, bt (duration of one beat)/br (duration of one
                             bar) tokens, optionally add multipliers (*2, /4)<br>
@@ -569,45 +187,45 @@
                             .pm(prob), .pmRange(min, max), .pr(prob), .prRange(min, max), .nArp(mode), .vArp(mode),
                             .dArp(mode), .pmArp(mode), .prArp(mode)
                         </div>
-                        <div class="syntaxExample">n(60).d(bt).v(80).c(1)</div>
+                        <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">n(60).d(bt).v(80).c(1)</div>
 
-                        <div class="syntaxSubsection">
-                            <div class="syntaxSubsectionTitle">Randomizers:</div>
-                            <div class="syntaxChain">r</div>
-                            <div class="syntaxDesc">Random value (notes default C1-C8, velocity 0-127). Use with ranges:
+                        <div class="syntaxSubsection ml-3 mb-3">
+                            <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">Randomizers:</div>
+                            <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">r</div>
+                            <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">Random value (notes default C1-C8, velocity 0-127). Use with ranges:
                                 .nRange(min, max), .vRange(min, max), .dRange(min, max), .pmRange(min, max),
                                 .prRange(min, max)</div>
-                            <div class="syntaxExample">n(r).nRange(c3, c5)<br>n(60).v(r).vRange(0.5,
+                            <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">n(r).nRange(c3, c5)<br>n(60).v(r).vRange(0.5,
                                 1.0)<br>n(60).d(r).dRange(bt/4, bt*2)<br>n(60).pm(r).pmRange(0.2,
                                 0.8)<br>n(60).pr(r).prRange(0.1, 0.3)</div>
 
-                            <div class="syntaxChain">r.o{value1, value2, ...}</div>
-                            <div class="syntaxDesc">Random selection from array. For notes, can use chord syntax:
+                            <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">r.o{value1, value2, ...}</div>
+                            <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">Random selection from array. For notes, can use chord syntax:
                                 &lt;c4,e4,g4&gt;, &lt;chord(c-maj7)&gt;, &lt;scale(c-ionian)&gt;. For duration, only
                                 even multipliers/divisors allowed (bt/2, bt/4, bt*2, bt*4, etc.)</div>
-                            <div class="syntaxExample">n(r.o{c4,d4,e4}) - notes<br>n(60).v(r.o{60,80,100,127}) -
+                            <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">n(r.o{c4,d4,e4}) - notes<br>n(60).v(r.o{60,80,100,127}) -
                                 velocity<br>n(60).d(r.o{bt/2,bt/4,bt}) -
                                 duration<br>n(r.o{&lt;c4,e4,g4&gt;,&lt;chord(c-maj7)&gt;}) - chord
                                 syntax<br>n(60).pm(r.o{0.2,0.5,0.8}) - mute probability</div>
                         </div>
 
-                        <div class="syntaxSubsection">
-                            <div class="syntaxSubsectionTitle">Chords:</div>
-                            <div class="syntaxChain">chord(root-quality)</div>
-                            <div class="syntaxDesc">
+                        <div class="syntaxSubsection ml-3 mb-3">
+                            <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">Chords:</div>
+                            <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">chord(root-quality)</div>
+                            <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                                 <strong>root:</strong> Note (c, d#, f, etc.)<br>
                                 <strong>quality:</strong> Triads: maj, min, dim, aug, sus2, sus4 | 7th: maj7, min7, 7,
                                 maj7#5, min7b5, dim7 | 9th: maj9, min9, 9, 9#5, min9b5, b9, #9 | 11th: maj11, min11, 11,
                                 #11 | 13th: maj13, min13, 13, 13b9, 13#9, 13#11 | Add: add9, add11, 6, 69, min6, min69 |
                                 Altered: alt, 7alt, no3, no5 | Sus: sus9, 7sus4
                             </div>
-                            <div class="syntaxExample">n(r.o{chord(c-maj7)})</div>
+                            <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">n(r.o{chord(c-maj7)})</div>
                         </div>
 
-                        <div class="syntaxSubsection">
-                            <div class="syntaxSubsectionTitle">Scale and Chord Preset:</div>
-                            <div class="syntaxChain">scale(root-mode)</div>
-                            <div class="syntaxDesc">
+                        <div class="syntaxSubsection ml-3 mb-3">
+                            <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">Scale and Chord Preset:</div>
+                            <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">scale(root-mode)</div>
+                            <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                                 <strong>root:</strong> Note (c, d#, f, etc.)<br>
                                 <strong>mode:</strong> Modes: ionian, dorian, phrygian, lydian, mixolydian, aeolian,
                                 locrian | Pentatonic: pentatonicMajor, pentatonicMinor, pentatonicBlues | Japanese:
@@ -616,14 +234,14 @@
                                 enigmatic, neapolitan, hungarianMinor, persian, arabic<br>
                                 <strong>.q(quality):</strong> Optional chord quality (any from chord qualities above)
                             </div>
-                            <div class="syntaxExample">n(r.o{scale(c-ionian)}).nRange(c3, c5)</div>
+                            <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">n(r.o{scale(c-ionian)}).nRange(c3, c5)</div>
                         </div>
 
-                        <div class="syntaxSubsection">
-                            <div class="syntaxSubsectionTitle">Arpeggiators:</div>
-                            <div class="syntaxChain">.nArp(mode) | .vArp(mode) | .dArp(mode) | .pmArp(mode) |
+                        <div class="syntaxSubsection ml-3 mb-3">
+                            <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">Arpeggiators:</div>
+                            <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">.nArp(mode) | .vArp(mode) | .dArp(mode) | .pmArp(mode) |
                                 .prArp(mode)</div>
-                            <div class="syntaxDesc">
+                            <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                                 Control how array values are selected from <strong>r.o{...}</strong>. Each parameter has
                                 its own independent arpeggiator.<br>
                                 <strong>Modes:</strong> random (default), up (ascending), down (descending), up-down
@@ -636,7 +254,7 @@
                                 Arrays are sorted by value, then reordered by mode. Position cycles across chunks and
                                 repeats.
                             </div>
-                            <div class="syntaxExample">
+                            <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">
                                 n(r.o{c4,e4,g4}).nArp(up) - notes ascending<br>
                                 n(r.o{&lt;chord(c-maj)&gt;,&lt;chord(f-maj)&gt;,&lt;chord(g-maj)&gt;})^3.nArp(up) -
                                 chord progression<br>
@@ -646,20 +264,20 @@
                         </div>
                     </div>
 
-                    <div class="syntaxSection">
-                        <div class="syntaxSubsectionTitle">2. Sequence Syntax:</div>
-                        <div class="syntaxChain">n(value1) n(value2) n(value3)^repeat</div>
-                        <div class="syntaxDesc">
+                    <div class="syntaxSection mb-4">
+                        <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">2. Sequence Syntax:</div>
+                        <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">n(value1) n(value2) n(value3)^repeat</div>
+                        <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                             Multiple notes form a sequence. Use ^N to repeat a note N times.
                         </div>
-                        <div class="syntaxExample">n(60).d(bt) n(62).d(bt) n(64)^4</div>
+                        <div class="syntaxExample font-mono text-blue-accent text-[9px] ml-3 mb-2 opacity-80">n(60).d(bt) n(62).d(bt) n(64)^4</div>
                     </div>
 
-                    <div class="syntaxSection">
-                        <div class="syntaxSubsectionTitle">4. Automation Syntax:</div>
-                        <div class="syntaxChain">a(controller).from(value).to(value).d(duration).e(easing).c(channel)
+                    <div class="syntaxSection mb-4">
+                        <div class="syntaxSubsectionTitle font-bold text-purple-accent text-[11px] mb-1.5">4. Automation Syntax:</div>
+                        <div class="syntaxChain font-mono text-dark-text text-[10px] mb-1">a(controller).from(value).to(value).d(duration).e(easing).c(channel)
                         </div>
-                        <div class="syntaxDesc">
+                        <div class="syntaxDesc text-gray-400 text-[10px] ml-3 mb-1.5 leading-snug">
                             <strong>a(controller):</strong> MIDI CC number 0-127 (e.g., 7=Volume, 10=Pan, 74=Filter Cutoff)<br>
                             <strong>.from(value):</strong> Start value 0-127 (default: 0)<br>
                             <strong>.to(value):</strong> End value 0-127 (default: 127)<br>
@@ -678,10 +296,10 @@
             </div>
         </div>
     </div>
-    <div id="hintToggle" class="visible">?</div>
-    <div id="editorContainer">
-        <div id="highlightOverlay"></div>
-        <textarea id="commandArea" placeholder="Type here to start..."></textarea>
+    <div id="hintToggle" class="fixed bottom-5 right-5 w-10 h-10 rounded-full bg-black/70 border-2 border-dark-border text-dark-text-muted text-xl cursor-pointer hidden items-center justify-center z-[1000] transition-all hover:bg-black/90 hover:border-gray-600 hover:text-dark-text hover:scale-110 shadow-xl">?</div>
+    <div id="editorContainer" class="relative w-full mt-[50px] h-[calc(100vh-50px)]">
+        <div id="highlightOverlay" class="absolute top-0 left-0 w-full h-full p-5 m-0 bg-dark-bg-alt box-border font-mono text-sm leading-relaxed whitespace-pre overflow-x-auto overflow-y-hidden pointer-events-none z-[1] tab-[2] text-dark-text"></div>
+        <textarea id="commandArea" class="w-full h-full p-5 bg-transparent border-none text-transparent font-mono text-sm leading-relaxed resize-none outline-none tab-[2] whitespace-pre overflow-x-auto relative z-[2] caret-dark-text placeholder:text-gray-600" placeholder="Type here to start..."></textarea>
     </div>
 
     <script>
@@ -773,14 +391,14 @@
 
                 ws.onopen = () => {
                     statusEl.textContent = 'Connected';
-                    statusEl.className = 'status connected';
+                    statusEl.className = 'px-4 py-2 rounded text-xs font-bold bg-green-900/50 border border-green-700 text-green-300';
                     reconnectAttempts = 0; // Reset on successful connection
                     console.log('WebSocket connected');
                 };
 
                 ws.onclose = (event) => {
                     statusEl.textContent = 'Disconnected';
-                    statusEl.className = 'status disconnected';
+                    statusEl.className = 'px-4 py-2 rounded text-xs font-bold bg-red-900/50 border border-red-700 text-red-300';
                     console.log('WebSocket disconnected', event.code, event.reason);
 
                     // Attempt to reconnect (unless it was a clean close or manual close)
@@ -792,7 +410,7 @@
                 ws.onerror = (error) => {
                     console.error('WebSocket error:', error);
                     statusEl.textContent = 'Error';
-                    statusEl.className = 'status disconnected';
+                    statusEl.className = 'px-4 py-2 rounded text-xs font-bold bg-red-900/50 border border-red-700 text-red-300';
                 };
 
                 ws.onmessage = (event) => {
@@ -2157,7 +1775,7 @@
 
             for (let i = 1; i <= beatsPerBar; i++) {
                 const circle = document.createElement('div');
-                circle.className = 'beatCircle';
+                circle.className = 'w-2.5 h-2.5 rounded-full bg-dark-border border border-gray-600 transition-all duration-100';
                 circle.id = `beat-${i}`;
                 sequencer.appendChild(circle);
             }
@@ -2174,14 +1792,16 @@
             currentBarNumber = barNumber || 0;
 
             // Remove active class from all circles
-            document.querySelectorAll('.beatCircle').forEach(circle => {
-                circle.classList.remove('active');
+            document.querySelectorAll('[id^="beat-"]').forEach(circle => {
+                circle.classList.remove('bg-blue-accent', 'shadow-[0_0_8px_#4a9eff]', 'border-blue-400', 'scale-125');
+                circle.classList.add('bg-dark-border', 'border-gray-600');
             });
 
             // Add active class to current beat
             const activeCircle = document.getElementById(`beat-${beatNumber}`);
             if (activeCircle) {
-                activeCircle.classList.add('active');
+                activeCircle.classList.remove('bg-dark-border', 'border-gray-600');
+                activeCircle.classList.add('bg-blue-accent', 'shadow-[0_0_8px_#4a9eff]', 'border-blue-400', 'scale-125');
             }
         }
 
@@ -2997,12 +2617,14 @@
 
         function hideHint() {
             hint.classList.add('hidden');
-            hintToggle.classList.add('visible');
+            hintToggle.classList.remove('hidden');
+            hintToggle.classList.add('flex');
         }
 
         function showHint() {
             hint.classList.remove('hidden');
-            hintToggle.classList.remove('visible');
+            hintToggle.classList.add('hidden');
+            hintToggle.classList.remove('flex');
         }
 
         if (hintClose) {
