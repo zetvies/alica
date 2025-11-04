@@ -151,7 +151,7 @@
 
         /* Purple */
 
-        /* Sequence-level brackets ([...], .c(), .ds(), etc.) */
+        /* Sequence-level brackets ([...], .c(), etc.) */
         .bracket-seq-0 {
             color: #00d2d3;
         }
@@ -2304,9 +2304,9 @@
                     const lookback = fullText.substring(0, globalIndex);
 
                     // Sequence modifiers
-                    const seqModifiers = ['.c', '.ds', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
+                    const seqModifiers = ['.c', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
                     // Track modifiers
-                    const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.stop'];
+                    const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.ds', '.stop'];
 
                     // Check what comes immediately before this bracket
                     const modifierMatch = lookback.match(/([a-zA-Z0-9_]+|\.\w+)\s*$/);
@@ -2352,7 +2352,7 @@
                     }
 
                     // Check for other track-level functions
-                    if (lookbackTrimmed.match(/(\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
+                    if (lookbackTrimmed.match(/(\.play|\.bpm|\.sn|\.sd|\.ds|\.stop)\s*\(\s*$/)) {
                         return { isSeq: false, reason: 'track-declaration-or-modifier' };
                     }
 
@@ -2415,6 +2415,21 @@
                         // All chained items (.nRange(), .nArp(), .n(), .a(), etc.) should share level 1 with n()/a()
                         let isModifier = false;
                         let modifierParentLevel = null;
+                        let isModifierAfterBracket = false; // Track if modifier comes right after ]
+                        
+                        // Check if this is a sequence modifier that comes right after ]
+                        if (char === '(' && isSeqBracket && !insideSeqBlock) {
+                            const lookbackRaw = fullText.substring(0, charIndex);
+                            const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
+                            // Check if this modifier comes right after ]
+                            const modifierAfterBracketMatch = lookbackNoWS.match(/\]\.(?:c|co|nRange|vRange|dRange|nArp|vArp|dArp|pm|pr|v|d|p|n|a)$/);
+                            if (modifierAfterBracketMatch) {
+                                isModifierAfterBracket = true;
+                                isModifier = true;
+                                modifierParentLevel = 0; // Same level as brackets
+                            }
+                        }
+                        
                         if (char === '(' && isSeqBracket && insideSeqBlock) {
                             // Look back to see if this is a modifier or chained function
                             // Get text before this position, remove all whitespace for matching
@@ -2473,7 +2488,12 @@
                             insideSeqBlock = true;
                             seqLevel = 1;
                         } else if (isSeqBracket) {
-                            if (isModifier && modifierParentLevel !== null) {
+                            if (isModifierAfterBracket) {
+                                // Modifier right after ] - same level as brackets (level 0)
+                                level = 0;
+                                insideSeqBlock = true; // Treat as still part of sequence
+                                seqLevel = 1;
+                            } else if (isModifier && modifierParentLevel !== null) {
                                 // Use level 1 for all chained items (modifiers and chained functions)
                                 level = modifierParentLevel;
                                 // Don't increment seqLevel - chained items share the same level
@@ -2569,7 +2589,7 @@
                                 if (wasSeqBracket) {
                                     if (char === ']') {
                                         seqLevel = 0;
-                                        insideSeqBlock = false;
+                                        insideSeqBlock = false; // Set to false, but modifiers after ] will be detected and handled
                                     } else {
                                         // Only decrement seqLevel if this wasn't a modifier
                                         // Modifiers don't increment seqLevel, so they shouldn't decrement it
@@ -2577,6 +2597,11 @@
                                             seqLevel = Math.max(0, seqLevel - 1);
                                         }
                                         // If it was a modifier, seqLevel stays the same
+                                        // If modifierParentLevel is 0, it means it's a modifier after ] - keep insideSeqBlock true
+                                        if (lastBracket.modifierParentLevel !== 0) {
+                                            // Only set insideSeqBlock false if this wasn't a modifier after ]
+                                            // (Other modifiers inside sequence block will be handled by other logic)
+                                        }
                                     }
                                 } else {
                                     // Check if this closing bracket is for t()
@@ -2715,9 +2740,9 @@
 
                 if (char === '(' || char === ')') {
                     // Sequence modifiers - these are always sequence level
-                    const seqModifiers = ['.c', '.ds', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
+                    const seqModifiers = ['.c', '.co', '.nRange', '.vRange', '.dRange', '.nArp', '.vArp', '.dArp', '.pm', '.pr', '.v', '.d', '.p', '.n', '.a'];
                     // Track modifiers - these are always track level
-                    const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.stop'];
+                    const trackModifiers = ['.play', '.bpm', '.sn', '.sd', '.ds', '.stop'];
 
                     // Check what comes immediately before this bracket
                     const modifierMatch = lookback.match(/([a-zA-Z0-9_]+|\.\w+)\s*$/);
@@ -2768,8 +2793,8 @@
                     }
 
                     // Check for track-level function calls first (before checking sequence block)
-                    // Check if it's t(, .play(, .bpm(, .sn(, .sd(, .stop(
-                    if (lookback.trim().match(/(t|\.play|\.bpm|\.sn|\.sd|\.stop)\s*\(\s*$/)) {
+                    // Check if it's t(, .play(, .bpm(, .sn(, .sd(, .ds(, .stop(
+                    if (lookback.trim().match(/(t|\.play|\.bpm|\.sn|\.sd|\.ds|\.stop)\s*\(\s*$/)) {
                         return { isSeq: false, reason: 'track-declaration-or-modifier' };
                     }
 
