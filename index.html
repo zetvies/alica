@@ -1194,25 +1194,8 @@
             return null;
         }
 
-        // Highlight the current track for a brief moment
-        function highlightTrackBriefly() {
-            if (!highlightOverlay) {
-                highlightOverlay = document.getElementById('highlightOverlay');
-                if (!highlightOverlay) return;
-            }
-
-            const trackInfo = findCurrentTrackWithPosition();
-            if (!trackInfo) return;
-
-            // Get all character spans in the overlay
-            const chars = highlightOverlay.querySelectorAll('.char, .bracket, .error');
-
-            if (chars.length === 0) return;
-
-            const fullText = commandArea.value;
-            const trackStart = trackInfo.start;
-            const trackEnd = trackInfo.end;
-
+        // Highlight a track range (helper function)
+        function highlightTrackRange(trackStart, trackEnd, chars, spansToHighlight) {
             // Find spans that correspond to the track range
             // Since spans are in order and map 1:1 with characters, we can use position counting
             let charCount = 0;
@@ -1238,23 +1221,87 @@
                 }
             }
 
-            // If we found the range, highlight all spans in between
+            // If we found the range, add all spans in between to the highlight list
             if (startSpanIndex !== -1) {
                 const endIndex = endSpanIndex !== -1 ? endSpanIndex : chars.length;
-                const spansToHighlight = [];
 
                 for (let i = startSpanIndex; i <= endIndex && i < chars.length; i++) {
                     const span = chars[i];
-                    span.classList.add('trackHighlight');
-                    spansToHighlight.push(span);
+                    if (!spansToHighlight.includes(span)) {
+                        span.classList.add('trackHighlight');
+                        spansToHighlight.push(span);
+                    }
                 }
+            }
+        }
+
+        // Highlight the current track for a brief moment
+        function highlightTrackBriefly() {
+            if (!highlightOverlay) {
+                highlightOverlay = document.getElementById('highlightOverlay');
+                if (!highlightOverlay) return;
+            }
+
+            // Get all character spans in the overlay
+            const chars = highlightOverlay.querySelectorAll('.char, .bracket, .error');
+
+            if (chars.length === 0) return;
+
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            const hasSelection = start !== end;
+
+            // Check if selection contains multiple tracks
+            let tracksToHighlight = [];
+            if (hasSelection) {
+                const selectedText = fullText.substring(start, end);
+                const selectedTracks = findAllTracks(selectedText);
+                
+                // Check if all text is selected
+                const allTextSelected = hasSelection && start === 0 && end === fullText.length;
+                
+                if (allTextSelected || selectedTracks.length > 1) {
+                    // Multiple tracks selected: highlight all of them
+                    const tracksToProcess = allTextSelected ? findAllTracks(fullText) : selectedTracks;
+                    tracksToHighlight = tracksToProcess.map(trackInfo => ({
+                        start: trackInfo.start + (allTextSelected ? 0 : start),
+                        end: trackInfo.end + (allTextSelected ? 0 : start)
+                    }));
+                }
+            }
+
+            // If we have multiple tracks to highlight, use them; otherwise use single track behavior
+            if (tracksToHighlight.length > 0) {
+                const spansToHighlight = [];
+                tracksToHighlight.forEach(trackRange => {
+                    highlightTrackRange(trackRange.start, trackRange.end, chars, spansToHighlight);
+                });
 
                 // Remove highlight after 500ms
-                setTimeout(() => {
-                    spansToHighlight.forEach(span => {
-                        span.classList.remove('trackHighlight');
-                    });
-                }, 500);
+                if (spansToHighlight.length > 0) {
+                    setTimeout(() => {
+                        spansToHighlight.forEach(span => {
+                            span.classList.remove('trackHighlight');
+                        });
+                    }, 500);
+                }
+            } else {
+                // Single track behavior: highlight current track at cursor
+                const trackInfo = findCurrentTrackWithPosition();
+                if (!trackInfo) return;
+
+                const spansToHighlight = [];
+                highlightTrackRange(trackInfo.start, trackInfo.end, chars, spansToHighlight);
+
+                // Remove highlight after 500ms
+                if (spansToHighlight.length > 0) {
+                    setTimeout(() => {
+                        spansToHighlight.forEach(span => {
+                            span.classList.remove('trackHighlight');
+                        });
+                    }, 500);
+                }
             }
         }
 
