@@ -71,13 +71,11 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
 ```
 .
 ├── src/
-│   ├── modules/
-│   │   ├── musicTheory.js      # Note parsing, scales, chords
-│   │   ├── midiHandler.js       # MIDI output functions
-│   │   ├── sequenceParser.js    # Sequence parsing utilities
-│   │   └── sequencePlayer.js    # Sequence execution
-│   ├── oscHandler.js            # OSC reception and beat calculation
-│   └── server.js                # Main server setup
+│   └── modules/
+│       ├── musicTheory.js      # Note parsing, scales, chords
+│       ├── midiHandler.js      # MIDI output functions (notes & CC automation)
+│       └── modulator.js        # Modulation/interpolation utilities
+├── server.js                   # Main server (OSC, parsing, playback)
 ├── docs/
 │   └── SYNTAX.md                # Complete syntax documentation
 ├── index.html                   # Web interface (p5.js)
@@ -87,13 +85,14 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
 
 ## Components
 
-### Server (`src/server.js`)
+### Server (`server.js`)
 
 Node.js Express server that:
 - Receives OSC messages from Ableton Live
 - Calculates bars and beats from tempo/time signature
 - Parses and executes ALiCA sequences
 - Sends MIDI notes to Ableton Live
+- Handles MIDI CC automation and streaming
 - Broadcasts beat data via WebSocket
 
 ### Web Interface (`index.html` + `sketch.js`)
@@ -114,34 +113,19 @@ Handles:
 ### MIDI Handler (`src/modules/midiHandler.js`)
 
 Manages:
-- MIDI output initialization
+- MIDI output initialization (separate outputs for sequences and automation)
 - Note on/off sending
+- MIDI Control Change (CC) messages
+- CC value streaming with smooth interpolation
 - MIDI channel management
 
-### Sequence Parser (`src/modules/sequenceParser.js`)
+### Modulator Module (`src/modules/modulator.js`)
 
-Parses:
-- Note syntax and parameters
-- Array randomizers (`r.o{...}`)
-- Scale and chord syntax
-- Duration tokens
-- Range constraints
-
-### Sequence Player (`src/modules/sequencePlayer.js`)
-
-Executes:
-- Sequence playback
-- Randomization and probability
-- Arpeggiator patterns
-- Timing calculations (fit/beat/bar)
-
-### OSC Handler (`src/oscHandler.js`)
-
-Manages:
-- UDP server for OSC messages
-- Tempo and time signature updates
-- Song time tracking
-- Bar/beat calculation
+Provides:
+- Value interpolation functions
+- Easing functions (linear, easeIn, easeOut, easeInOut, etc.)
+- Variable modulation over time
+- Used by MIDI handler for smooth CC automation
 
 ## API Endpoints
 
@@ -164,12 +148,17 @@ npm start
 
 ## Configuration
 
-### MIDI Output
+### MIDI Outputs
 
-By default, ALiCA uses the MIDI output named `"Virtual Loop Back"`. To change this, edit `src/modules/midiHandler.js`:
+ALiCA uses two separate MIDI outputs for independent control:
+- **Sequence Loop Back**: For sending MIDI notes
+- **Automation Loop Back**: For sending CC automation messages
+
+To change these, edit `src/modules/midiHandler.js`:
 
 ```javascript
-const selectedName = 'Your MIDI Output Name';
+const sequenceOutputName = 'Your Sequence MIDI Output';
+const automationOutputName = 'Your Automation MIDI Output';
 ```
 
 ### Port Configuration

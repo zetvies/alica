@@ -30,7 +30,8 @@ Created organized directory structure:
 ├── src/
 │   └── modules/
 │       ├── musicTheory.js # Music theory utilities (scales, chords, notes)
-│       └── midiHandler.js # MIDI output functions
+│       ├── midiHandler.js  # MIDI output functions (notes and CC automation)
+│       └── modulator.js   # Modulation/interpolation utilities
 ├── server.js              # Main server (to be migrated to src/server.js)
 ├── index.html             # Web interface
 ├── sketch.js              # p5.js sketch
@@ -46,15 +47,38 @@ Extracted music theory functions:
 - `scaleToMidiNotes(root, scaleName, octave)`: Generates scale notes
 - `chordToMidiNotes(root, quality, octave)`: Generates chord notes
 - `generateScaleChordNotes(scaleChordStr, minMidi, maxMidi)`: Generates notes within range
+- `getScaleIntervals(scaleName)`: Gets scale interval definition (case-insensitive)
 - `SCALE_DEFINITIONS`: 30+ scale definitions
 - `CHORD_QUALITIES`: 40+ chord quality definitions
 
 #### `src/modules/midiHandler.js`
 
 Extracted MIDI functionality:
-- `initializeMidi()`: Initializes MIDI output
+- `initializeMidi()`: Initializes MIDI outputs (separate for sequences and automation)
 - `sendNote(note, velocity, duration, channel)`: Sends MIDI note
-- `closeMidi()`: Closes MIDI output
+- `sendCC(controller, value, channel, debug)`: Sends MIDI Control Change message
+- `streamCC(controller, startValue, endValue, duration, channel, easing, updateInterval, streamId)`: Streams CC values with smooth interpolation
+- `streamMultipleCC(ccStreams)`: Streams multiple CC values simultaneously
+- `stopCCStream(streamId)`: Stops a specific CC stream
+- `stopAllCCStreams()`: Stops all active CC streams
+- `getActiveCCStreams()`: Returns list of active CC stream IDs
+- `closeMidi()`: Closes MIDI outputs and stops all streams
+
+**MIDI Outputs:**
+- **Sequence Loop Back**: For sending MIDI notes
+- **Automation Loop Back**: For sending CC automation messages
+
+#### `src/modules/modulator.js`
+
+Modulation/interpolation utilities:
+- `createModulator(startValue, endValue, duration, easing)`: Creates a modulator function for smooth value interpolation
+- `modulateVariable(variableObj, startValue, endValue, duration, easing)`: Modulates a variable object's value over time
+- `lerp(startValue, endValue, t, easing)`: Simple linear interpolation between two values
+
+**Easing Functions:**
+- `linear`, `easeIn`, `easeOut`, `easeInOut`
+- `easeInQuad`, `easeOutQuad`, `easeInOutQuad`
+- `easeInCubic`, `easeOutCubic`, `easeInOutCubic`
 
 ### 4. Documentation
 

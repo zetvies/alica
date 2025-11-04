@@ -37,6 +37,13 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 │  ┌──────────────────────────┐  │
 │  │  MIDI Handler            │  │
 │  │  - Sends MIDI notes      │  │
+│  │  - Sends CC automation   │  │
+│  │  - Streams CC values     │  │
+│  └──────────────────────────┘  │
+│  ┌──────────────────────────┐  │
+│  │  Modulator Module        │  │
+│  │  - Value interpolation   │  │
+│  │  - Easing functions      │  │
 │  └──────────────────────────┘  │
 │  ┌──────────────────────────┐  │
 │  │  WebSocket Server        │  │
@@ -44,7 +51,8 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 │  └──────────────────────────┘  │
 └─────────┬───────────────────────┘
           │
-          ├───► MIDI Output (Virtual Loop Back)
+          ├───► MIDI Output: Sequence Loop Back (Notes)
+          ├───► MIDI Output: Automation Loop Back (CC)
           │
           └───► WebSocket (WS 4254)
                    │
@@ -86,10 +94,11 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 - `scaleToMidiNotes(root, scaleName, octave)`: Generates scale notes
 - `chordToMidiNotes(root, quality, octave)`: Generates chord notes
 - `generateScaleChordNotes(scaleChordStr, minMidi, maxMidi)`: Generates notes within range
+- `getScaleIntervals(scaleName)`: Gets scale interval definition (case-insensitive lookup)
 
 **Data:**
-- `SCALE_DEFINITIONS`: Scale interval definitions
-- `CHORD_QUALITIES`: Chord interval definitions
+- `SCALE_DEFINITIONS`: Scale interval definitions (30+ scales)
+- `CHORD_QUALITIES`: Chord interval definitions (40+ chord qualities)
 
 ### 3. Sequence Parser
 
@@ -136,14 +145,27 @@ ALiCA (Ableton Live Coding Automation) is a live coding system that connects to 
 **File:** `src/modules/midiHandler.js`
 
 **Functions:**
-- `initializeMidi()`: Initializes MIDI output
+- `initializeMidi()`: Initializes MIDI outputs (separate for sequences and automation)
 - `sendNote(note, velocity, duration, channel)`: Sends MIDI note
-- `closeMidi()`: Closes MIDI output
+- `sendCC(controller, value, channel, debug)`: Sends MIDI Control Change message
+- `streamCC(controller, startValue, endValue, duration, channel, easing, updateInterval, streamId)`: Streams CC values with smooth interpolation
+- `streamMultipleCC(ccStreams)`: Streams multiple CC values simultaneously
+- `stopCCStream(streamId)`: Stops a specific CC stream
+- `stopAllCCStreams()`: Stops all active CC streams
+- `getActiveCCStreams()`: Returns list of active CC stream IDs
+- `closeMidi()`: Closes MIDI outputs and stops all streams
 
-**MIDI Output:**
+**MIDI Outputs:**
 - Uses `easymidi` library
-- Default output: "Virtual Loop Back"
-- Sends note on/off messages
+- **Sequence Loop Back**: For sending MIDI notes (note on/off messages)
+- **Automation Loop Back**: For sending CC automation messages
+- Separate outputs allow independent control of sequences and automation
+
+**CC Streaming:**
+- Smooth interpolation between start and end values
+- Supports multiple easing functions (linear, easeIn, easeOut, easeInOut, etc.)
+- Configurable update intervals (default: 20ms for smooth 50fps updates)
+- Stream IDs for tracking and stopping individual streams
 
 ### 6. Web Interface
 
@@ -253,9 +275,29 @@ Ableton Live
 - Supports notes, velocities, pans, durations
 - Can contain scale/chord syntax
 
+### 6. Modulator Module
+
+**File:** `src/modules/modulator.js`
+
+**Functions:**
+- `createModulator(startValue, endValue, duration, easing)`: Creates a modulator function for smooth value interpolation
+- `modulateVariable(variableObj, startValue, endValue, duration, easing)`: Modulates a variable object's value over time
+- `lerp(startValue, endValue, t, easing)`: Simple linear interpolation between two values
+
+**Easing Functions:**
+- `linear`: Constant speed
+- `easeIn`: Slow start, fast end
+- `easeOut`: Fast start, slow end
+- `easeInOut`: Slow start and end, fast middle
+- Additional: `easeInQuad`, `easeOutQuad`, `easeInOutQuad`, `easeInCubic`, `easeOutCubic`, `easeInOutCubic`
+
+**Usage:**
+- Used by `midiHandler.js` for smooth CC automation
+- Provides interpolation for parameter modulation over time
+
 ## Future Improvements
 
-1. **Modularization**: Further split `server.js` into smaller modules
+1. **Modularization**: Further split `server.js` into smaller modules (sequenceParser, sequencePlayer, oscHandler)
 2. **API Endpoints**: REST API for sending sequences
 3. **Sequence Editor**: Web-based sequence editor
 4. **Preset System**: Save/load sequence presets

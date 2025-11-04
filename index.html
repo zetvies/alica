@@ -546,11 +546,12 @@
                         <div class="syntaxChain">[sequence].t(type).c(channel).co(cutoff).pm(prob)</div>
                         <div class="syntaxDesc">
                             <strong>[sequence]:</strong> Notes/automation wrapped in brackets<br>
-                            <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat)<br>
+                            <strong>.t(type):</strong> Timing: fit (evenly in bar), beat (per beat), bar (per bar)<br>
                             <strong>.c(channel):</strong> MIDI channel 1-16 or array &lt;1,2,3&gt;<br>
                             <strong>.co(cutoff):</strong> Duration token for cutoff: bt, br, or with multipliers (bt*2,
                             br/2, etc.)<br>
-                            <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence
+                            <strong>.pm(prob):</strong> Mute probability 0-1 for entire sequence<br>
+                            <strong>Note:</strong> Sequences can contain both notes and automation commands. Notes use Sequence MIDI output, automation uses Automation MIDI output.
                         </div>
                         <div class="syntaxExample">[n(60)^4 n(62)^4].t(fit).c(1).pm(0.2)</div>
                     </div>
@@ -659,17 +660,19 @@
                         <div class="syntaxChain">a(controller).from(value).to(value).d(duration).e(easing).c(channel)
                         </div>
                         <div class="syntaxDesc">
-                            <strong>a(controller):</strong> MIDI CC number 0-127<br>
+                            <strong>a(controller):</strong> MIDI CC number 0-127 (e.g., 7=Volume, 10=Pan, 74=Filter Cutoff)<br>
                             <strong>.from(value):</strong> Start value 0-127 (default: 0)<br>
                             <strong>.to(value):</strong> End value 0-127 (default: 127)<br>
                             <strong>.d(duration):</strong> Duration in ms or tokens: bt, br, or with multipliers (bt*2,
-                            br/2, etc.)<br>
+                            br/2, etc.) - smoothly interpolates from start to end over this duration<br>
                             <strong>.e(easing):</strong> Easing function: linear, easeIn, easeOut, easeInOut,
                             easeInQuad, easeOutQuad, easeInOutQuad, easeInCubic, easeOutCubic, easeInOutCubic (default:
                             linear)<br>
-                            <strong>.c(channel):</strong> MIDI channel 1-16 (optional)
+                            <strong>.c(channel):</strong> MIDI channel 1-16 (optional)<br>
+                            <strong>Note:</strong> Automation uses separate MIDI output for smooth CC streaming. Values are interpolated at 50fps (20ms intervals) for fluid parameter control.
                         </div>
                         <div class="syntaxExample">[a(7).from(0).to(127).d(bt).e(easeInOut)].t(beat).c(1)</div>
+                        <div class="syntaxExample">[a(74).from(0).to(127).d(br).e(easeOut)].t(beat).c(1) - Filter sweep</div>
                     </div>
                 </div>
             </div>
