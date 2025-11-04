@@ -2436,8 +2436,8 @@
                             const lookbackRaw = fullText.substring(0, charIndex);
                             const lookbackNoWS = lookbackRaw.replace(/\s+/g, '');
 
-                            // Match modifiers like .nRange, .nArp, etc. at the end of the lookback
-                            const modifierMatch = lookbackNoWS.match(/(\.(?:nRange|vRange|dRange|nArp|vArp|dArp|pm|pr|v|d|p))$/);
+                            // Match modifiers like .c, .co, .nRange, .nArp, etc. at the end of the lookback
+                            const modifierMatch = lookbackNoWS.match(/(\.(?:c|co|nRange|vRange|dRange|nArp|vArp|dArp|pm|pr|v|d|p))$/);
 
                             // Also check if this is .n() or .a() that comes after a closing parenthesis
                             const chainFunctionMatch = lookbackNoWS.match(/(\.(?:n|a))$/);
@@ -2445,7 +2445,7 @@
                             let isChainItem = false;
 
                             if (modifierMatch) {
-                                // This is definitely a modifier
+                                // This is definitely a modifier - any modifier inside sequence block is a chain item
                                 isChainItem = true;
                             } else if (chainFunctionMatch) {
                                 // This might be a chained .n() or .a()
