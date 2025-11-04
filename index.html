@@ -850,6 +850,78 @@
             return stopMatch !== null;
         }
 
+        // Find all t(...).play(...) tracks in the text (handles modifiers like .bpm(), .sn(), .sd(), .ds())
+        function findAllTracks(text) {
+            if (!text) return [];
+            const tracks = [];
+            let searchStart = 0;
+            
+            while (true) {
+                const tIndex = text.indexOf('t(', searchStart);
+                if (tIndex === -1) break;
+                
+                // Find matching closing parenthesis for t(...)
+                let tDepth = 1;
+                let tPos = tIndex + 2; // After 't('
+                while (tPos < text.length && tDepth > 0) {
+                    if (text[tPos] === '(') tDepth++;
+                    else if (text[tPos] === ')') tDepth--;
+                    tPos++;
+                }
+                if (tDepth !== 0) {
+                    // Unmatched parentheses, skip
+                    searchStart = tIndex + 2;
+                    continue;
+                }
+                
+                // Now look for .play( after t(...) and any modifiers
+                let pos = tPos;
+                let inPlay = false;
+                let playStartPos = -1;
+                let playEndPos = -1;
+                let depth = 0;
+                
+                while (pos < text.length) {
+                    // Check for .play(, .bpm(, .sn(, .sd(, .ds(, or next t(
+                    if (text.substring(pos).startsWith('.play(')) {
+                        inPlay = true;
+                        playStartPos = pos + 6; // Position after '.play('
+                        pos += 6; // Skip '.play('
+                        depth = 1;
+                        continue;
+                    } else if (text.substring(pos).startsWith('t(')) {
+                        // Found another track start, stop here
+                        break;
+                    }
+                    
+                    if (text[pos] === '(') depth++;
+                    else if (text[pos] === ')') {
+                        depth--;
+                        if (inPlay && depth === 0) {
+                            // Found complete t(...).play(...)
+                            playEndPos = pos + 1;
+                            const track = text.substring(tIndex, playEndPos);
+                            tracks.push({
+                                track: track,
+                                start: tIndex,
+                                end: playEndPos
+                            });
+                            searchStart = playEndPos;
+                            break;
+                        }
+                    }
+                    pos++;
+                }
+                
+                if (!inPlay || playEndPos === -1) {
+                    // No complete track found, skip this t(
+                    searchStart = tIndex + 2;
+                }
+            }
+            
+            return tracks;
+        }
+
         // Find the t(...).play(...) or t(...).play(...).stop() wrapper that contains the cursor/selection
         function findCurrentTrack() {
             const fullText = commandArea.value;
@@ -1281,35 +1353,115 @@
             });
         }
 
-        // Queue playCycle for current track
+        // Queue playCycle for current track(s) - handles multiple tracks concurrently based on selection
         function queuePlayCycleForCurrentTrack() {
-            const track = findCurrentTrack();
-            if (!track) {
-                console.warn('No t() track found');
-                return;
-            }
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            const hasSelection = start !== end;
+            
+            // Check if all text is selected
+            const allTextSelected = hasSelection && start === 0 && end === fullText.length;
+            
+            if (!hasSelection) {
+                // No selection: use single track behavior (current track at cursor)
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found at cursor');
+                    return;
+                }
 
-            // Check if it's a stop command
-            if (isStopSyntax(track)) {
-                const normalized = normalizeWhitespace(track);
+                // Check if it's a stop command
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({
+                        action: 'playTrack', // Use any action, server will detect stop syntax
+                        cycleStr: normalized
+                    });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
                 sendToServer({
-                    action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: normalized
+                    action: 'addCycleToQueue',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
                 });
                 return;
             }
+            
+            // Has selection: check if selection contains multiple tracks
+            const selectedText = fullText.substring(start, end);
+            const selectedTracks = findAllTracks(selectedText);
+            
+            // Only use concurrent behavior if:
+            // 1. All text is selected, OR
+            // 2. Selection contains multiple tracks
+            if (allTextSelected || selectedTracks.length > 1) {
+                // Process all tracks concurrently
+                const tracksToProcess = allTextSelected ? findAllTracks(fullText) : selectedTracks;
+                console.log(`[QUEUE] Found ${tracksToProcess.length} track(s) in ${allTextSelected ? 'all text' : 'selection'}, queuing all concurrently`);
+                
+                tracksToProcess.forEach(trackInfo => {
+                    const track = trackInfo.track;
+                    
+                    // Check if it's a stop command
+                    if (isStopSyntax(track)) {
+                        const normalized = normalizeWhitespace(track);
+                        sendToServer({
+                            action: 'playTrack', // Use any action, server will detect stop syntax
+                            cycleStr: normalized
+                        });
+                        return;
+                    }
 
-            const cleanTrack = removeComments(track);
-            const normalizedTrack = normalizeWhitespace(cleanTrack);
-            const parsed = parseMethodChain(normalizedTrack);
-            sendToServer({
-                action: 'addCycleToQueue',
-                id: null,
-                cycleStr: normalizedTrack,
-                tempo: parsed?.tempo || null,
-                signatureNumerator: parsed?.sn || null,
-                signatureDenominator: parsed?.sd || null
-            });
+                    const cleanTrack = removeComments(track);
+                    const normalizedTrack = normalizeWhitespace(cleanTrack);
+                    const parsed = parseMethodChain(normalizedTrack);
+                    sendToServer({
+                        action: 'addCycleToQueue',
+                        id: null,
+                        cycleStr: normalizedTrack,
+                        tempo: parsed?.tempo || null,
+                        signatureNumerator: parsed?.sn || null,
+                        signatureDenominator: parsed?.sd || null
+                    });
+                });
+            } else {
+                // Single track in selection: use single track behavior
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found in selection');
+                    return;
+                }
+
+                // Check if it's a stop command
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({
+                        action: 'playTrack', // Use any action, server will detect stop syntax
+                        cycleStr: normalized
+                    });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
+                sendToServer({
+                    action: 'addCycleToQueue',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
+                });
+            }
         }
 
         // Queue playTrack for selected lines
@@ -1355,35 +1507,115 @@
             });
         }
 
-        // Queue playTrack for current track
+        // Queue playTrack for current track(s) - handles multiple tracks concurrently based on selection
         function queuePlayTrackForCurrentTrack() {
-            const track = findCurrentTrack();
-            if (!track) {
-                console.warn('No t() track found');
-                return;
-            }
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            const hasSelection = start !== end;
+            
+            // Check if all text is selected
+            const allTextSelected = hasSelection && start === 0 && end === fullText.length;
+            
+            if (!hasSelection) {
+                // No selection: use single track behavior (current track at cursor)
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found at cursor');
+                    return;
+                }
 
-            // Check if it's a stop command
-            if (isStopSyntax(track)) {
-                const normalized = normalizeWhitespace(track);
+                // Check if it's a stop command
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({
+                        action: 'playTrack', // Use any action, server will detect stop syntax
+                        cycleStr: normalized
+                    });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
                 sendToServer({
-                    action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: normalized
+                    action: 'addTrackToQueue',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
                 });
                 return;
             }
+            
+            // Has selection: check if selection contains multiple tracks
+            const selectedText = fullText.substring(start, end);
+            const selectedTracks = findAllTracks(selectedText);
+            
+            // Only use concurrent behavior if:
+            // 1. All text is selected, OR
+            // 2. Selection contains multiple tracks
+            if (allTextSelected || selectedTracks.length > 1) {
+                // Process all tracks concurrently
+                const tracksToProcess = allTextSelected ? findAllTracks(fullText) : selectedTracks;
+                console.log(`[QUEUE] Found ${tracksToProcess.length} track(s) in ${allTextSelected ? 'all text' : 'selection'}, queuing all concurrently`);
+                
+                tracksToProcess.forEach(trackInfo => {
+                    const track = trackInfo.track;
+                    
+                    // Check if it's a stop command
+                    if (isStopSyntax(track)) {
+                        const normalized = normalizeWhitespace(track);
+                        sendToServer({
+                            action: 'playTrack', // Use any action, server will detect stop syntax
+                            cycleStr: normalized
+                        });
+                        return;
+                    }
 
-            const cleanTrack = removeComments(track);
-            const normalizedTrack = normalizeWhitespace(cleanTrack);
-            const parsed = parseMethodChain(normalizedTrack);
-            sendToServer({
-                action: 'addTrackToQueue',
-                id: null,
-                cycleStr: normalizedTrack,
-                tempo: parsed?.tempo || null,
-                signatureNumerator: parsed?.sn || null,
-                signatureDenominator: parsed?.sd || null
-            });
+                    const cleanTrack = removeComments(track);
+                    const normalizedTrack = normalizeWhitespace(cleanTrack);
+                    const parsed = parseMethodChain(normalizedTrack);
+                    sendToServer({
+                        action: 'addTrackToQueue',
+                        id: null,
+                        cycleStr: normalizedTrack,
+                        tempo: parsed?.tempo || null,
+                        signatureNumerator: parsed?.sn || null,
+                        signatureDenominator: parsed?.sd || null
+                    });
+                });
+            } else {
+                // Single track in selection: use single track behavior
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found in selection');
+                    return;
+                }
+
+                // Check if it's a stop command
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({
+                        action: 'playTrack', // Use any action, server will detect stop syntax
+                        cycleStr: normalized
+                    });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
+                sendToServer({
+                    action: 'addTrackToQueue',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
+                });
+            }
         }
 
         // Play playCycle for selected lines (immediate)
@@ -1504,35 +1736,115 @@
             });
         }
 
-        // Play playTrack for current track (immediate)
+        // Play playTrack for current track(s) (immediate) - handles multiple tracks concurrently based on selection
         function playTrackForCurrentTrack() {
-            const track = findCurrentTrack();
-            if (!track) {
-                console.warn('No t() track found');
-                return;
-            }
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            const hasSelection = start !== end;
+            
+            // Check if all text is selected
+            const allTextSelected = hasSelection && start === 0 && end === fullText.length;
+            
+            if (!hasSelection) {
+                // No selection: use single track behavior (current track at cursor)
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found at cursor');
+                    return;
+                }
 
-            // Check if it's a stop command
-            if (isStopSyntax(track)) {
-                const normalized = normalizeWhitespace(track);
+                // Check if it's a stop command
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({
+                        action: 'playTrack', // Use any action, server will detect stop syntax
+                        cycleStr: normalized
+                    });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
                 sendToServer({
-                    action: 'playTrack', // Use any action, server will detect stop syntax
-                    cycleStr: normalized
+                    action: 'playTrack',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
                 });
                 return;
             }
+            
+            // Has selection: check if selection contains multiple tracks
+            const selectedText = fullText.substring(start, end);
+            const selectedTracks = findAllTracks(selectedText);
+            
+            // Only use concurrent behavior if:
+            // 1. All text is selected, OR
+            // 2. Selection contains multiple tracks
+            if (allTextSelected || selectedTracks.length > 1) {
+                // Process all tracks concurrently
+                const tracksToProcess = allTextSelected ? findAllTracks(fullText) : selectedTracks;
+                console.log(`[PLAY] Found ${tracksToProcess.length} track(s) in ${allTextSelected ? 'all text' : 'selection'}, playing all concurrently`);
+                
+                tracksToProcess.forEach(trackInfo => {
+                    const track = trackInfo.track;
+                    
+                    // Check if it's a stop command
+                    if (isStopSyntax(track)) {
+                        const normalized = normalizeWhitespace(track);
+                        sendToServer({
+                            action: 'playTrack', // Use any action, server will detect stop syntax
+                            cycleStr: normalized
+                        });
+                        return;
+                    }
 
-            const cleanTrack = removeComments(track);
-            const normalizedTrack = normalizeWhitespace(cleanTrack);
-            const parsed = parseMethodChain(normalizedTrack);
-            sendToServer({
-                action: 'playTrack',
-                id: null,
-                cycleStr: normalizedTrack,
-                tempo: parsed?.tempo || null,
-                signatureNumerator: parsed?.sn || null,
-                signatureDenominator: parsed?.sd || null
-            });
+                    const cleanTrack = removeComments(track);
+                    const normalizedTrack = normalizeWhitespace(cleanTrack);
+                    const parsed = parseMethodChain(normalizedTrack);
+                    sendToServer({
+                        action: 'playTrack',
+                        id: null,
+                        cycleStr: normalizedTrack,
+                        tempo: parsed?.tempo || null,
+                        signatureNumerator: parsed?.sn || null,
+                        signatureDenominator: parsed?.sd || null
+                    });
+                });
+            } else {
+                // Single track in selection: use single track behavior
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found in selection');
+                    return;
+                }
+
+                // Check if it's a stop command
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({
+                        action: 'playTrack', // Use any action, server will detect stop syntax
+                        cycleStr: normalized
+                    });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
+                sendToServer({
+                    action: 'playTrack',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
+                });
+            }
         }
 
         // Join multi-line commands by tracking parentheses depth

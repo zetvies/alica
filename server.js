@@ -3635,49 +3635,68 @@ function clearAllCycles() {
   return count;
 }
 
-// Process queue on bar change - run queued tracks/cycles
-function onBarChange() {
+// Process queue on bar change - run queued tracks/cycles concurrently
+async function onBarChange() {
   
-  // Process all items in queue (all items are removed as they're processed)
+  // Process all items in queue concurrently (all items are removed as they're processed)
+  const itemsToProcess = [];
   while (queue.length > 0) {
-    const item = queue.shift(); // Remove and get first item from queue
-    
-    if (item && item.function) {
-      // Execute the function
-      const result = item.function();
-      console.log(`[QUEUE] Processing item id '${item.id}', result type: ${typeof result}, result:`, result);
-      
-      // If it's a playCycle, it will return a Timeout object (Node.js setInterval)
-      // Cycles loop automatically via setInterval - no need to re-add to queue
-      // If it's a playTrack, it returns a Promise (async function)
-      // Tracks play once and don't loop
-      // Check if result is a Timeout object (has _onTimeout property) or a number
-      if (result !== null && result !== undefined && (typeof result === 'number' || (typeof result === 'object' && result._onTimeout))) {
-        // This is a playCycle - playCycle() already stored itself in activeCycle
-        // Just verify it's there and log - don't interfere with it
-        const playCycleEntry = activeCycle.find(c => c.id === item.id);
-        if (playCycleEntry) {
-          // Verify the intervalId matches (should always match since playCycle just returned it)
-          if (playCycleEntry.intervalId === result) {
-            console.log(`[QUEUE] Cycle '${item.id}' is active with intervalId ${result} (managed by playCycle)`);
-        } else {
-            console.warn(`[QUEUE] Cycle '${item.id}' intervalId mismatch! Entry has ${playCycleEntry.intervalId}, playCycle returned ${result}`);
-          }
-        } else {
-          // This shouldn't happen, but add it as fallback
-          console.warn(`[QUEUE] Cycle '${item.id}' not found in activeCycle after playCycle call - adding fallback entry`);
-          activeCycle.push({
-            id: item.id,
-            function: item.function,
-            intervalId: result
-          });
-        }
-      } else {
-        console.log(`[QUEUE] Item '${item.id}' result is not a number (likely a track that plays once)`);
-      }
-      // playTrack runs once and completes - no special handling needed
-    }
+    itemsToProcess.push(queue.shift()); // Remove and get all items from queue
   }
+  
+  if (itemsToProcess.length === 0) return;
+  
+  console.log(`[QUEUE] Processing ${itemsToProcess.length} item(s) concurrently`);
+  
+  // Process all items concurrently
+  const promises = itemsToProcess.map(async (item) => {
+    if (item && item.function) {
+      try {
+        // Execute the function
+        const result = item.function();
+        console.log(`[QUEUE] Processing item id '${item.id}', result type: ${typeof result}, result:`, result);
+        
+        // If it's a playCycle, it will return a Timeout object (Node.js setInterval)
+        // Cycles loop automatically via setInterval - no need to re-add to queue
+        // If it's a playTrack, it returns a Promise (async function)
+        // Tracks play once and don't loop
+        // Check if result is a Timeout object (has _onTimeout property) or a number
+        if (result !== null && result !== undefined && (typeof result === 'number' || (typeof result === 'object' && result._onTimeout))) {
+          // This is a playCycle - playCycle() already stored itself in activeCycle
+          // Just verify it's there and log - don't interfere with it
+          const playCycleEntry = activeCycle.find(c => c.id === item.id);
+          if (playCycleEntry) {
+            // Verify the intervalId matches (should always match since playCycle just returned it)
+            if (playCycleEntry.intervalId === result) {
+              console.log(`[QUEUE] Cycle '${item.id}' is active with intervalId ${result} (managed by playCycle)`);
+            } else {
+              console.warn(`[QUEUE] Cycle '${item.id}' intervalId mismatch! Entry has ${playCycleEntry.intervalId}, playCycle returned ${result}`);
+            }
+          } else {
+            // This shouldn't happen, but add it as fallback
+            console.warn(`[QUEUE] Cycle '${item.id}' not found in activeCycle after playCycle call - adding fallback entry`);
+            activeCycle.push({
+              id: item.id,
+              function: item.function,
+              intervalId: result
+            });
+          }
+        } else if (result && typeof result.then === 'function') {
+          // This is a Promise (playTrack) - wait for it to complete
+          await result;
+          console.log(`[QUEUE] Track '${item.id}' completed`);
+        } else {
+          console.log(`[QUEUE] Item '${item.id}' result is not a number or promise (likely a track that plays once)`);
+        }
+        // playTrack runs once and completes - no special handling needed
+      } catch (error) {
+        console.error(`[QUEUE] Error processing item '${item.id}':`, error);
+      }
+    }
+  });
+  
+  // Wait for all items to start processing (they run concurrently)
+  await Promise.all(promises);
 }
 
 // Function to calculate current bar and beat
