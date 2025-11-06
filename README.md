@@ -36,13 +36,7 @@ Open loopMIDI and add the following MIDI ports (names must be exact, case-sensit
 - `Sequence Loop Back`
 - `Automation Loop Back`
 
-### 3. Add ALiCA Max4Live Device to Ableton
-
-1. Open Ableton Live
-2. Add the `ALiCA Max4Live.amxd` file to the main track
-3. Click the **Initialize** button in the device
-
-### 4. Start the Server
+### 3. Start the Server
 
 ```bash
 npm run dev
@@ -50,9 +44,18 @@ npm run dev
 
 The server will start on `http://localhost:4254`
 
+### 4. Add ALiCA Max4Live Device to Ableton
+
+1. Open Ableton Live
+2. Add the `ALiCA Max4Live.amxd` file to the main track
+3. Click the **Initialize** button in the device
+
+
 ### 5. Try the Syntax and Have Fun!
 
 Open `http://localhost:4254` in a web browser and start coding your sequences. Click the **?** button in the bottom right corner to view keyboard shortcuts and complete syntax documentation.
+
+> **Important:** Before executing ALiCA syntax, make sure the track in Ableton Live is playing. ALiCA needs Ableton's playback to be active to receive tempo and timing information.
 
 ## Features
 
@@ -86,6 +89,8 @@ Set up OSC output to send the following messages to `localhost:4254`:
 Open `http://localhost:4254` in a web browser. The web interface provides a code editor where you can write ALiCA sequences.
 
 ### Code Your Sequences
+
+> **Important:** Make sure Ableton Live is playing before executing ALiCA syntax. The system needs active playback to receive tempo and timing information.
 
 Type your ALiCA code in the editor and use keyboard shortcuts to execute:
 - **Ctrl+Enter** - Queue the sequence to play on the next bar
