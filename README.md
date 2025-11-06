@@ -101,9 +101,9 @@ The editor supports multiple tracks/cycles - select specific tracks or all text 
 
 ## Syntax Overview
 
-ALiCA uses a concise, expressive syntax for musical sequences. The system supports both new method-chaining syntax and legacy block syntax:
+ALiCA uses a concise, expressive syntax for musical sequences:
 
-### New Track Syntax (Recommended)
+### Track Syntax
 
 ```javascript
 // Basic track with notes
@@ -117,20 +117,12 @@ t(automation).play([
   [n(60)^4].c(1),
   [a(7).from(0).to(127).d(bt).e(easeInOut)].c(1)
 ])
-```
 
-### Legacy Block Syntax
-
-```javascript
-// Basic sequence
-[n(60)^4].c(1) [n(65)^8].c(2)
-
-// Random note from scale
-n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
-
-// Complex sequence with probability
-[n(r.o{scale(c-ionian)})^6.nRange(c3,c4)].c(1) 
-[n(r.o{scale(c-iwato)})^16.v(r).pm(r).nArp(up-down)].c(1)
+// Track with chord syntax
+t(name).play([
+  [n(r.o{<chord(c4-maj7),g3>,<chord(g4-maj13)>,chord(a2-min)})].c(1),
+  [a(1).c(1).from(0).to(127)]
+])
 ```
 
 **Full syntax documentation**: See [docs/SYNTAX.md](docs/SYNTAX.md)
