@@ -10,17 +10,29 @@ ALiCA is a powerful live coding system for Ableton Live that provides a domain-s
   - Download and install from [nodejs.org](https://nodejs.org/)
   - Verify installation: `node --version`
 
-- **MIDI Loopback** - Virtual MIDI ports for Windows
-  - **loopMIDI** - Download from [Tobias Erichsen's website](https://www.tobias-erichsen.de/software/loopmidi.html)
-  - **Installation:**
-    1. Download the installer from the link above
-    2. Run the installer and follow the setup wizard
-    3. After installation, launch loopMIDI from the Start menu
-    4. Click the "+" button to add new MIDI ports
-    5. Add exactly these two ports (names are case-sensitive):
-       - `Sequence Loop Back`
-       - `Automation Loop Back`
-    6. Keep loopMIDI running while using ALiCA
+- **MIDI Loopback** - Virtual MIDI ports
+  - **Windows: loopMIDI**
+    - Download from [Tobias Erichsen's website](https://www.tobias-erichsen.de/software/loopmidi.html)
+    - **Installation:**
+      1. Download the installer from the link above
+      2. Run the installer and follow the setup wizard
+      3. After installation, launch loopMIDI from the Start menu
+      4. Click the "+" button to add new MIDI ports
+      5. Add exactly these two ports (names are case-sensitive):
+         - `Sequence Loop Back`
+         - `Automation Loop Back`
+      6. Keep loopMIDI running while using ALiCA
+  
+  - **macOS: IAC Driver** (built-in, no installation needed)
+    - **Setup:**
+      1. Open **Audio MIDI Setup** (Applications > Utilities > Audio MIDI Setup)
+      2. Click **Window** → **Show MIDI Studio**
+      3. Double-click **IAC Driver**
+      4. Check **Device is online**
+      5. Click the **+** button to add ports if needed
+      6. Add exactly these two ports (names are case-sensitive):
+         - `Sequence Loop Back`
+         - `Automation Loop Back`
 
 ## Setup Instructions
 
@@ -30,11 +42,20 @@ ALiCA is a powerful live coding system for Ableton Live that provides a domain-s
 npm install
 ```
 
-### 2. Configure loopMIDI
+### 2. Configure MIDI Loopback
 
-Open loopMIDI and add the following MIDI ports (names must be exact, case-sensitive):
-- `Sequence Loop Back`
-- `Automation Loop Back`
+**Windows:**
+- Open loopMIDI and add the following MIDI ports (names must be exact, case-sensitive):
+  - `Sequence Loop Back`
+  - `Automation Loop Back`
+
+**macOS:**
+- Open Audio MIDI Setup (Applications > Utilities > Audio MIDI Setup)
+- Click Window → Show MIDI Studio
+- Double-click IAC Driver and check "Device is online"
+- Add the following MIDI ports (names must be exact, case-sensitive):
+  - `Sequence Loop Back`
+  - `Automation Loop Back`
 
 ### 3. Start the Server
 
