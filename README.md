@@ -52,7 +52,7 @@ The server will start on `http://localhost:4254`
 
 ### 5. Try the Syntax and Have Fun!
 
-Open `http://localhost:4254` in a web browser and start coding your sequences. See Hints in the bottom right of the editor.
+Open `http://localhost:4254` in a web browser and start coding your sequences. Click the **?** button in the bottom right corner to view keyboard shortcuts and complete syntax documentation.
 
 ## Features
 
@@ -62,8 +62,11 @@ Open `http://localhost:4254` in a web browser and start coding your sequences. S
 - 🎵 **Scale & Chord Generation**: Support for 30+ scales and 40+ chord qualities
 - 🔄 **Arpeggiators**: Multiple arpeggio patterns (up, down, up-down, down-up)
 - 📊 **Probability Modifiers**: Mute and remove probability controls
+- 🎛️ **MIDI Automation**: Smooth CC parameter control with easing functions
+- 🎯 **Track System**: Named tracks/cycles with tempo overrides and delay start
 - ⚡ **Real-time OSC**: Synchronized with Ableton Live tempo and time signature
-- 🔌 **MIDI Output**: Direct MIDI communication with Ableton Live
+- 🔌 **MIDI Output**: Direct MIDI communication with Ableton Live via loopMIDI
+- 💻 **Web Editor**: Built-in code editor with syntax highlighting and interactive hints panel
 
 ## Quick Start
 
@@ -80,19 +83,47 @@ Set up OSC output to send the following messages to `localhost:4254`:
 
 ### Open the Web Interface
 
-Open `index.html` in a web browser. The p5.js sketch will connect to the server via WebSocket and display real-time beat information.
+Open `http://localhost:4254` in a web browser. The web interface provides a code editor where you can write ALiCA sequences.
 
 ### Code Your Sequences
 
-Edit the sequence in `src/server.js` (or create an API endpoint) to send ALiCA sequences.
+Type your ALiCA code in the editor and use keyboard shortcuts to execute:
+- **Enter** - Queue the sequence to play on the next bar
+- **Ctrl+Shift+Enter** - Play the sequence immediately
+- **Ctrl+S** - Loop track in next cycle
+- **Ctrl+Shift+S** - Loop track immediately
+- **Ctrl+H** - Stop all loops
+- **Ctrl+/** - Toggle comment
+
+See the hints panel (click **?** button) for the complete list of keyboard shortcuts and syntax reference.
+
+The editor supports multiple tracks/cycles - select specific tracks or all text to control what gets executed.
 
 ## Syntax Overview
 
-ALiCA uses a concise, expressive syntax for musical sequences:
+ALiCA uses a concise, expressive syntax for musical sequences. The system supports both new method-chaining syntax and legacy block syntax:
+
+### New Track Syntax (Recommended)
 
 ```javascript
-// Basic note
-n(60).d(500).v(80)
+// Basic track with notes
+t(mainLoop).play([n(60) n(65) n(67)].c(1))
+
+// Track with tempo override and delay
+t(bass).bpm(120).sn(4).sd(4).ds(bt*2).play([n(48) n(52)].c(3))
+
+// Track with automation
+t(automation).play([
+  [n(60)^4].c(1),
+  [a(7).from(0).to(127).d(bt).e(easeInOut)].c(1)
+])
+```
+
+### Legacy Block Syntax
+
+```javascript
+// Basic sequence
+[n(60)^4].c(1) [n(65)^8].c(2)
 
 // Random note from scale
 n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
@@ -116,8 +147,7 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
 ├── server.js                   # Main server (OSC, parsing, playback)
 ├── docs/
 │   └── SYNTAX.md                # Complete syntax documentation
-├── index.html                   # Web interface (p5.js)
-├── sketch.js                    # p5.js sketch code
+├── index.html                   # Web interface (code editor)
 └── package.json
 ```
 
@@ -126,19 +156,24 @@ n(r.o{scale(c-ionian)}).nRange(c3,c5).v(r).d(bt/4)
 ### Server (`server.js`)
 
 Node.js Express server that:
-- Receives OSC messages from Ableton Live
+- Receives OSC messages from Ableton Live (tempo, time signature, song time)
 - Calculates bars and beats from tempo/time signature
-- Parses and executes ALiCA sequences
-- Sends MIDI notes to Ableton Live
-- Handles MIDI CC automation and streaming
-- Broadcasts beat data via WebSocket
+- Parses and executes ALiCA sequences (both new and legacy syntax)
+- Manages tracks/cycles with queue system for bar-synchronized playback
+- Sends MIDI notes to Ableton Live via loopMIDI
+- Handles MIDI CC automation and streaming with smooth interpolation
+- Broadcasts tempo and time signature updates via WebSocket
+- Supports track-level tempo overrides and delay start
 
-### Web Interface (`index.html` + `sketch.js`)
+### Web Interface (`index.html`)
 
-p5.js application that:
+Full-featured code editor that:
+- Provides syntax highlighting for ALiCA code
 - Connects to the server via WebSocket
-- Receives real-time beat/bar updates
-- Can send MIDI messages (via WebMIDI)
+- Receives real-time tempo and time signature updates
+- Sends ALiCA sequences to the server for execution
+- Supports keyboard shortcuts (Enter to queue, Ctrl+Shift+Enter to play immediately)
+- Includes interactive hints panel (click **?** button) with keyboard shortcuts and complete syntax reference
 
 ### Music Theory Module (`src/modules/musicTheory.js`)
 
@@ -152,10 +187,11 @@ Handles:
 
 Manages:
 - MIDI output initialization (separate outputs for sequences and automation)
-- Note on/off sending
-- MIDI Control Change (CC) messages
-- CC value streaming with smooth interpolation
-- MIDI channel management
+- Note on/off sending with velocity and channel control
+- MIDI Control Change (CC) messages for automation
+- CC value streaming with smooth interpolation at 50fps (20ms intervals)
+- MIDI channel management (1-16)
+- Multiple concurrent CC streams with independent control
 
 ### Modulator Module (`src/modules/modulator.js`)
 
@@ -167,8 +203,33 @@ Provides:
 
 ## API Endpoints
 
+### HTTP
 - `GET /` - Web interface (index.html)
-- `WS://localhost:4254` - WebSocket connection for real-time updates
+
+### WebSocket (`ws://localhost:4254`)
+
+The server accepts WebSocket messages with the following actions:
+
+- **`playTrack`** - Play a sequence immediately
+- **`playCycle`** - Start a repeating cycle immediately
+- **`addTrackToQueue`** - Queue a track to play on next bar
+- **`addCycleToQueue`** - Queue a cycle to start on next bar
+- **`updateCycleById`** - Update an existing cycle
+- **`removeCycleById`** - Stop and remove a cycle
+- **`stopCycle`** - Stop a cycle using `t(cycleId).stop()` syntax
+
+Message format:
+```json
+{
+  "action": "playCycle",
+  "cycleStr": "t(main).play([n(60)^4].c(1))",
+  "tempo": 120,
+  "signatureNumerator": 4,
+  "signatureDenominator": 4
+}
+```
+
+The server broadcasts tempo and time signature updates to all connected clients.
 
 ## Development
 
@@ -214,23 +275,61 @@ const UDP_PORT = 4254;
 
 ## Example Sequences
 
-### Simple Scale Sequence
+### Simple Track with Notes
 
 ```javascript
-n(r.o{scale(c-ionian)}).nRange(c3,c5).d(bt/4).v(80)^16
+t(main).play([n(60) n(65) n(67) n(72)].c(1))
+```
+
+### Track with Scale-Based Random Notes
+
+```javascript
+t(melody).play([
+  [n(r.o{scale(c-ionian)}).nRange(c3,c5).d(bt/4).v(80)^16].c(1)
+])
+```
+
+### Track with Automation
+
+```javascript
+t(automation).play([
+  [n(60)^4].c(1),
+  [a(7).from(0).to(127).d(bt).e(easeInOut)].c(1),
+  [a(74).from(127).to(0).d(br).e(easeOut)].c(1)
+])
+```
+
+### Track with Delay Start
+
+```javascript
+t(bass).ds(bt*2).play([n(48) n(52)].c(3))
 ```
 
 ### Chord Arpeggio
 
 ```javascript
-n(r.o{chord(c-maj7)}).nArp(up-down).d(bt/8).v(r).vRange(0.5,1.0)^8
+t(chords).play([
+  [n(r.o{chord(c-maj7)}).nArp(up-down).d(bt/8).v(r).vRange(0.5,1.0)^8].c(1)
+])
 ```
 
 ### Probability-Based Pattern
 
 ```javascript
-[n(r.o{scale(c-dorian)})^8.nRange(c3,c4).pm(0.3).d(bt/4)].c(1)
-[n(r.o{scale(d-mixolydian)})^16.nRange(c4,c5).v(r).pr(0.2)].c(2)
+t(pattern).play([
+  [n(r.o{scale(c-dorian)})^8.nRange(c3,c4).pm(0.3).d(bt/4)].c(1),
+  [n(r.o{scale(d-mixolydian)})^16.nRange(c4,c5).v(r).pr(0.2)].c(2)
+])
+```
+
+### Complex Multi-Track Example
+
+```javascript
+t(mainLoop).bpm(120).sn(4).sd(4).play([
+  [n(r.o{scale(c-ionian)})^6.nRange(c3,c4)].c(1),
+  [n(r.o{scale(c-iwato)})^16.v(r).pm(r).nArp(up-down)].c(2),
+  [a(7).from(64).to(127).d(br).e(easeInOut)].c(1)
+])
 ```
 
 See [docs/SYNTAX.md](docs/SYNTAX.md) for complete documentation.
@@ -245,7 +344,9 @@ See [docs/SYNTAX.md](docs/SYNTAX.md) for complete documentation.
 
 ## License
 
-ISC
+ISC (Internet Systems Consortium License)
+
+A permissive open-source license similar to MIT and BSD. You are free to use, modify, and distribute this software for any purpose, including commercial use, with minimal restrictions (maintain copyright notice and license text).
 
 ## Contributing
 
