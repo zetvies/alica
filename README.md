@@ -4,6 +4,56 @@
 
 ALiCA is a powerful live coding system for Ableton Live that provides a domain-specific language for sequencing MIDI notes with advanced randomization, scale/chord generation, and probability controls.
 
+## Requirements
+
+- **Node.js** - JavaScript runtime environment
+  - Download and install from [nodejs.org](https://nodejs.org/)
+  - Verify installation: `node --version`
+
+- **MIDI Loopback** - Virtual MIDI ports for Windows
+  - **loopMIDI** - Download from [Tobias Erichsen's website](https://www.tobias-erichsen.de/software/loopmidi.html)
+  - **Installation:**
+    1. Download the installer from the link above
+    2. Run the installer and follow the setup wizard
+    3. After installation, launch loopMIDI from the Start menu
+    4. Click the "+" button to add new MIDI ports
+    5. Add exactly these two ports (names are case-sensitive):
+       - `Sequence Loop Back`
+       - `Automation Loop Back`
+    6. Keep loopMIDI running while using ALiCA
+
+## Setup Instructions
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure loopMIDI
+
+Open loopMIDI and add the following MIDI ports (names must be exact, case-sensitive):
+- `Sequence Loop Back`
+- `Automation Loop Back`
+
+### 3. Add ALiCA Max4Live Device to Ableton
+
+1. Open Ableton Live
+2. Add the `ALiCA Max4Live.amxd` file to the main track
+3. Configure the device as needed
+
+### 4. Start the Server
+
+```bash
+npm run dev
+```
+
+The server will start on `http://localhost:4254`
+
+### 5. Try the Syntax and Have Fun!
+
+Open `index.html` in a web browser and start coding your sequences. See Hints in the bottom right of the editor.
+
 ## Features
 
 - 🎹 **Musical Syntax**: Intuitive note, scale, and chord notation
@@ -15,23 +65,11 @@ ALiCA is a powerful live coding system for Ableton Live that provides a domain-s
 - ⚡ **Real-time OSC**: Synchronized with Ableton Live tempo and time signature
 - 🔌 **MIDI Output**: Direct MIDI communication with Ableton Live
 
-## Installation
-
-```bash
-npm install
-```
-
 ## Quick Start
 
-### 1. Start the Server
+Follow the [Setup Instructions](#setup-instructions) above first, then:
 
-```bash
-npm run dev
-```
-
-The server will start on `http://localhost:4254`
-
-### 2. Configure Ableton Live/Max4Live
+### Configure Ableton Live/Max4Live
 
 Set up OSC output to send the following messages to `localhost:4254`:
 
@@ -40,11 +78,11 @@ Set up OSC output to send the following messages to `localhost:4254`:
 - `/signature_denominator` - Time signature denominator (e.g., 4 for 4/4)
 - `/current_song_time` - Current song time in beats (float)
 
-### 3. Open the Web Interface
+### Open the Web Interface
 
 Open `index.html` in a web browser. The p5.js sketch will connect to the server via WebSocket and display real-time beat information.
 
-### 4. Code Your Sequences
+### Code Your Sequences
 
 Edit the sequence in `src/server.js` (or create an API endpoint) to send ALiCA sequences.
 
