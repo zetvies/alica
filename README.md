@@ -88,7 +88,7 @@ Open `http://localhost:4254` in a web browser. The web interface provides a code
 ### Code Your Sequences
 
 Type your ALiCA code in the editor and use keyboard shortcuts to execute:
-- **Enter** - Queue the sequence to play on the next bar
+- **Ctrl+Enter** - Queue the sequence to play on the next bar
 - **Ctrl+Shift+Enter** - Play the sequence immediately
 - **Ctrl+S** - Loop track in next cycle
 - **Ctrl+Shift+S** - Loop track immediately
@@ -164,7 +164,7 @@ Full-featured code editor that:
 - Connects to the server via WebSocket
 - Receives real-time tempo and time signature updates
 - Sends ALiCA sequences to the server for execution
-- Supports keyboard shortcuts (Enter to queue, Ctrl+Shift+Enter to play immediately)
+- Supports keyboard shortcuts (Ctrl+Enter to queue, Ctrl+Shift+Enter to play immediately)
 - Includes interactive hints panel (click **?** button) with keyboard shortcuts and complete syntax reference
 
 ### Music Theory Module (`src/modules/musicTheory.js`)
