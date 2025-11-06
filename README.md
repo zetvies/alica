@@ -1,6 +1,6 @@
 # ALiCA
 
-**Ableton Live Coding Automation**
+**Ableton Live Coding and Automation**
 
 ALiCA is a powerful live coding system for Ableton Live that provides a domain-specific language for sequencing MIDI notes with advanced randomization, scale/chord generation, and probability controls.
 
@@ -40,7 +40,7 @@ Open loopMIDI and add the following MIDI ports (names must be exact, case-sensit
 
 1. Open Ableton Live
 2. Add the `ALiCA Max4Live.amxd` file to the main track
-3. Configure the device as needed
+3. Click the **Initialize** button in the device
 
 ### 4. Start the Server
 
