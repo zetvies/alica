@@ -52,7 +52,7 @@ The server will start on `http://localhost:4254`
 
 ### 5. Try the Syntax and Have Fun!
 
-Open `index.html` in a web browser and start coding your sequences. See Hints in the bottom right of the editor.
+Open `http://localhost:4254` in a web browser and start coding your sequences. See Hints in the bottom right of the editor.
 
 ## Features
 
