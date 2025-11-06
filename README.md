@@ -49,6 +49,7 @@ The server will start on `http://localhost:4254`
 1. Open Ableton Live
 2. Add the `ALiCA Max4Live.amxd` file to the main track
 3. Click the **Initialize** button in the device
+4. Click Play button in Ableton and make sure the track is playing
 
 
 ### 5. Try the Syntax and Have Fun!
