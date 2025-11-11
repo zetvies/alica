@@ -298,7 +298,7 @@
     </div>
     <div id="hintToggle" class="fixed bottom-5 right-5 w-10 h-10 rounded-full bg-black/70 border-2 border-dark-border text-dark-text-muted text-xl cursor-pointer hidden items-center justify-center z-[1000] transition-all hover:bg-black/90 hover:border-gray-600 hover:text-dark-text hover:scale-110 shadow-xl">?</div>
     <div id="editorContainer" class="relative w-full mt-[50px] h-[calc(100vh-50px)]">
-        <div id="highlightOverlay" class="absolute top-0 left-0 w-full h-full p-5 m-0 bg-dark-bg-alt box-border font-mono text-sm leading-relaxed whitespace-pre overflow-x-auto overflow-y-hidden pointer-events-none z-[1] tab-[2] text-dark-text"></div>
+        <div id="highlightOverlay" class="absolute top-0 left-0 w-full h-full p-5 m-0 bg-transparent box-border font-mono text-sm leading-relaxed whitespace-pre overflow-x-auto overflow-y-auto pointer-events-none z-[1] tab-[2] text-dark-text"></div>
         <textarea id="commandArea" class="w-full h-full p-5 bg-transparent border-none text-transparent font-mono text-sm leading-relaxed resize-none outline-none tab-[2] whitespace-pre overflow-x-auto relative z-[2] caret-dark-text placeholder:text-gray-600" placeholder="Type here to start..."></textarea>
     </div>
 
@@ -2212,6 +2212,47 @@
             if (highlighted) {
                 highlightOverlay.appendChild(highlighted);
             }
+            
+            // Ensure overlay scrollHeight matches textarea scrollHeight for proper sync
+            // Use double requestAnimationFrame to ensure DOM has fully updated
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (highlightOverlay && commandArea) {
+                        // Store current scroll position before updating
+                        const savedScrollTop = commandArea.scrollTop;
+                        const savedScrollLeft = commandArea.scrollLeft;
+                        
+                        // Ensure overlay has minimum height to match textarea's scrollHeight
+                        // This ensures both have the same scrollable area
+                        const textareaScrollHeight = commandArea.scrollHeight;
+                        const overlayScrollHeight = highlightOverlay.scrollHeight;
+                        
+                        // Remove any existing spacer
+                        const existingSpacer = highlightOverlay.querySelector('.height-spacer');
+                        if (existingSpacer) {
+                            existingSpacer.remove();
+                        }
+                        
+                        // Add spacer if overlay is shorter than textarea
+                        if (overlayScrollHeight < textareaScrollHeight) {
+                            const spacer = document.createElement('div');
+                            spacer.className = 'height-spacer';
+                            spacer.style.height = `${textareaScrollHeight - overlayScrollHeight}px`;
+                            spacer.style.lineHeight = getComputedStyle(commandArea).lineHeight;
+                            spacer.style.fontSize = getComputedStyle(commandArea).fontSize;
+                            spacer.style.display = 'block';
+                            highlightOverlay.appendChild(spacer);
+                        }
+                        
+                        // Restore scroll position immediately after content update
+                        // This prevents glitches when scrolled outside initial viewport
+                        highlightOverlay.scrollTop = savedScrollTop;
+                        highlightOverlay.scrollLeft = savedScrollLeft;
+                        commandArea.scrollTop = savedScrollTop;
+                        commandArea.scrollLeft = savedScrollLeft;
+                    }
+                });
+            });
         }
 
         function highlightText(text) {
@@ -2943,9 +2984,20 @@
             }
         });
 
-        // Sync scroll between textarea and overlay
-        commandArea.addEventListener('scroll', () => {
-            if (highlightOverlay) {
+        // Sync scroll between textarea and overlay - immediate sync for accuracy
+        function syncScroll() {
+            if (highlightOverlay && commandArea) {
+                highlightOverlay.scrollTop = commandArea.scrollTop;
+                highlightOverlay.scrollLeft = commandArea.scrollLeft;
+            }
+        }
+        
+        // Immediate sync on scroll - no debouncing to prevent glitches
+        commandArea.addEventListener('scroll', syncScroll, { passive: true });
+        
+        // Also sync when overlay content might change (e.g., window resize)
+        window.addEventListener('resize', () => {
+            if (highlightOverlay && commandArea) {
                 highlightOverlay.scrollTop = commandArea.scrollTop;
                 highlightOverlay.scrollLeft = commandArea.scrollLeft;
             }

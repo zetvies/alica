@@ -904,28 +904,32 @@ function orderArrayByArp(array, mode) {
   if (!array || array.length === 0) return array;
   if (mode === null) return array; // random - return as is
   
-  // Create a copy to avoid mutating original
-  const ordered = [...array];
+  // Check if array contains chords - if so, preserve original order
+  const hasChords = array.some(item => 
+    (typeof item === 'object' && item !== null && item.type === 'chord')
+  );
   
-  // Sort by value (for numbers) or keep as is (for objects with value property)
-  // For chords, sort by the lowest note in the chord
-  const getValue = (item) => {
-    if (typeof item === 'number') return item;
-    if (item.value !== undefined) {
-      // Handle chord type (array of MIDI notes)
-      if (item.type === 'chord' && Array.isArray(item.value)) {
-        // Sort by lowest note in chord
-        return Math.min(...item.value);
+  let ordered;
+  
+  if (hasChords) {
+    // For arrays with chords, preserve the original order from the pattern
+    // Chords should maintain their sequence as they appear in r.o{...}
+    ordered = [...array];
+  } else {
+    // For arrays without chords (single notes, numbers), sort by value
+    ordered = [...array];
+    const getValue = (item) => {
+      if (typeof item === 'number') return item;
+      if (item.value !== undefined) {
+        return item.value;
       }
-      return item.value;
-    }
-    return item;
-  };
-  
-  ordered.sort((a, b) => getValue(a) - getValue(b));
+      return item;
+    };
+    ordered.sort((a, b) => getValue(a) - getValue(b));
+  }
   
   if (mode === 'up') {
-    // start to end (already sorted ascending)
+    // start to end (original order for chords, sorted ascending for others)
     return ordered;
   } else if (mode === 'down') {
     // end to start (reverse)
