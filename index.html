@@ -312,6 +312,53 @@
         const statusEl = document.getElementById('status');
         const commandArea = document.getElementById('commandArea');
 
+        // Code change history cache system
+        const codeHistory = [];
+        let currentHistoryIndex = -1;
+        let saveTimeout = null;
+        let isNavigatingHistory = false; // Flag to prevent saving when navigating through history
+        const SAVE_DELAY = 1000; // Wait 1 second after last change before saving
+
+        // Function to save current code to history cache
+        function saveToHistory() {
+            if (isNavigatingHistory) return; // Don't save when navigating through history
+            
+            const currentCode = commandArea.value;
+            
+            // Don't save if it's the same as the last saved version
+            if (codeHistory.length > 0 && codeHistory[currentHistoryIndex] === currentCode) {
+                return;
+            }
+
+            // Remove any future history if we're not at the end (user made a new change after undoing)
+            if (currentHistoryIndex < codeHistory.length - 1) {
+                codeHistory.splice(currentHistoryIndex + 1);
+            }
+
+            // Add new version to history
+            codeHistory.push(currentCode);
+            currentHistoryIndex = codeHistory.length - 1;
+
+            // Limit history size to prevent memory issues (keep last 100 versions)
+            if (codeHistory.length > 100) {
+                codeHistory.shift();
+                currentHistoryIndex--;
+            }
+        }
+
+        // Debounced save function
+        function debouncedSave() {
+            // Clear existing timeout
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
+            }
+
+            // Set new timeout to save after delay
+            saveTimeout = setTimeout(() => {
+                saveToHistory();
+            }, SAVE_DELAY);
+        }
+
         // Function to load content from URL parameter
         function loadContentFromUrl() {
             if (!commandArea) return;
@@ -322,6 +369,10 @@
                 try {
                     const decoded = decodeURIComponent(codeParam);
                     commandArea.value = decoded;
+                    // Reset code history cache with new content
+                    codeHistory.length = 0;
+                    codeHistory.push(decoded);
+                    currentHistoryIndex = 0;
                     // Trigger input event to update highlighting
                     commandArea.dispatchEvent(new Event('input', { bubbles: true }));
                 } catch (e) {
@@ -330,11 +381,16 @@
             } else {
                 // No code parameter, clear the textarea
                 commandArea.value = '';
+                // Reset code history cache with empty content
+                codeHistory.length = 0;
+                codeHistory.push('');
+                currentHistoryIndex = 0;
                 commandArea.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
 
         // Load content from URL parameter on page load
+        // This also initializes the code history cache
         loadContentFromUrl();
 
         // Initialize history state with current content (if any) so we can navigate back
@@ -554,17 +610,51 @@
                     window.history.pushState({ code: content, url: newUrl }, '', newUrl);
                 }
             }
-            // Ctrl + Z = undo (go back in history)
+            // Ctrl + Z = undo (go back in code change cache)
             else if (isCtrl && !isAlt && !isShift && (e.key === 'z' || e.key === 'Z')) {
                 e.preventDefault();
-                if (window.history.length > 1) {
-                    window.history.back();
+                
+                // Save current state before navigating
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                }
+                saveToHistory();
+                
+                // Navigate back in history
+                if (currentHistoryIndex > 0) {
+                    isNavigatingHistory = true;
+                    currentHistoryIndex--;
+                    commandArea.value = codeHistory[currentHistoryIndex];
+                    commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    // Reset flag after a short delay to allow input event to process
+                    setTimeout(() => {
+                        isNavigatingHistory = false;
+                    }, 100);
                 }
             }
-            // Ctrl + Y = redo (go forward in history)
+            // Ctrl + Y = redo (go forward in code change cache)
             else if (isCtrl && !isAlt && !isShift && (e.key === 'y' || e.key === 'Y')) {
                 e.preventDefault();
-                window.history.forward();
+                
+                // Save current state before navigating
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                }
+                saveToHistory();
+                
+                // Navigate forward in history
+                if (currentHistoryIndex < codeHistory.length - 1) {
+                    isNavigatingHistory = true;
+                    currentHistoryIndex++;
+                    commandArea.value = codeHistory[currentHistoryIndex];
+                    commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    // Reset flag after a short delay to allow input event to process
+                    setTimeout(() => {
+                        isNavigatingHistory = false;
+                    }, 100);
+                }
             }
             // Enter between matching brackets = split into separate lines
             else if (!isCtrl && !isAlt && e.key === 'Enter') {
@@ -2960,6 +3050,10 @@
         commandArea.addEventListener('input', () => {
             if (highlightOverlay) {
                 highlightBrackets();
+            }
+            // Trigger debounced save to history cache
+            if (!isNavigatingHistory) {
+                debouncedSave();
             }
         });
 
