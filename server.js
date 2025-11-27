@@ -152,7 +152,8 @@ function applyInversion(notes, inversion) {
 }
 
 // Expand scale syntax: scale(c-ionian).q(maj7).i(1) or scale(c-ionian) or scale(c4-ionian)
-function expandScale(scaleStr) {
+// format: 'normal' (default) returns "n(48) n(50)...", 'angleBracket' returns "48,50,52..."
+function expandScale(scaleStr, format = 'normal') {
   if (!scaleStr || typeof scaleStr !== 'string') return '';
   
   // Match scale(root-mode) with optional .q(quality) and .i(inversion)
@@ -219,6 +220,10 @@ function expandScale(scaleStr) {
           chordNotes = applyInversion(chordNotes, inversion);
         }
         
+        // Return format based on context
+        if (format === 'angleBracket') {
+          return chordNotes.join(',');
+        }
         return chordNotes.map(n => `n(${n})`).join(' ');
       }
     }
@@ -232,6 +237,10 @@ function expandScale(scaleStr) {
     scaleNotes = applyInversion(scaleNotes, inversion);
   }
   
+  // Return format based on context
+  if (format === 'angleBracket') {
+    return scaleNotes.join(',');
+  }
   // Return scale notes as note sequence
   return scaleNotes.map(n => `n(${n})`).join(' ');
 }
@@ -1082,6 +1091,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   
   // Expand scale syntax: scale(root-mode).q(quality) or scale(root-mode)
   // Handle nested parentheses properly
+  // BUT skip scales inside angle brackets (they should be formatted as comma-separated numbers)
   let tempSequence = '';
   let i = 0;
   while (i < processedSequence.length) {
@@ -1091,6 +1101,14 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       break;
     }
     tempSequence += processedSequence.substring(i, scaleIndex);
+    
+    // Check if this scale is inside angle brackets - if so, use angleBracket format
+    // Need to check from the start to properly track nested angle brackets
+    let angleDepth = 0;
+    for (let k = 0; k < scaleIndex; k++) {
+      if (processedSequence[k] === '<') angleDepth++;
+      else if (processedSequence[k] === '>') angleDepth--;
+    }
     
     // Find the matching closing parenthesis for scale(
     let parenCount = 1;
@@ -1113,7 +1131,9 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     
     const scaleStr = processedSequence.substring(scaleIndex, modifierEnd);
-    const expanded = expandScale(scaleStr);
+    // Use angleBracket format if inside angle brackets, otherwise use normal format
+    const format = angleDepth > 0 ? 'angleBracket' : 'normal';
+    const expanded = expandScale(scaleStr, format);
     tempSequence += expanded;
     i = modifierEnd;
   }
@@ -2048,16 +2068,14 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       }
     }
     
-    // If note doesn't have a channel and sequence doesn't have channel override, mute the note
-    // (Notes without channels in a sequence without a channel override are muted)
-    let shouldMuteNoChannel = false;
+    // If note doesn't have a channel and sequence doesn't have channel override, default to channel 1
+    // (Previously muted, now defaults to c(1))
     if (!hasNoteChannel && channelOverride === null) {
-      shouldMuteNoChannel = true;
+      channel = 1; // Default to channel 1
+      hasNoteChannel = true;
     }
-    // Also ensure we use a valid channel even if muted (default to 1)
-    if (shouldMuteNoChannel) {
-      channel = 1; // Use default channel for muted notes
-    }
+    
+    let shouldMuteNoChannel = false; // No longer muting notes without channels
     // Note: Remove probability is now handled per-repeat in the loop below
     const zeroBasedChannel = channel - 1;
     
@@ -2776,15 +2794,22 @@ async function playAutomationInSequence(automationStr, type = "fit", cutOff = nu
     const easingStr = extractMethodValue('e');
     
     // Parse values
-    const fromValue = fromStr !== null ? parseFloat(fromStr) : 0;
+    // If from is not provided, directly go to to() (startValue = toValue)
     const toValue = toStr !== null ? parseFloat(toStr) : 127;
+    const fromValue = fromStr !== null ? parseFloat(fromStr) : toValue;
     
-    // Determine channel: use .c() from chunk if present, otherwise use channelOverride
-    let useChannel = channel;
+    // Determine channel: use .c() from chunk if present, otherwise use channelOverride, otherwise default to 1
+    let useChannel = 0; // Default to channel 1 (0-based)
     if (channelStr !== null) {
       const parsedChannel = parseInt(channelStr, 10);
       if (!isNaN(parsedChannel) && parsedChannel >= 1 && parsedChannel <= 16) {
         useChannel = parsedChannel - 1; // Convert 1-16 to 0-15
+      }
+    } else if (channelOverride !== null) {
+      if (Array.isArray(channelOverride)) {
+        useChannel = channelOverride[0] - 1; // Use first channel
+      } else {
+        useChannel = channelOverride - 1; // Convert 1-16 to 0-15
       }
     }
     useChannel = Math.max(0, Math.min(15, useChannel));
@@ -3293,12 +3318,15 @@ async function playTrack(cycleStr, tempoParam = null, signatureNumeratorParam = 
     const isAutomationBlock = /a\(\d+\)/.test(content);
     const isSequenceBlock = /n\(/.test(content);
     
+    // Default channelOverride to 1 if not defined for sequences
+    const useChannelOverride = channelOverride !== null ? channelOverride : 1;
+    
     if (isAutomationBlock) {
       // Parse and play automation with same timing logic as sequences
-      plays.push(playAutomationInSequence(content, type, cutOff, channelOverride, useTempo, useSignatureNumerator, useSignatureDenominator));
+      plays.push(playAutomationInSequence(content, type, cutOff, useChannelOverride, useTempo, useSignatureNumerator, useSignatureDenominator));
     } else if (isSequenceBlock) {
       // Parse and play sequence
-      plays.push(playSequence(content, type, cutOff, channelOverride, sequenceMuteProbability, useTempo, useSignatureNumerator, useSignatureDenominator));
+      plays.push(playSequence(content, type, cutOff, useChannelOverride, sequenceMuteProbability, useTempo, useSignatureNumerator, useSignatureDenominator));
     }
   }
   if (plays.length > 0) await Promise.all(plays);
@@ -3881,6 +3909,10 @@ app.use(express.static('.')); // Serve static files from current directory
 // Routes
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
+});
+
+app.get('/chord-recommendation', (req, res) => {
+  res.sendFile(__dirname + '/chord-recommendation.html');
 });
 
 
