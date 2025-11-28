@@ -879,19 +879,19 @@ function parseArrayRandomizer(str, context = {}) {
             // Store as note name without octave - will be expanded by nRange if available
             result.push({ type: 'noteName', value: item.toLowerCase(), original: item });
           } else {
-            // Try as MIDI note number (0-127)
-            const midiNum = parseInt(item, 10);
-            if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
-              result.push({ type: 'note', value: midiNum });
-            } else {
-              // Parse as regular number (for velocity, pan, etc.)
-              const num = parseFloat(item);
-              if (!isNaN(num)) {
-                result.push({ type: 'number', value: num });
+          // Try as MIDI note number (0-127)
+          const midiNum = parseInt(item, 10);
+          if (!isNaN(midiNum) && midiNum >= 0 && midiNum <= 127) {
+            result.push({ type: 'note', value: midiNum });
+          } else {
+            // Parse as regular number (for velocity, pan, etc.)
+            const num = parseFloat(item);
+            if (!isNaN(num)) {
+              result.push({ type: 'number', value: num });
               }
-            }
-          }
         }
+      }
+    }
   }
   
   return result.length > 0 ? result : null;
@@ -1845,14 +1845,14 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     } else {
       // Only check for chord syntax if it's not a randomizer array
       // Check for chord syntax: n(<c4,e4,g6>)
-      console.log('[PARSE] Extracted noteArg:', JSON.stringify(noteArg), 'from chunk:', chunk.substring(0, 50));
-      const chordMatch = parseChord(noteArg);
-      console.log('[PARSE] parseChord result:', chordMatch);
-      if (chordMatch) {
-        isDirectChord = true;
-        directChordNotes = chordMatch;
-        console.log('[CHORD] Direct chord detected, noteArg:', noteArg, 'chordNotes:', directChordNotes);
-      }
+    console.log('[PARSE] Extracted noteArg:', JSON.stringify(noteArg), 'from chunk:', chunk.substring(0, 50));
+    const chordMatch = parseChord(noteArg);
+    console.log('[PARSE] parseChord result:', chordMatch);
+    if (chordMatch) {
+      isDirectChord = true;
+      directChordNotes = chordMatch;
+      console.log('[CHORD] Direct chord detected, noteArg:', noteArg, 'chordNotes:', directChordNotes);
+    }
     }
     
     if (!isDirectChord && !randomizeNote) {
@@ -2271,18 +2271,18 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     }
     
       // Final expansion pass: expand any remaining scaleChord items and note names without octaves in noteArray
-      // This handles cases where nRange was parsed before noteArray, or if scale/chord is used without nRange
+    // This handles cases where nRange was parsed before noteArray, or if scale/chord is used without nRange
       if (noteArray && (noteArray.some(item => item.type === 'scaleChord') || noteArray.some(item => item.type === 'noteName'))) {
-        // Use nRange if available, otherwise use default range (C1 to C8)
-        const minMidi = nRange ? nRange[0] : 24; // C1
-        const maxMidi = nRange ? nRange[1] : 108; // C8
-        
-        const expandedArray = [];
-        for (const item of noteArray) {
-          if (item.type === 'scaleChord') {
-            // Expand scale/chord to notes within range
-            const scaleChordNotes = generateScaleChordNotes(item.value, minMidi, maxMidi);
-            expandedArray.push(...scaleChordNotes);
+      // Use nRange if available, otherwise use default range (C1 to C8)
+      const minMidi = nRange ? nRange[0] : 24; // C1
+      const maxMidi = nRange ? nRange[1] : 108; // C8
+      
+      const expandedArray = [];
+      for (const item of noteArray) {
+        if (item.type === 'scaleChord') {
+          // Expand scale/chord to notes within range
+          const scaleChordNotes = generateScaleChordNotes(item.value, minMidi, maxMidi);
+          expandedArray.push(...scaleChordNotes);
           } else if (item.type === 'noteName') {
             // Expand note name without octave to all octaves within range
             const noteName = item.value; // e.g., "c", "c#", "eb"
@@ -2300,19 +2300,19 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
                 expandedArray.push({ type: 'note', value: midi });
               }
             }
-          } else {
-            expandedArray.push(item);
-          }
+        } else {
+          expandedArray.push(item);
         }
-        noteArray = expandedArray;
-        
-        // If nRange was set, filter by range
-        if (nRange) {
-          noteArray = filterArrayByRange(noteArray, nRange[0], nRange[1]);
-        }
-        
-        randomizeNote = noteArray.length > 0;
       }
+      noteArray = expandedArray;
+      
+      // If nRange was set, filter by range
+      if (nRange) {
+        noteArray = filterArrayByRange(noteArray, nRange[0], nRange[1]);
+      }
+      
+      randomizeNote = noteArray.length > 0;
+    }
     
     // Apply sequence-level override only if note doesn't have its own setting
     // channelOverride can be a number or an array

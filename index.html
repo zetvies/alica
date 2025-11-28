@@ -359,26 +359,63 @@
             }, SAVE_DELAY);
         }
 
-        // Function to load content from URL parameter
+        // Function to load content from URL parameter or hash
         function loadContentFromUrl() {
-            if (!commandArea) return;
+            if (!commandArea) {
+                console.warn('commandArea not found, retrying...');
+                // Retry after a short delay if commandArea isn't ready
+                setTimeout(loadContentFromUrl, 100);
+                return;
+            }
 
-            const urlParams = new URLSearchParams(window.location.search);
-            const codeParam = urlParams.get('code');
+            let codeParam = null;
+            
+            // Use hash fragment (has much higher limit ~65KB)
+            const hash = window.location.hash;
+            if (hash && hash.startsWith('#code=')) {
+                codeParam = hash.substring(6); // Remove '#code='
+            }
+            
+            console.log('URL code parameter found:', !!codeParam, 'Length:', codeParam ? codeParam.length : 0);
+            
             if (codeParam) {
                 try {
                     const decoded = decodeURIComponent(codeParam);
+                    console.log('Decoded code length:', decoded.length);
+                    console.log('First 100 chars:', decoded.substring(0, 100));
+                    
+                    // Set the value
                     commandArea.value = decoded;
+                    
+                    // Verify it was set
+                    if (commandArea.value !== decoded) {
+                        console.error('Failed to set textarea value!');
+                        return;
+                    }
+                    
                     // Reset code history cache with new content
                     codeHistory.length = 0;
                     codeHistory.push(decoded);
                     currentHistoryIndex = 0;
+                    
                     // Trigger input event to update highlighting
                     commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    // Verify value is still there after a short delay
+                    setTimeout(() => {
+                        if (commandArea.value !== decoded) {
+                            console.error('Value was cleared after setting! Re-setting...');
+                            commandArea.value = decoded;
+                            commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                        } else {
+                            console.log('Code loaded and verified successfully, textarea value length:', commandArea.value.length);
+                        }
+                    }, 50);
                 } catch (e) {
                     console.error('Error decoding URL parameter:', e);
                 }
             } else {
+                console.log('No code parameter in URL');
                 // No code parameter, clear the textarea
                 commandArea.value = '';
                 // Reset code history cache with empty content
@@ -389,21 +426,61 @@
             }
         }
 
+        // Initialize history state with current content (if any) so we can navigate back
+        function initializeHistoryState() {
+            const hasCodeHash = window.location.hash && window.location.hash.startsWith('#code=');
+            
+            // If URL already has code hash, don't modify history state at all to avoid resetting
+            if (hasCodeHash) {
+                // Just store the current state without modifying URL
+                const content = commandArea ? commandArea.value : '';
+                window.history.replaceState({ code: content, url: window.location.href }, '', window.location.href);
+                return;
+            }
+            
+            // Only initialize history if URL doesn't have code hash
+            if (commandArea && commandArea.value.trim()) {
+                const content = commandArea.value;
+                const encoded = encodeURIComponent(content);
+                const newUrl = window.location.origin + window.location.pathname + '#code=' + encoded;
+                // Replace current state with initial content so we have a baseline
+                window.history.replaceState({ code: content, url: newUrl }, '', newUrl);
+            } else {
+                // No content initially, replace with empty state
+                const newUrl = window.location.origin + window.location.pathname;
+                window.history.replaceState({ code: '', url: newUrl }, '', newUrl);
+            }
+        }
+
         // Load content from URL parameter on page load
         // This also initializes the code history cache
-        loadContentFromUrl();
-
-        // Initialize history state with current content (if any) so we can navigate back
-        if (commandArea && commandArea.value.trim()) {
-            const content = commandArea.value;
-            const encoded = encodeURIComponent(content);
-            const newUrl = window.location.origin + window.location.pathname + '?code=' + encoded;
-            // Replace current state with initial content so we have a baseline
-            window.history.replaceState({ code: content, url: newUrl }, '', newUrl);
+        // Use DOMContentLoaded to ensure DOM is ready
+        function initializePage() {
+            // Load content first
+            loadContentFromUrl();
+            
+            // Wait a bit longer to ensure content is set before initializing history
+            setTimeout(() => {
+                // Double-check that content is still there
+                const urlParams = new URLSearchParams(window.location.search);
+                const hasCodeParam = urlParams.has('code');
+                
+                if (hasCodeParam && commandArea && commandArea.value) {
+                    // Content loaded from URL, just store state without modifying URL
+                    const content = commandArea.value;
+                    window.history.replaceState({ code: content, url: window.location.href }, '', window.location.href);
+                } else {
+                    // No code param or no content, initialize normally
+                    initializeHistoryState();
+                }
+            }, 100);
+        }
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializePage);
         } else {
-            // No content initially, replace with empty state
-            const newUrl = window.location.origin + window.location.pathname;
-            window.history.replaceState({ code: '', url: newUrl }, '', newUrl);
+            // DOM is already ready
+            initializePage();
         }
 
         // Handle browser history navigation (back/forward buttons or popstate)
@@ -411,6 +488,10 @@
             // If state has code, use it; otherwise load from URL
             if (e.state && e.state.code !== undefined) {
                 commandArea.value = e.state.code;
+                // Update history cache
+                codeHistory.length = 0;
+                codeHistory.push(e.state.code);
+                currentHistoryIndex = 0;
                 commandArea.dispatchEvent(new Event('input', { bubbles: true }));
             } else {
                 loadContentFromUrl();
@@ -601,11 +682,12 @@
                 highlightTrackBriefly();
                 queuePlayCycleForCurrentTrack();
 
-                // Save to URL parameter and push to history
+                // Save to URL hash and push to history
                 const content = commandArea.value;
                 if (content.trim()) {
                     const encoded = encodeURIComponent(content);
-                    const newUrl = window.location.origin + window.location.pathname + '?code=' + encoded;
+                    // Always use hash fragment (limit ~65KB, much higher than query params)
+                    const newUrl = window.location.origin + window.location.pathname + '#code=' + encoded;
                     // Push state with content for history navigation
                     window.history.pushState({ code: content, url: newUrl }, '', newUrl);
                 }
