@@ -1006,6 +1006,7 @@ function extractParameterValue(str, paramName) {
 // Play a sequence like: "n(60).d(500) n(61).d(500)"
 // Default duration per note: one beat duration divided by number of notes
 async function playSequence(sequence, type = "fit", cutOff = null, channelOverride = null, sequenceMuteProbability = null, tempoParam = null, signatureNumeratorParam = null, signatureDenominatorParam = null) {
+  console.log('[SEQ_STEP_1] Original sequence:', sequence);
 
   if (!sequence || typeof sequence !== 'string') return;
   
@@ -1213,8 +1214,73 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   }
   processedSequence = tempSequence;
   
+  // Count original notes in sequence (before % expansion) to calculate default duration
+  // This is needed for % operator which divides the default per-note duration
+  let originalNoteCount = 0;
+  // Track % groups for dynamic duration adjustment after probability filtering
+  let percentGroupCounter = 0;
+  console.log('[SEQ_STEP_2] Counting original notes before % expansion...');
+  let countIdx = 0;
+  while (countIdx < processedSequence.length) {
+    const nIdx = processedSequence.indexOf('n(', countIdx);
+    if (nIdx === -1) break;
+    originalNoteCount++;
+    // Find the end of this note chunk
+    let parenCount = 0;
+    let angleCount = 0;
+    let i = nIdx + 2;
+    while (i < processedSequence.length) {
+      if (processedSequence[i] === '(') parenCount++;
+      else if (processedSequence[i] === ')') {
+        if (parenCount === 0 && angleCount === 0) {
+          i++;
+          break;
+        }
+        parenCount--;
+      } else if (processedSequence[i] === '<') angleCount++;
+      else if (processedSequence[i] === '>') angleCount--;
+      i++;
+    }
+    // Skip parameters and %N/^N to find next note
+    while (i < processedSequence.length) {
+      if (i < processedSequence.length - 1 && processedSequence.substring(i, i + 2) === 'n(') {
+        break;
+      }
+      if (processedSequence[i] === '%' || processedSequence[i] === '^') {
+        const numMatch = processedSequence.substring(i + 1).match(/^\d+/);
+        if (numMatch) {
+          i += 1 + numMatch[0].length;
+          continue;
+        }
+      }
+      if (processedSequence[i] === '.') {
+        const paramMatch = processedSequence.substring(i + 1).match(/^(d|v|p|c|pm|pr|pmRange|prRange|nRange|vRange|pRange|dRange|nArp|dArp|vArp|pmArp|prArp|ds)\(/);
+        if (paramMatch) {
+          const paramName = paramMatch[1];
+          const paramStart = i + 1 + paramName.length + 1;
+          parenCount = 1;
+          let j = paramStart;
+          while (j < processedSequence.length && parenCount > 0) {
+            if (processedSequence[j] === '(') parenCount++;
+            else if (processedSequence[j] === ')') parenCount--;
+            j++;
+          }
+          if (parenCount === 0) {
+            i = j;
+            continue;
+          }
+        }
+      }
+      i++;
+    }
+    countIdx = i;
+  }
+  originalNoteCount = Math.max(1, originalNoteCount); // At least 1 note
+  console.log('[SEQ_STEP_2] Original note count:', originalNoteCount);
+  
   // Expand repeat syntax (^N) before matching chunks
   // n(r)^4 becomes n(r) n(r) n(r) n(r)
+  // Also expand %N: n(...)%N becomes N copies with duration divided by N
   // Handle nested parentheses and angle brackets properly
   let expandedSequence = processedSequence;
   let repeatSearchIdx = 0;
@@ -1254,8 +1320,11 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     i = chunkEnd;
     let hasRepeat = false;
     let repeatCount = 1;
+    let hasDurationDivide = false;
+    let durationDivideCount = 1;
     let paramEnd = chunkEnd;
     let repeatIndex = -1; // Track where the ^ is found
+    let durationDivideIndex = -1; // Track where the % is found
     
     while (i < processedSequence.length) {
       // Check for repeat syntax: ^N
@@ -1269,6 +1338,22 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
             // Don't break yet - continue to find any parameters AFTER the ^
             i += 1 + numMatch[0].length;
             paramEnd = i; // Update paramEnd to after the ^N
+            continue; // Continue to look for more parameters
+          }
+        }
+      }
+      
+      // Check for duration divide syntax: %N
+      if (processedSequence[i] === '%' && i + 1 < processedSequence.length) {
+        const numMatch = processedSequence.substring(i + 1).match(/^\d+/);
+        if (numMatch) {
+          durationDivideCount = parseInt(numMatch[0], 10);
+          if (!isNaN(durationDivideCount) && durationDivideCount > 0) {
+            hasDurationDivide = true;
+            durationDivideIndex = i;
+            // Don't break yet - continue to find any parameters AFTER the %
+            i += 1 + numMatch[0].length;
+            paramEnd = i; // Update paramEnd to after the %N
             continue; // Continue to look for more parameters
           }
         }
@@ -1306,7 +1391,63 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
       i++;
     }
     
-    if (hasRepeat) {
+    if (hasDurationDivide) {
+      // Extract the note pattern (including parameters after %N, but excluding %N itself)
+      // If durationDivideIndex is set, extract from chunkStart to durationDivideIndex (before the %)
+      // Then append everything from after %N to paramEnd (parameters after %N)
+      let notePattern;
+      if (durationDivideIndex >= 0) {
+        // Pattern includes everything before % and after %N (parameters)
+        const beforeDivide = processedSequence.substring(chunkStart, durationDivideIndex);
+        const afterDivide = processedSequence.substring(durationDivideIndex + 1 + String(durationDivideCount).length, paramEnd);
+        notePattern = beforeDivide + afterDivide;
+      } else {
+        // Fallback (shouldn't happen, but be safe)
+        notePattern = processedSequence.substring(chunkStart, paramEnd);
+      }
+      
+      // Assign a unique group ID for this % expansion
+      const groupId = `_p${percentGroupCounter++}`;
+      console.log(`[SEQ_STEP_3] Expanding %${durationDivideCount} for group ${groupId}, notePattern: ${notePattern.substring(0, 100)}...`);
+      
+      // Check if note already has a .d() parameter
+      const hasDurationParam = /\.d\([^)]+\)/.test(notePattern);
+      
+      // Repeat the note pattern N times, adding duration division to each
+      // Use a special marker that will be resolved after probability filtering
+      const repeatedNotes = [];
+      for (let j = 0; j < durationDivideCount; j++) {
+        let expandedNote = notePattern;
+        
+        if (hasDurationParam) {
+          // If note has .d(), replace with dynamic duration that adjusts after filtering
+          // Format: .d(br/originalNoteCount/%GROUP_ID:originalCount)
+          expandedNote = expandedNote.replace(/\.d\(([^)]+)\)/g, (match, durationValue) => {
+            const trimmed = durationValue.trim();
+            // Create a marker that includes the original duration and group info
+            return `.d(br/${originalNoteCount}/%${groupId}:${durationDivideCount})`;
+          });
+        } else {
+          // If note doesn't have .d(), add dynamic duration marker
+          // Format: .d(br/originalNoteCount/%GROUP_ID:originalCount)
+          // Insert before any other parameters (like .nRange, .vRange, etc.)
+          const noteEndMatch = expandedNote.match(/^n\([^)]+\)/);
+          if (noteEndMatch) {
+            const noteEnd = noteEndMatch[0].length;
+            expandedNote = expandedNote.substring(0, noteEnd) + `.d(br/${originalNoteCount}/%${groupId}:${durationDivideCount})` + expandedNote.substring(noteEnd);
+          } else {
+            // Fallback: append at the end
+            expandedNote += `.d(br/${originalNoteCount}/%${groupId}:${durationDivideCount})`;
+          }
+        }
+        
+        repeatedNotes.push(expandedNote);
+      }
+      
+      console.log(`[SEQ_STEP_3] Created ${repeatedNotes.length} notes for group ${groupId}, first note: ${repeatedNotes[0].substring(0, 150)}...`);
+      newSequence += repeatedNotes.join(' ');
+      repeatSearchIdx = i;
+    } else if (hasRepeat) {
       // Extract the note pattern (including parameters after ^N, but excluding ^N itself)
       // If repeatIndex is set, extract from chunkStart to repeatIndex (before the ^)
       // Then append everything from after ^N to paramEnd (parameters after ^N)
@@ -1333,6 +1474,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   
   if (newSequence) {
     expandedSequence = newSequence;
+    console.log('[SEQ_STEP_4] After % expansion, sequence length:', expandedSequence.length, 'chars');
+    console.log('[SEQ_STEP_4] First 500 chars:', expandedSequence.substring(0, 500));
   }
   
   // Extract chunks using balanced parentheses matching to handle nested structures like n(<chord(c-maj9)>)
@@ -1411,6 +1554,8 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   
   // For type=fit, filter out removed chunks BEFORE calculating weights
   let chunks = allChunks;
+  console.log('[SEQ_STEP_5] Extracted chunks:', chunks.length, 'total');
+  console.log('[SEQ_STEP_5] First 3 chunks:', chunks.slice(0, 3).map(c => c.substring(0, 100)));
   if (type === 'fit') {
     chunks = allChunks.filter((chunk) => {
       // Check if this chunk has remove probability
@@ -1435,7 +1580,65 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
     });
   }
 
+  // After probability filtering, adjust % operator durations based on actual note count
+  // Find all % group markers and count how many notes actually exist in each group
+  console.log('[SEQ_STEP_6] After probability filtering, chunks remaining:', chunks.length);
+  const percentGroupCounts = new Map();
+  for (const chunk of chunks) {
+    // Look for duration markers like .d(br/4/%_p0:8)
+    // The pattern is: .d(br/NUMBER/%GROUP_ID:NUMBER)
+    // Note: % needs to be escaped in regex as \%
+    const percentMatch = chunk.match(/\.d\(br\/(\d+)\/\%(_p\d+):(\d+)\)/);
+    if (percentMatch) {
+      const groupId = percentMatch[2];
+      if (!percentGroupCounts.has(groupId)) {
+        percentGroupCounts.set(groupId, 0);
+      }
+      percentGroupCounts.set(groupId, percentGroupCounts.get(groupId) + 1);
+    }
+  }
+  console.log('[SEQ_STEP_6] % Group counts after filtering:', Array.from(percentGroupCounts.entries()).map(([id, count]) => `${id}: ${count}`).join(', '));
+  
+  // Replace duration markers with actual counts and remove probability parameters
+  for (let i = 0; i < chunks.length; i++) {
+    let chunk = chunks[i];
+    // Match the pattern: .d(br/NUMBER/%GROUP_ID:NUMBER)
+    // Note: % needs to be escaped in regex as \%
+    const percentMatch = chunk.match(/\.d\(br\/(\d+)\/\%(_p\d+):(\d+)\)/);
+    if (percentMatch) {
+      const originalNoteCount = parseInt(percentMatch[1], 10);
+      const groupId = percentMatch[2];
+      const originalPercentCount = parseInt(percentMatch[3], 10);
+      const actualCount = percentGroupCounts.get(groupId) || 1; // Fallback to 1 if group not found
+      console.log(`[SEQ_STEP_7] Replacing duration for chunk ${i}, group ${groupId}: originalCount=${originalNoteCount}, originalPercent=${originalPercentCount}, actualCount=${actualCount}`);
+      // Replace with actual count: br/originalNoteCount/actualCount
+      // Use the exact groupId in the replacement pattern, escaping special regex chars
+      const escapedGroupId = groupId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const replacePattern = new RegExp(`\\.d\\(br/(\\d+)/%${escapedGroupId}:(\\d+)\\)`, 'g');
+      const beforeReplace = chunk;
+      chunk = chunk.replace(replacePattern, `.d(br/${originalNoteCount}/${actualCount})`);
+      if (beforeReplace !== chunk) {
+        console.log(`[SEQ_STEP_7] Replaced: "${beforeReplace.substring(0, 150)}" -> "${chunk.substring(0, 150)}"`);
+      } else {
+        console.log(`[SEQ_STEP_7] WARNING: Replacement did not match for chunk ${i}`);
+      }
+    }
+    
+    // Remove .pr() and .pm() parameters since probability filtering has already been applied
+    // This cleans up the chunk string since these parameters are no longer needed
+    const beforeCleanup = chunk;
+    chunk = chunk.replace(/\.pr\([^)]+\)/g, '');
+    chunk = chunk.replace(/\.pm\([^)]+\)/g, '');
+    chunk = chunk.replace(/\.prRange\([^)]+\)/g, '');
+    chunk = chunk.replace(/\.pmRange\([^)]+\)/g, '');
+    if (beforeCleanup !== chunk) {
+      console.log(`[SEQ_STEP_7] Cleaned up probability params: "${beforeCleanup.substring(0, 150)}" -> "${chunk.substring(0, 150)}"`);
+    }
+    chunks[i] = chunk;
+  }
+
   const numNotes = Math.max(1, chunks.length);
+  console.log('[SEQ_STEP_8] Final numNotes:', numNotes);
 
   // Use provided parameters or fall back to server variables
   const useTempo = tempoParam !== null ? tempoParam : tempo;
@@ -1448,6 +1651,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
   const ev = Math.max(1, Math.round(barDurationMs / numNotes))
   const bt = Math.max(1, Math.round(barDurationMs / beatsPerBar))
   const br = barDurationMs
+  console.log('[SEQ_STEP_9] Timing values: barDurationMs=', barDurationMs, 'ev=', ev, 'bt=', bt, 'br=', br);
   
   // Parse cutoff token and convert to milliseconds
   // Parse cutoff duration - supports: br, br*2/3*4, bt, bt*2/3*4, or number*2/3*4
@@ -1719,6 +1923,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         let f = null;
         const norm = raw.replace(/\s+/g, '').toLowerCase();
         const prevDuration = duration; // Save previous state
+        console.log(`[SEQ_STEP_10] Processing duration for chunk ${idx}: raw="${raw}", norm="${norm}"`);
 
         // Allowed patterns:
         // d(*f) or d(/f) - multiply/divide default duration
@@ -1727,6 +1932,7 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
         
         // Try to evaluate as expression: bt, br, bt*2/3*4, br*2/3*4, or number*2/3*4
         const exprResult = evaluateExpression(norm, { bt, br });
+        console.log(`[SEQ_STEP_10] Expression result for "${norm}":`, exprResult);
 
         if (mMul && mMul[1] !== '') {
           f = parseFloat(mMul[1]);
@@ -1739,10 +1945,14 @@ async function playSequence(sequence, type = "fit", cutOff = null, channelOverri
           if (norm.startsWith('bt') || norm.startsWith('br')) {
             if (!disallowBtBr) {
               duration = Math.max(0, Math.round(exprResult));
+              console.log(`[SEQ_STEP_10] Set duration from bt/br expression: ${duration}ms (from ${norm})`);
+            } else {
+              console.log(`[SEQ_STEP_10] Skipped bt/br expression (disallowBtBr=true): ${norm}`);
             }
           } else {
             // Regular number expression
             duration = Math.max(0, Math.round(exprResult));
+            console.log(`[SEQ_STEP_10] Set duration from number expression: ${duration}ms (from ${norm})`);
           }
         } else if (norm === 'r') {
           // Random duration
