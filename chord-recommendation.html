@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALiCA - Chord Progression Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="chords.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'dark-bg': '#1a1a1a',
+                        'dark-bg-alt': '#0f0f0f',
+                        'dark-border': '#444',
+                        'dark-text': '#e0e0e0',
+                        'dark-text-muted': '#888',
+                        'blue-accent': '#4a9eff',
+                        'purple-accent': '#9c27b0',
+                    },
+                    fontFamily: {
+                        'mono': ['Courier New', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+        }
+        .chord-button {
+            transition: all 0.2s;
+        }
+        .chord-button:hover {
+            transform: translateY(-2px);
+        }
+        .step-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .step-content.expanded {
+            max-height: 5000px;
+            overflow: visible;
+        }
+    </style>
+</head>
+<body class="font-mono bg-dark-bg text-dark-text min-h-screen pt-[50px]">
+    <!-- ALiCA Header -->
+    <div id="header" class="flex fixed top-0 left-0 right-0 h-[50px] bg-dark-bg border-b border-dark-border items-center justify-between px-5 z-[1000] shadow-lg">
+        <div id="headerLeft" class="flex items-center text-xl font-bold text-dark-text">
+            <span class="brand text-xl">ALiCA</span>
+            <span class="byline text-[11px] text-dark-text-muted ml-1.5 font-normal">by Zetvies</span>
+        </div>
+        
+        <div id="header-middle" class="flex items-center gap-4">
+            <!-- Different Root Checkbox -->
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="differentRootCheckbox" class="w-4 h-4">
+                <label for="differentRootCheckbox" class="text-sm text-dark-text">Different Root</label>
+            </div>
+            
+            <!-- Unique Root Checkbox -->
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="uniqueRootCheckbox" class="w-4 h-4">
+                <label for="uniqueRootCheckbox" class="text-sm text-dark-text">Unique Root</label>
+            </div>
+            
+            <!-- Min Similarity -->
+            <div class="flex items-center gap-2">
+                <label class="text-sm text-dark-text-muted">Min Sim:</label>
+                <input type="number" id="minSimilarityHeader" min="0" max="1" step="0.1" value="0.4" class="bg-black border border-dark-border text-dark-text px-2 py-1 rounded text-sm w-16">
+            </div>
+            
+            <!-- Max Similarity -->
+            <div class="flex items-center gap-2">
+                <label class="text-sm text-dark-text-muted">Max Sim:</label>
+                <input type="number" id="maxSimilarityHeader" min="0" max="1" step="0.1" value="0.8" class="bg-black border border-dark-border text-dark-text px-2 py-1 rounded text-sm w-16">
+            </div>
+            
+            <!-- Beat Multiplier -->
+            <div class="flex items-center gap-2">
+                <label class="text-sm text-dark-text-muted">Beat Mult:</label>
+                <input type="number" id="beatMultiplier" min="1" value="1" class="bg-dark-bg-alt border border-dark-border text-dark-text px-2 py-1 rounded text-sm w-16">
+            </div>
+            
+            <!-- Starting Octave -->
+            <div class="flex items-center gap-2">
+                <label class="text-sm text-dark-text-muted">Octave:</label>
+                <input type="number" id="startingOctave" min="1" max="5" value="4" class="bg-black border border-dark-border text-dark-text px-2 py-1 rounded text-sm w-16">
+            </div>
+        </div>
+        
+        <div id="headerRight" class="flex items-center">
+            <button id="generateProgressionBtn" class="bg-blue-accent hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-semibold">
+                Generate Progression
+            </button>
+        </div>
+    </div>
+
+    <!-- ALiCA Code Display - Moved to top -->
+    <div class="container mx-auto px-5 pt-5">
+        <div class="grid grid-cols-2 gap-4 mb-5">
+            <div>
+                <h3 class="text-lg font-bold mb-2">ALiCA Chord Code</h3>
+                <div id="alicaChordCode" class="bg-dark-bg-alt border border-dark-border p-4 rounded font-mono text-sm overflow-x-auto whitespace-pre" style="user-select: text; -webkit-user-select: text;"></div>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold mb-2">ALiCA Melody Code</h3>
+                <div id="alicaMelodyCode" class="bg-dark-bg-alt border border-dark-border p-4 rounded font-mono text-sm overflow-x-auto whitespace-pre" style="user-select: text; -webkit-user-select: text;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-5 pb-8">
+        <!-- Selection Path -->
+        <div id="selectionPath" class="mb-8"></div>
+    </div>
+
+    <!-- Generate Progression Modal -->
+    <div id="generateModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[2000] flex items-center justify-center">
+        <div class="bg-dark-bg border border-dark-border rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 class="text-xl font-bold mb-4">Generate Progression</h2>
+            
+            <div class="mb-4">
+                <label class="block text-sm mb-2">Root:</label>
+                <select id="modalRootFilter" class="w-full bg-dark-bg-alt border border-dark-border text-dark-text px-3 py-2 rounded">
+                    <option value="">All</option>
+                    <option value="C">C</option>
+                    <option value="C#">C# / Db</option>
+                    <option value="D">D</option>
+                    <option value="D#">D# / Eb</option>
+                    <option value="E">E</option>
+                    <option value="F">F</option>
+                    <option value="F#">F# / Gb</option>
+                    <option value="G">G</option>
+                    <option value="G#">G# / Ab</option>
+                    <option value="A">A</option>
+                    <option value="A#">A# / Bb</option>
+                    <option value="B">B</option>
+                </select>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm mb-2">First Chord:</label>
+                <select id="modalFirstChord" class="w-full bg-dark-bg-alt border border-dark-border text-dark-text px-3 py-2 rounded">
+                    <option value="">Select a chord...</option>
+                </select>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm mb-2">Number of Chords:</label>
+                <input type="number" id="numChords" min="2" max="20" value="4" class="w-full bg-dark-bg-alt border border-dark-border text-dark-text px-3 py-2 rounded">
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm mb-2">Min Similarity:</label>
+                <input type="number" id="minSimilarity" min="0" max="1" step="0.1" value="0.4" class="w-full bg-dark-bg-alt border border-dark-border text-dark-text px-3 py-2 rounded">
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm mb-2">Max Similarity:</label>
+                <input type="number" id="maxSimilarity" min="0" max="1" step="0.1" value="0.8" class="w-full bg-dark-bg-alt border border-dark-border text-dark-text px-3 py-2 rounded">
+            </div>
+            
+            <div class="mb-4">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="modalDifferentRoot" class="w-4 h-4">
+                    <label for="modalDifferentRoot" class="text-sm text-dark-text">Use different root each time</label>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="modalUniqueRoot" class="w-4 h-4">
+                    <label for="modalUniqueRoot" class="text-sm text-dark-text">Use unique root note</label>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="modalLooping" class="w-4 h-4">
+                    <label for="modalLooping" class="text-sm text-dark-text">Looping</label>
+                </div>
+            </div>
+            
+            <div class="flex gap-2 justify-end">
+                <button id="cancelGenerateBtn" class="px-4 py-2 border border-dark-border rounded hover:bg-dark-bg-alt">Cancel</button>
+                <button id="confirmGenerateBtn" class="px-4 py-2 bg-blue-accent text-white rounded hover:bg-blue-600">Generate</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let selectedChords = [];
+        let currentStep = -1;
+        let startingOctave = 4; // Default starting octave
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeEventListeners();
+            updateSelectionPath();
+        });
+
+        function initializeEventListeners() {
+            // Header settings
+            document.getElementById('differentRootCheckbox').addEventListener('change', () => {
+                reloadAllStepResults();
+                updateALiCACommand();
+            });
+            
+            document.getElementById('uniqueRootCheckbox').addEventListener('change', () => {
+                reloadAllStepResults();
+                updateALiCACommand();
+            });
+            
+            document.getElementById('minSimilarityHeader').addEventListener('input', () => {
+                reloadAllStepResults();
+                updateALiCACommand();
+            });
+            
+            document.getElementById('maxSimilarityHeader').addEventListener('change', () => {
+                reloadAllStepResults();
+                updateALiCACommand();
+            });
+            
+            document.getElementById('beatMultiplier').addEventListener('input', () => {
+                updateALiCACommand();
+            });
+            
+            document.getElementById('beatMultiplier').addEventListener('change', () => {
+                updateALiCACommand();
+            });
+            
+            document.getElementById('startingOctave').addEventListener('input', () => {
+                startingOctave = parseInt(document.getElementById('startingOctave').value) || 4;
+                updateALiCACommand();
+            });
+            
+            document.getElementById('startingOctave').addEventListener('change', () => {
+                startingOctave = parseInt(document.getElementById('startingOctave').value) || 4;
+                updateALiCACommand();
+            });
+            
+            // Modal root filter - update first chord options
+            document.getElementById('modalRootFilter').addEventListener('change', () => {
+                updateModalFirstChordOptions();
+            });
+            
+            // Generate progression button
+            document.getElementById('generateProgressionBtn').addEventListener('click', () => {
+                updateModalFirstChordOptions();
+                document.getElementById('generateModal').classList.remove('hidden');
+            });
+            
+            // Modal buttons
+            document.getElementById('cancelGenerateBtn').addEventListener('click', () => {
+                document.getElementById('generateModal').classList.add('hidden');
+            });
+            
+            document.getElementById('confirmGenerateBtn').addEventListener('click', () => {
+                const rootFilter = document.getElementById('modalRootFilter').value;
+                const firstChordName = document.getElementById('modalFirstChord').value;
+                const numChords = parseInt(document.getElementById('numChords').value);
+                const minSim = parseFloat(document.getElementById('minSimilarity').value);
+                const maxSim = parseFloat(document.getElementById('maxSimilarity').value);
+                const differentRoot = document.getElementById('modalDifferentRoot').checked;
+                const uniqueRoot = document.getElementById('modalUniqueRoot').checked;
+                const looping = document.getElementById('modalLooping').checked;
+                
+                // Find first chord
+                const firstChord = chordDictionary.find(c => c.name === firstChordName);
+                if (!firstChord) {
+                    alert('Please select a first chord');
+                    return;
+                }
+                
+                // Sync modal values to header
+                document.getElementById('minSimilarityHeader').value = minSim;
+                document.getElementById('maxSimilarityHeader').value = maxSim;
+                document.getElementById('differentRootCheckbox').checked = differentRoot;
+                document.getElementById('uniqueRootCheckbox').checked = uniqueRoot;
+                
+                generateProgressionAuto(firstChord, numChords, minSim, maxSim, differentRoot, uniqueRoot, looping);
+                document.getElementById('generateModal').classList.add('hidden');
+            });
+        }
+
+        function updateModalFirstChordOptions() {
+            const rootFilter = document.getElementById('modalRootFilter').value;
+            const firstChordSelect = document.getElementById('modalFirstChord');
+            
+            // Filter chords by root
+            let chords = rootFilter 
+                ? chordDictionary.filter(c => c.root === rootFilter)
+                : chordDictionary;
+            
+            // Update select options
+            firstChordSelect.innerHTML = '<option value="">Select a chord...</option>';
+            chords.forEach(chord => {
+                const option = document.createElement('option');
+                option.value = chord.name;
+                option.textContent = chord.name; // Keep hyphen in display
+                firstChordSelect.appendChild(option);
+            });
+        }
+
+        function renderChordOptions(containerId, previousChord, stepIndex) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            container.innerHTML = '';
+            
+            // Get root filter - use step-specific filter for step 1, otherwise use header filter (none)
+            let rootFilter = '';
+            if (stepIndex === 1) {
+                const step1Filter = document.getElementById('step1RootFilter');
+                rootFilter = step1Filter ? step1Filter.value : '';
+            }
+            
+            let chords = rootFilter 
+                ? chordDictionary.filter(c => c.root === rootFilter)
+                : chordDictionary;
+            
+            // Render all chord buttons (for initial selection)
+            chords.forEach(chord => {
+                const btn = document.createElement('button');
+                btn.className = 'chord-button bg-dark-bg-alt border border-dark-border hover:border-blue-accent px-3 py-2 rounded text-sm';
+                
+                // Mark flat root chords with purple color
+                const isFlatRoot = ['Db', 'Eb', 'Gb', 'Ab', 'Bb'].includes(chord.root);
+                let chordNameDisplay = chord.name;
+                if (isFlatRoot) {
+                    btn.innerHTML = `<span class="text-purple-accent">${chordNameDisplay}</span>`;
+                } else {
+                    btn.textContent = chordNameDisplay;
+                }
+                
+                btn.addEventListener('click', () => {
+                    selectChord(chord, stepIndex);
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        function renderSimilarChords(containerId, previousChord, stepIndex) {
+            const container = document.getElementById(containerId);
+            if (!container || !previousChord) return;
+            
+            container.innerHTML = '';
+            
+            // Get all similar chords
+            const similar = findSimilarChords(previousChord, 0, 1);
+            
+            // Apply root filters
+            const differentRoot = document.getElementById('differentRootCheckbox').checked;
+            const uniqueRoot = document.getElementById('uniqueRootCheckbox').checked;
+            
+            let filtered = similar;
+            
+            // Filter by different root - exclude chords with the same root as the previous chord
+            if (differentRoot) {
+                const prevRoot = previousChord?.root;
+                if (prevRoot) {
+                    filtered = filtered.filter(item => {
+                        const c = item.chord;
+                        return c.root !== prevRoot;
+                    });
+                }
+            }
+            
+            if (uniqueRoot) {
+                const usedRoots = selectedChords.map(c => c.root);
+                filtered = filtered.filter(item => !usedRoots.includes(item.chord.root));
+            }
+            
+            // Group into 6 tiers based on similarity
+            // Level 0: 0.83-1.0 (Very similar)
+            // Level 1: 0.67-0.82
+            // Level 2: 0.50-0.66
+            // Level 3: 0.33-0.49
+            // Level 4: 0.17-0.32
+            // Level 5: 0.0-0.16 (Not similar)
+            const tiers = {
+                0: { min: 0.83, max: 1.0, label: 'Very similar (>83% match)' },
+                1: { min: 0.67, max: 0.82, label: 'Similar (67-82% match)' },
+                2: { min: 0.50, max: 0.66, label: 'Moderately similar (50-66% match)' },
+                3: { min: 0.33, max: 0.49, label: 'Somewhat similar (33-49% match)' },
+                4: { min: 0.17, max: 0.32, label: 'Less similar (17-32% match)' },
+                5: { min: 0.0, max: 0.16, label: 'Not similar (<17% match)' }
+            };
+            
+            const tiered = {};
+            for (let i = 0; i < 6; i++) {
+                tiered[i] = [];
+            }
+            
+            filtered.forEach(item => {
+                for (let i = 0; i < 6; i++) {
+                    if (item.similarity >= tiers[i].min && item.similarity <= tiers[i].max) {
+                        tiered[i].push(item);
+                        break;
+                    }
+                }
+            });
+            
+            // Render tiers
+            for (let i = 0; i < 6; i++) {
+                if (tiered[i].length === 0) continue;
+                
+                const tierDiv = document.createElement('div');
+                tierDiv.className = 'mb-4';
+                
+                const tierTitle = document.createElement('div');
+                tierTitle.className = 'text-sm font-bold text-dark-text-muted mb-2';
+                tierTitle.textContent = `Level ${i}: ${tiers[i].label}`;
+                tierDiv.appendChild(tierTitle);
+                
+                const tierButtons = document.createElement('div');
+                tierButtons.className = 'flex flex-wrap gap-2';
+                
+                tiered[i].forEach(item => {
+                    // Skip if this is the currently selected chord
+                    const arrayIndex = stepIndex;
+                    if (arrayIndex >= 0 && arrayIndex < selectedChords.length) {
+                        const currentChord = selectedChords[arrayIndex];
+                        if (currentChord && 
+                            currentChord.root === item.chord.root && 
+                            currentChord.quality === item.chord.quality &&
+                            (currentChord.bass || null) === (item.chord.bass || null)) {
+                            return; // Skip this chord
+                        }
+                    }
+                    
+                    const btn = document.createElement('button');
+                    btn.className = 'chord-button bg-dark-bg-alt border border-dark-border hover:border-blue-accent hover:bg-dark-bg px-2 py-1.5 rounded text-sm relative transition-all min-w-[120px]';
+                    
+                    // Get current chord notes for highlighting
+                    const currentChord = previousChord;
+                    const currentChordNotes = currentChord ? getChordNotes(currentChord.root, currentChord.quality, currentChord.bass || null) : null;
+                    const itemChordNotes = getChordNotes(item.chord.root, item.chord.quality, item.chord.bass || null);
+                    
+                    // Find shared notes
+                    const sharedNotes = currentChordNotes && itemChordNotes 
+                        ? currentChordNotes.filter(note => itemChordNotes.includes(note))
+                        : null;
+                    
+                    // Get chord notes display with highlighting
+                    const chordNotesDisplay = getChordNotesDisplay(item.chord, sharedNotes);
+                    const similarityPercent = Math.round(item.similarity * 100);
+                    let chordNameDisplay = item.chord.name;
+                    
+                    // Mark flat root chords with purple color
+                    const isFlatRoot = ['Db', 'Eb', 'Gb', 'Ab', 'Bb'].includes(item.chord.root);
+                    if (isFlatRoot) {
+                        chordNameDisplay = `<span class="text-purple-accent">${chordNameDisplay}</span>`;
+                    }
+                    
+                    btn.innerHTML = `
+                        <div class="flex items-start justify-between gap-2 mb-1">
+                            <span class="font-bold text-dark-text text-xs text-left flex-1 min-w-0">${chordNameDisplay}</span>
+                            <span class="bg-blue-accent text-white px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0">${similarityPercent}%</span>
+                        </div>
+                        <span class="text-[10px] text-dark-text-muted text-left leading-tight block break-words">(${chordNotesDisplay})</span>
+                    `;
+                    
+                    btn.addEventListener('click', () => {
+                        // Add as next step - stepIndex is array index, convert to step number
+                        const currentStepNumber = stepIndex + 1; // array index 0 = step 1, etc.
+                        const nextStepNumber = currentStepNumber + 1;
+                        selectChord(item.chord, nextStepNumber);
+                    });
+                    tierButtons.appendChild(btn);
+                });
+                
+                tierDiv.appendChild(tierButtons);
+                container.appendChild(tierDiv);
+            }
+        }
+
+        function selectChord(chord, stepIndex) {
+            // Convert stepIndex: step 1 = index 0, step 2 = index 1, etc.
+            const arrayIndex = stepIndex - 1;
+            const previousStep = currentStep;
+            
+            if (arrayIndex === 0) {
+                // Initial chord selection (Step 1)
+                selectedChords = [chord];
+                currentStep = 1;
+            } else {
+                // Subsequent step - always add as new step
+                if (arrayIndex >= selectedChords.length) {
+                    selectedChords.push(chord);
+                } else {
+                    selectedChords[arrayIndex] = chord;
+                    // Clear subsequent steps
+                    selectedChords = selectedChords.slice(0, arrayIndex + 1);
+                }
+                // Set current step to the newly selected step
+                currentStep = stepIndex;
+            }
+            
+            updateSelectionPath();
+            updateALiCACommand();
+            
+            // Collapse previous step and expand new step
+            if (previousStep !== currentStep && previousStep > 0) {
+                setTimeout(() => {
+                    const prevStepDiv = document.querySelector(`#step${previousStep}Options`)?.closest('.mb-4');
+                    const newStepDiv = document.querySelector(`#step${currentStep}Options, #step${currentStep}SimilarChords`)?.closest('.mb-4');
+                    
+                    if (prevStepDiv) {
+                        const prevContent = prevStepDiv.querySelector('.step-content');
+                        const prevToggle = prevStepDiv.querySelector('.step-toggle');
+                        if (prevContent && prevContent.classList.contains('expanded')) {
+                            prevContent.classList.remove('expanded');
+                            if (prevToggle) prevToggle.textContent = '▶';
+                        }
+                    }
+                    
+                    if (newStepDiv) {
+                        const newContent = newStepDiv.querySelector('.step-content');
+                        const newToggle = newStepDiv.querySelector('.step-toggle');
+                        if (newContent && !newContent.classList.contains('expanded')) {
+                            newContent.classList.add('expanded');
+                            if (newToggle) newToggle.textContent = '▼';
+                        }
+                    }
+                }, 10);
+            }
+        }
+
+        function updateSelectionPath() {
+            const pathDiv = document.getElementById('selectionPath');
+            pathDiv.innerHTML = '';
+            
+            // Always render Step 1
+            const step1Div = createStepDiv(1, selectedChords[0] || null, null);
+            pathDiv.appendChild(step1Div);
+            
+            // Render subsequent steps (Step 2, 3, etc.)
+            for (let i = 1; i < selectedChords.length; i++) {
+                const stepDiv = createStepDiv(i + 1, selectedChords[i], selectedChords[i - 1]);
+                pathDiv.appendChild(stepDiv);
+            }
+            
+            // Don't render a "next step" - recommendations are shown within each step
+        }
+
+        function createStepDiv(stepIndex, selectedChord, previousChord) {
+            const stepDiv = document.createElement('div');
+            stepDiv.className = 'mb-4 border border-dark-border rounded p-4';
+            
+            const isExpanded = stepIndex === currentStep || (stepIndex === 1 && selectedChords.length === 0);
+            
+            // Get chord notes for display with highlighting from previous chord
+            let chordNotesDisplay = '';
+            let chordNameDisplay = selectedChord ? selectedChord.name : '';
+            
+            if (selectedChord) {
+                // Get previous chord notes for highlighting
+                const previousChordNotes = previousChord ? getChordNotes(previousChord.root, previousChord.quality, previousChord.bass || null) : null;
+                
+                // Get current chord notes
+                const currentChordNotes = getChordNotes(selectedChord.root, selectedChord.quality, selectedChord.bass || null);
+                
+                // Find shared notes
+                const sharedNotes = previousChordNotes && currentChordNotes 
+                    ? currentChordNotes.filter(note => previousChordNotes.includes(note))
+                    : null;
+                
+                // Get display with highlighting
+                chordNotesDisplay = getChordNotesDisplay(selectedChord, sharedNotes);
+                
+                // Mark flat root chords
+                const isFlatRoot = ['Db', 'Eb', 'Gb', 'Ab', 'Bb'].includes(selectedChord.root);
+                if (isFlatRoot) {
+                    chordNameDisplay = `<span class="text-purple-accent">${chordNameDisplay}</span>`;
+                }
+            }
+            
+            const chordDisplay = selectedChord 
+                ? `${chordNameDisplay} (${chordNotesDisplay})`
+                : 'Select First Chord';
+            
+            // If chord is selected, show it with recommendations
+            // If not selected, show selection interface
+            if (selectedChord) {
+                stepDiv.innerHTML = `
+                    <div class="flex items-center justify-between mb-2 step-header cursor-pointer">
+                        <h3 class="text-lg font-bold">
+                            Step ${stepIndex}: ${chordDisplay}
+                        </h3>
+                        <div class="flex gap-2 items-center">
+                            <button class="clear-step bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm" onclick="event.stopPropagation()">Clear</button>
+                            <span class="step-toggle text-white">${isExpanded ? '▼' : '▶'}</span>
+                        </div>
+                    </div>
+                    <div class="step-content ${isExpanded ? 'expanded' : ''}">
+                        <div class="mb-4">
+                            <h4 class="text-md font-bold mb-2">Similar Chords:</h4>
+                            <div id="step${stepIndex}SimilarChords" class="overflow-visible"></div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Step 1: Show selection interface
+                if (stepIndex === 1) {
+                    stepDiv.innerHTML = `
+                        <div class="flex items-center justify-between mb-2 step-header cursor-pointer">
+                            <h3 class="text-lg font-bold">Step ${stepIndex}: ${chordDisplay}</h3>
+                            <span class="step-toggle text-white">${isExpanded ? '▼' : '▶'}</span>
+                        </div>
+                        <div class="step-content ${isExpanded ? 'expanded' : ''}">
+                            <div class="mb-4">
+                                <label class="block text-sm mb-2 text-dark-text-muted">Root Note Filter:</label>
+                                <select id="step1RootFilter" class="bg-dark-bg-alt border border-dark-border text-dark-text px-3 py-2 rounded text-sm w-full">
+                                    <option value="">All</option>
+                                    <option value="C">C</option>
+                                    <option value="C#">C# / Db</option>
+                                    <option value="D">D</option>
+                                    <option value="D#">D# / Eb</option>
+                                    <option value="E">E</option>
+                                    <option value="F">F</option>
+                                    <option value="F#">F# / Gb</option>
+                                    <option value="G">G</option>
+                                    <option value="G#">G# / Ab</option>
+                                    <option value="A">A</option>
+                                    <option value="A#">A# / Bb</option>
+                                    <option value="B">B</option>
+                                </select>
+                            </div>
+                            <div>
+                                <h4 class="text-md font-bold mb-2">Chord Options:</h4>
+                                <div id="step${stepIndex}Options" class="flex flex-wrap gap-2"></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Other steps: just show selection
+                    stepDiv.innerHTML = `
+                        <div class="flex items-center justify-between mb-2 step-header cursor-pointer">
+                            <h3 class="text-lg font-bold">Step ${stepIndex}: ${chordDisplay}</h3>
+                            <span class="step-toggle text-white">${isExpanded ? '▼' : '▶'}</span>
+                        </div>
+                        <div class="step-content ${isExpanded ? 'expanded' : ''}">
+                            <div id="step${stepIndex}Options" class="flex flex-wrap gap-2"></div>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Toggle functionality - make whole header clickable
+            const header = stepDiv.querySelector('.step-header');
+            if (header) {
+                header.addEventListener('click', (e) => {
+                    // Don't toggle if clicking the clear button
+                    if (e.target.classList.contains('clear-step')) return;
+                    
+                    const content = stepDiv.querySelector('.step-content');
+                    const toggle = stepDiv.querySelector('.step-toggle');
+                    if (content && toggle) {
+                        content.classList.toggle('expanded');
+                        toggle.textContent = content.classList.contains('expanded') ? '▼' : '▶';
+                        if (content.classList.contains('expanded')) {
+                            currentStep = stepIndex;
+                        }
+                    }
+                });
+            }
+            
+            // Clear button
+            if (selectedChord) {
+                stepDiv.querySelector('.clear-step').addEventListener('click', () => {
+                    clearFromStep(stepIndex);
+                });
+            }
+            
+            // Root filter for step 1
+            if (stepIndex === 1 && !selectedChord) {
+                const rootFilter = stepDiv.querySelector('#step1RootFilter');
+                if (rootFilter) {
+                    rootFilter.addEventListener('change', () => {
+                        renderChordOptions(`step${stepIndex}Options`, null, stepIndex);
+                    });
+                }
+            }
+            
+            // Render options
+            setTimeout(() => {
+                if (selectedChord) {
+                    // Show similar chords
+                    const arrayIndex = stepIndex - 1;
+                    renderSimilarChords(`step${stepIndex}SimilarChords`, selectedChord, arrayIndex);
+                } else {
+                    // Show chord selection - use stepIndex directly (not arrayIndex)
+                    renderChordOptions(`step${stepIndex}Options`, previousChord, stepIndex);
+                }
+            }, 0);
+            
+            return stepDiv;
+        }
+
+        function clearFromStep(stepIndex) {
+            if (stepIndex === 1) {
+                // Reset to initial state
+                selectedChords = [];
+                currentStep = -1;
+            } else {
+                // Clear from this step onwards
+                selectedChords = selectedChords.slice(0, stepIndex - 1);
+            }
+            
+            updateSelectionPath();
+            updateALiCACommand();
+        }
+
+        function reloadAllStepResults() {
+            // Re-render all steps with updated filters
+            updateSelectionPath();
+        }
+
+        function generateProgressionAuto(firstChord, numChords, minSim, maxSim, differentRoot, uniqueRoot, looping) {
+            selectedChords = [firstChord];
+            
+            // Generate the specified number of chords
+            for (let i = 1; i < numChords; i++) {
+                const previousChord = selectedChords[i - 1];
+                const similar = findSimilarChords(previousChord, minSim, maxSim);
+                
+                if (!similar || similar.length === 0) {
+                    break;
+                }
+                
+                let candidates = similar.map(item => item.chord);
+                
+                // Apply root filters
+                if (differentRoot) {
+                    const prevRoot = selectedChords[i - 1]?.root;
+                    const prevPrevRoot = i > 1 ? selectedChords[i - 2]?.root : null;
+                    candidates = candidates.filter(c => c.root !== prevRoot && (!prevPrevRoot || c.root !== prevPrevRoot));
+                }
+                
+                if (uniqueRoot) {
+                    const usedRoots = selectedChords.map(c => c.root);
+                    candidates = candidates.filter(c => !usedRoots.includes(c.root));
+                }
+                
+                // If looping and this is the last chord, prefer chords that lead back to first
+                if (looping && i === numChords - 1) {
+                    // Find chords similar to first chord to create a smooth loop
+                    const firstSimilar = findSimilarChords(firstChord, minSim, maxSim);
+                    const firstSimilarChords = firstSimilar.map(item => item.chord);
+                    // Prefer candidates that are also similar to the first chord
+                    const loopCandidates = candidates.filter(c => 
+                        firstSimilarChords.some(fc => 
+                            fc.root === c.root && 
+                            fc.quality === c.quality &&
+                            (fc.bass || null) === (c.bass || null)
+                        )
+                    );
+                    if (loopCandidates.length > 0) {
+                        candidates = loopCandidates;
+                    }
+                }
+                
+                if (candidates.length === 0) {
+                    break;
+                }
+                
+                // Select random chord from candidates
+                const randomIndex = Math.floor(Math.random() * candidates.length);
+                selectedChords.push(candidates[randomIndex]);
+            }
+            
+            // Don't add the first chord again - the progression will loop naturally when played
+            // If looping is enabled, the last chord should already lead back to the first
+            
+            updateSelectionPath();
+            updateALiCACommand();
+            
+            // Collapse all steps after generation
+            setTimeout(() => {
+                const allStepContents = document.querySelectorAll('.step-content');
+                const allStepToggles = document.querySelectorAll('.step-toggle');
+                allStepContents.forEach(content => {
+                    content.classList.remove('expanded');
+                });
+                allStepToggles.forEach(toggle => {
+                    toggle.textContent = '▶';
+                });
+                currentStep = -1;
+            }, 100);
+        }
+
+        // Get chord notes as a display string (e.g., "G, B, D") - root note first (or bass first for slash chords)
+        // If highlightNotes is provided, highlights shared notes
+        function getChordNotesDisplay(chord, highlightNotes = null) {
+            const bass = chord.bass || null;
+            const chordNotes = getChordNotes(chord.root, chord.quality, bass);
+            if (!chordNotes) return '';
+            
+            // Get root note semitone
+            const rootSemitone = noteToSemitone(chord.root);
+            if (rootSemitone === null) return '';
+            
+            // Sort semitones
+            const sortedSemitones = [...chordNotes].sort((a, b) => a - b);
+            
+            // For slash chords, put bass note first; otherwise put root first
+            let orderedSemitones;
+            if (bass !== null) {
+                // Slash chord - bass note first
+                const bassSemitone = noteToSemitone(bass);
+                if (bassSemitone !== null) {
+                    const bassIndex = sortedSemitones.indexOf(bassSemitone);
+                    if (bassIndex !== -1) {
+                        orderedSemitones = [bassSemitone];
+                        sortedSemitones.forEach((semitone, idx) => {
+                            if (idx !== bassIndex) {
+                                orderedSemitones.push(semitone);
+                            }
+                        });
+                    } else {
+                        orderedSemitones = sortedSemitones;
+                    }
+                } else {
+                    orderedSemitones = sortedSemitones;
+                }
+            } else {
+                // Regular chord - root note first
+                const rootIndex = sortedSemitones.indexOf(rootSemitone);
+                if (rootIndex !== -1) {
+                    orderedSemitones = [rootSemitone];
+                    sortedSemitones.forEach((semitone, idx) => {
+                        if (idx !== rootIndex) {
+                            orderedSemitones.push(semitone);
+                        }
+                    });
+                } else {
+                    orderedSemitones = sortedSemitones;
+                }
+            }
+            
+            // Convert to note names and highlight if needed
+            const highlightSet = highlightNotes ? new Set(highlightNotes) : null;
+            const noteNames = orderedSemitones.map(semitone => {
+                const noteName = semitoneToNote(semitone);
+                if (highlightSet && highlightSet.has(semitone)) {
+                    return `<span class="text-blue-accent font-bold">${noteName}</span>`;
+                }
+                return noteName;
+            });
+            return noteNames.join(', ');
+        }
+
+        // Note name to ALiCA token (lowercase)
+        function noteToToken(note) {
+            return note.toLowerCase();
+        }
+
+        // Arrange notes with octaves - root note first (or bass first for slash chords), then ascending order
+        function arrangeNotesWithOctaves(chord, startingOctave) {
+            const bass = chord.bass || null;
+            const chordNotes = getChordNotes(chord.root, chord.quality, bass);
+            if (!chordNotes) return [];
+            
+            // Get root note semitone
+            const rootSemitone = noteToSemitone(chord.root);
+            if (rootSemitone === null) return [];
+            
+            // Sort semitones
+            const sortedSemitones = [...chordNotes].sort((a, b) => a - b);
+            
+            // For slash chords, put bass note first; otherwise put root first
+            let orderedSemitones;
+            if (bass !== null) {
+                // Slash chord - bass note first
+                const bassSemitone = noteToSemitone(bass);
+                if (bassSemitone !== null) {
+                    const bassIndex = sortedSemitones.indexOf(bassSemitone);
+                    if (bassIndex !== -1) {
+                        orderedSemitones = [bassSemitone];
+                        sortedSemitones.forEach((semitone, idx) => {
+                            if (idx !== bassIndex) {
+                                orderedSemitones.push(semitone);
+                            }
+                        });
+                    } else {
+                        orderedSemitones = sortedSemitones;
+                    }
+                } else {
+                    orderedSemitones = sortedSemitones;
+                }
+            } else {
+                // Regular chord - root note first
+                const rootIndex = sortedSemitones.indexOf(rootSemitone);
+                if (rootIndex !== -1) {
+                    orderedSemitones = [rootSemitone];
+                    sortedSemitones.forEach((semitone, idx) => {
+                        if (idx !== rootIndex) {
+                            orderedSemitones.push(semitone);
+                        }
+                    });
+                } else {
+                    orderedSemitones = sortedSemitones;
+                }
+            }
+            
+            const notes = [];
+            let currentOctave = startingOctave;
+            let lastNoteSemitone = null;
+            
+            orderedSemitones.forEach(semitone => {
+                const noteName = semitoneToNote(semitone);
+                let noteOctave = currentOctave;
+                
+                // If this note is lower than the previous one (wrapped around), increment octave
+                if (lastNoteSemitone !== null && semitone < lastNoteSemitone) {
+                    currentOctave++;
+                    noteOctave = currentOctave;
+                }
+                
+                notes.push({
+                    name: noteToToken(noteName), // Convert to lowercase
+                    octave: noteOctave,
+                    semitone: semitone,
+                    fullName: `${noteToToken(noteName)}${noteOctave}`
+                });
+                
+                lastNoteSemitone = semitone;
+            });
+            
+            return notes;
+        }
+
+        function generateALiCACommand() {
+            if (selectedChords.length === 0) {
+                document.getElementById('alicaChordCode').textContent = '';
+                return;
+            }
+            
+            const beatMultiplier = parseInt(document.getElementById('beatMultiplier').value) || 1;
+            const currentStartingOctave = parseInt(document.getElementById('startingOctave').value) || 4;
+            const numChords = selectedChords.length;
+            
+            // Calculate sn value
+            const snValue = beatMultiplier > 1 ? `${numChords}*${beatMultiplier}` : numChords;
+            
+            // Generate chord notes
+            const chordNotesArray = selectedChords.map(chord => {
+                const notes = arrangeNotesWithOctaves(chord, currentStartingOctave);
+                const noteTokens = notes.map(n => n.fullName).join(',');
+                return `n(<${noteTokens}>)`;
+            });
+            
+            // Format with breaks and proper indentation (all lowercase)
+            const command = `t(chords).sn(${snValue}).play( \n[ \n${chordNotesArray.join(' \n')} \n].c(1) \n)`;
+            
+            document.getElementById('alicaChordCode').textContent = command;
+        }
+
+        function generateALiCAMelodyCommand() {
+            if (selectedChords.length === 0) {
+                document.getElementById('alicaMelodyCode').textContent = '';
+                return;
+            }
+            
+            const beatMultiplier = parseInt(document.getElementById('beatMultiplier').value) || 1;
+            const currentStartingOctave = parseInt(document.getElementById('startingOctave').value) || 4;
+            
+            const numChords = selectedChords.length;
+            const snValue = beatMultiplier > 1 ? `${numChords}*${beatMultiplier}` : numChords;
+            
+            // Generate melody notes for each chord
+            const melodyNotesArray = selectedChords.map(chord => {
+                const notes = arrangeNotesWithOctaves(chord, currentStartingOctave);
+                
+                // Get notes without octaves for r.o{...} (lowercase)
+                const notesWithoutOctave = notes.map(n => n.name).join(',');
+                
+                // Get first and last notes with octaves for nRange (lowercase)
+                const firstNote = notes[0].fullName;
+                const lastNote = notes[notes.length - 1].fullName;
+                
+                return `n(r.o{${notesWithoutOctave}})^${beatMultiplier}.nRange(${firstNote},${lastNote})`;
+            });
+            
+            // Format with breaks and proper indentation
+            const command = `t(melody).sn(${snValue}).play( \n[ \n${melodyNotesArray.join(' \n')} \n].c(1) \n)`;
+            
+            document.getElementById('alicaMelodyCode').textContent = command;
+        }
+
+        function updateALiCACommand() {
+            generateALiCACommand();
+            generateALiCAMelodyCommand();
+        }
+
+        // Make updateALiCACommand globally accessible
+        window.updateALiCACommand = updateALiCACommand;
+    </script>
+</body>
+</html>
