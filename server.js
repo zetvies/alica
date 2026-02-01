@@ -1353,16 +1353,33 @@ async function playSequence(
   }
   processedSequence = tempSequence;
 
-  // Count original notes in sequence (before % expansion) to calculate default duration
+  // Count original notes and pauses in sequence (before % expansion) to calculate default duration
   // This is needed for % operator which divides the default per-note duration
   let originalNoteCount = 0;
   // Track % groups for dynamic duration adjustment after probability filtering
   let percentGroupCounter = 0;
-  console.log("[SEQ_STEP_2] Counting original notes before % expansion...");
+  console.log("[SEQ_STEP_2] Counting original notes and pauses before % expansion...");
   let countIdx = 0;
   while (countIdx < processedSequence.length) {
+    // Find the next n( or ~ token
     const nIdx = processedSequence.indexOf("n(", countIdx);
-    if (nIdx === -1) break;
+    const tildeIdx = processedSequence.indexOf("~", countIdx);
+    
+    // Determine which comes first
+    let nextIdx = -1;
+    let isPause = false;
+    if (nIdx === -1 && tildeIdx === -1) break;
+    if (nIdx === -1) {
+      nextIdx = tildeIdx;
+      isPause = true;
+    } else if (tildeIdx === -1) {
+      nextIdx = nIdx;
+      isPause = false;
+    } else {
+      nextIdx = Math.min(nIdx, tildeIdx);
+      isPause = tildeIdx < nIdx;
+    }
+    
     originalNoteCount++;
     // Find the end of this note chunk
     let parenCount = 0;
@@ -1433,33 +1450,59 @@ async function playSequence(
   let newSequence = "";
 
   while (repeatSearchIdx < processedSequence.length) {
+    // Find the next n( or ~ token
     const nIndex = processedSequence.indexOf("n(", repeatSearchIdx);
-    if (nIndex === -1) {
+    const tildeIndex = processedSequence.indexOf("~", repeatSearchIdx);
+    
+    // Determine which comes first
+    let nextIndex = -1;
+    let isPause = false;
+    if (nIndex === -1 && tildeIndex === -1) {
       newSequence += processedSequence.substring(repeatSearchIdx);
       break;
     }
+    if (nIndex === -1) {
+      nextIndex = tildeIndex;
+      isPause = true;
+    } else if (tildeIndex === -1) {
+      nextIndex = nIndex;
+      isPause = false;
+    } else {
+      nextIndex = Math.min(nIndex, tildeIndex);
+      isPause = tildeIndex < nIndex;
+    }
 
-    newSequence += processedSequence.substring(repeatSearchIdx, nIndex);
+    newSequence += processedSequence.substring(repeatSearchIdx, nextIndex);
 
-    // Find the matching closing parenthesis for n(...)
+    // Find the matching closing parenthesis for n(...) or just the ~ for pause
     let parenCount = 0;
     let angleCount = 0;
-    let chunkStart = nIndex;
-    let chunkEnd = nIndex + 2; // After "n("
-    let i = chunkEnd;
-
-    // First, find the end of n(...)
-    while (i < processedSequence.length) {
-      if (processedSequence[i] === "(") parenCount++;
-      else if (processedSequence[i] === ")") {
-        if (parenCount === 0 && angleCount === 0) {
-          chunkEnd = i + 1;
-          break;
-        }
-        parenCount--;
-      } else if (processedSequence[i] === "<") angleCount++;
-      else if (processedSequence[i] === ">") angleCount--;
-      i++;
+    let chunkStart = nextIndex;
+    let chunkEnd;
+    let i;
+    
+    if (isPause) {
+      // For pause (~), just move past the tilde
+      chunkEnd = nextIndex + 1;
+      i = chunkEnd;
+    } else {
+      // For note (n(...)), find matching parenthesis
+      chunkEnd = nextIndex + 2; // After "n("
+      i = chunkEnd;
+      
+      // First, find the end of n(...)
+      while (i < processedSequence.length) {
+        if (processedSequence[i] === "(") parenCount++;
+        else if (processedSequence[i] === ")") {
+          if (parenCount === 0 && angleCount === 0) {
+            chunkEnd = i + 1;
+            break;
+          }
+          parenCount--;
+        } else if (processedSequence[i] === "<") angleCount++;
+        else if (processedSequence[i] === ">") angleCount--;
+        i++;
+      }
     }
 
     // Now look for parameters and repeat syntax after n(...)
@@ -1505,10 +1548,10 @@ async function playSequence(
         }
       }
 
-      // Check if we've hit the start of another chunk
+      // Check if we've hit the start of another chunk (note or pause)
       if (
-        i < processedSequence.length - 1 &&
-        processedSequence.substring(i, i + 2) === "n("
+        i < processedSequence.length &&
+        (processedSequence.substring(i, i + 2) === "n(" || processedSequence[i] === "~")
       ) {
         break;
       }
@@ -1661,39 +1704,66 @@ async function playSequence(
   }
 
   // Extract chunks using balanced parentheses matching to handle nested structures like n(<chord(c-maj9)>)
+  // Also extract ~ (pause) chunks
   const allChunks = [];
   let searchIdx = 0;
   while (searchIdx < expandedSequence.length) {
+    // Find the next n( or ~ token
     const nIndex = expandedSequence.indexOf("n(", searchIdx);
-    if (nIndex === -1) break;
-
-    // Find the matching closing parenthesis for n(...)
-    let parenCount = 0;
-    let angleCount = 0;
-    let chunkEnd = nIndex + 2; // After "n("
-    let i = chunkEnd;
-
-    // First, find the end of n(...)
-    while (i < expandedSequence.length) {
-      if (expandedSequence[i] === "(") parenCount++;
-      else if (expandedSequence[i] === ")") {
-        if (parenCount === 0 && angleCount === 0) {
-          chunkEnd = i + 1;
-          break;
-        }
-        parenCount--;
-      } else if (expandedSequence[i] === "<") angleCount++;
-      else if (expandedSequence[i] === ">") angleCount--;
-      i++;
+    const tildeIndex = expandedSequence.indexOf("~", searchIdx);
+    
+    // Determine which comes first
+    let nextIndex = -1;
+    let isPause = false;
+    if (nIndex === -1 && tildeIndex === -1) break;
+    if (nIndex === -1) {
+      nextIndex = tildeIndex;
+      isPause = true;
+    } else if (tildeIndex === -1) {
+      nextIndex = nIndex;
+      isPause = false;
+    } else {
+      nextIndex = Math.min(nIndex, tildeIndex);
+      isPause = tildeIndex < nIndex;
     }
 
-    // Now look for parameters after n(...) - they start with a dot
+    // Find the matching closing parenthesis for n(...) or just the ~ for pause
+    let parenCount = 0;
+    let angleCount = 0;
+    let chunkEnd;
+    let i;
+    
+    if (isPause) {
+      // For pause (~), just move past the tilde
+      chunkEnd = nextIndex + 1;
+      i = chunkEnd;
+    } else {
+      // For note (n(...)), find matching parenthesis
+      chunkEnd = nextIndex + 2; // After "n("
+      i = chunkEnd;
+
+      // First, find the end of n(...)
+      while (i < expandedSequence.length) {
+        if (expandedSequence[i] === "(") parenCount++;
+        else if (expandedSequence[i] === ")") {
+          if (parenCount === 0 && angleCount === 0) {
+            chunkEnd = i + 1;
+            break;
+          }
+          parenCount--;
+        } else if (expandedSequence[i] === "<") angleCount++;
+        else if (expandedSequence[i] === ">") angleCount--;
+        i++;
+      }
+    }
+
+    // Now look for parameters after n(...) or ~ - they start with a dot
     i = chunkEnd;
     while (i < expandedSequence.length) {
       // Check if we've hit the start of another chunk (whitespace already removed)
       if (
-        i < expandedSequence.length - 1 &&
-        expandedSequence.substring(i, i + 2) === "n("
+        i < expandedSequence.length &&
+        (expandedSequence.substring(i, i + 2) === "n(" || expandedSequence[i] === "~")
       ) {
         break;
       }
@@ -1733,7 +1803,7 @@ async function playSequence(
       i++;
     }
 
-    const chunk = expandedSequence.substring(nIndex, chunkEnd);
+    const chunk = expandedSequence.substring(nextIndex, chunkEnd);
     if (chunk) {
       allChunks.push(chunk);
     }
@@ -1994,6 +2064,51 @@ async function playSequence(
 
   for (let idx = 0; idx < chunks.length; idx++) {
     const chunk = chunks[idx];
+    
+    // Check if this is a pause chunk (~)
+    const isPauseChunk = chunk.startsWith("~");
+    
+    if (isPauseChunk) {
+      // Handle pause chunk - wait without playing notes
+      // Parse duration parameter if present: ~.d(bt) or ~.d(500)
+      let pauseDuration = null;
+      
+      // Extract .d() parameter for pause duration
+      const durationMatch = chunk.match(/\.d\(([^)]+)\)/);
+      if (durationMatch) {
+        const raw = durationMatch[1].trim();
+        const norm = raw.replace(/\s+/g, "").toLowerCase();
+        const exprResult = evaluateExpression(norm, { bt, br });
+        if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
+          pauseDuration = Math.max(0, Math.round(exprResult));
+        }
+      }
+      
+      // Use default duration if not specified
+      const usePauseDuration = pauseDuration !== null ? pauseDuration : (type === "fit" ? (weights ? Math.round((weights[idx] / totalWeight) * br) : ev) : defaultDurationMs);
+      
+      // Check cutoff
+      if (cutoffDurationMs !== null) {
+        const remainingTime = cutoffDurationMs - cumulativeDurationMs;
+        if (remainingTime <= 0) {
+          break;
+        }
+      }
+      
+      // Wait for the pause duration
+      if (usePauseDuration > 0) {
+        await new Promise((resolve) => setTimeout(resolve, usePauseDuration));
+        cumulativeDurationMs += usePauseDuration;
+      }
+      
+      // Check if cutoff was reached
+      if (cutoffDurationMs !== null && cumulativeDurationMs >= cutoffDurationMs) {
+        break;
+      }
+      
+      continue; // Skip note processing for pause chunks
+    }
+    
     // Extract note argument, handling nested parentheses and angle brackets (e.g., n(<chord(c-maj9)>))
     let noteArg = null;
     const nIndex = chunk.indexOf("n(");
