@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ocean - Three.js</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; }
+        canvas { display: block; }
+        
+        .controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: #ff4444;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 100;
+        }
+        .controls label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .controls input[type="range"] {
+            width: 200px;
+            accent-color: #ff4444;
+        }
+        .controls span {
+            margin-left: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <label>
+            Wave Size: <span id="waveValue">1.0</span>x
+            <input type="range" id="waveSlider" min="0.1" max="3" step="0.1" value="1">
+        </label>
+        <label>
+            Wave Speed: <span id="speedValue">1.0</span>x
+            <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1">
+        </label>
+        <hr style="border-color: #ff4444; margin: 10px 0;">
+        <label style="color: #ffaaaa;">
+            Low (Bass): <span id="lowValue">1.0</span>
+            <input type="range" id="lowSlider" min="0" max="3" step="0.1" value="1">
+        </label>
+        <label style="color: #ffcccc;">
+            Mid: <span id="midValue">1.0</span>
+            <input type="range" id="midSlider" min="0" max="3" step="0.1" value="1">
+        </label>
+        <label style="color: #ffeeee;">
+            High: <span id="highValue">1.0</span>
+            <input type="range" id="highSlider" min="0" max="3" step="0.1" value="1">
+        </label>
+        <hr style="border-color: #ff4444; margin: 10px 0;">
+        <label style="color: #ff6666;">
+            R: <span id="rValue">204</span>
+            <input type="range" id="rSlider" min="0" max="255" value="204">
+        </label>
+        <label style="color: #66ff66;">
+            G: <span id="gValue">0</span>
+            <input type="range" id="gSlider" min="0" max="255" value="0">
+        </label>
+        <label style="color: #6666ff;">
+            B: <span id="bValue">0</span>
+            <input type="range" id="bSlider" min="0" max="255" value="0">
+        </label>
+    </div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let camera, scene, renderer, controls;
+        let ocean, clock;
+
+        init();
+
+        function init() {
+            clock = new THREE.Clock();
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setAnimationLoop(animate);
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.5;
+            document.body.appendChild(renderer.domElement);
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
+            camera.position.set(150, 150, 250);
+
+            // Ocean with realistic water shader
+            const oceanGeometry = new THREE.PlaneGeometry(10000, 10000, 512, 512);
+            
+            const oceanMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uWaveScale: { value: 1.0 },
+                    uWaveSpeed: { value: 1.0 },
+                    uLow: { value: 1.0 },
+                    uMid: { value: 1.0 },
+                    uHigh: { value: 1.0 },
+                    uWaterColor: { value: new THREE.Color(0xcc0000) },
+                    uDeepColor: { value: new THREE.Color(0x440000) },
+                    uFoamColor: { value: new THREE.Color(0xff4444) },
+                    uSunPosition: { value: new THREE.Vector3(4330, 200, -2500) },
+                    uSunColor: { value: new THREE.Color(0xff3300) }
+                },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uWaveScale;
+                    uniform float uWaveSpeed;
+                    uniform float uLow;
+                    uniform float uMid;
+                    uniform float uHigh;
+                    
+                    varying vec3 vWorldPosition;
+                    varying vec3 vNormal;
+                    varying float vWaveHeight;
+                    varying vec2 vUv;
+                    
+                    // Simplex noise functions
+                    vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+                    vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+                    vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+                    vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+                    
+                    float snoise(vec3 v) {
+                        const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+                        const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+                        vec3 i = floor(v + dot(v, C.yyy));
+                        vec3 x0 = v - i + dot(i, C.xxx);
+                        vec3 g = step(x0.yzx, x0.xyz);
+                        vec3 l = 1.0 - g;
+                        vec3 i1 = min(g.xyz, l.zxy);
+                        vec3 i2 = max(g.xyz, l.zxy);
+                        vec3 x1 = x0 - i1 + C.xxx;
+                        vec3 x2 = x0 - i2 + C.yyy;
+                        vec3 x3 = x0 - D.yyy;
+                        i = mod289(i);
+                        vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+                        float n_ = 0.142857142857;
+                        vec3 ns = n_ * D.wyz - D.xzx;
+                        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+                        vec4 x_ = floor(j * ns.z);
+                        vec4 y_ = floor(j - 7.0 * x_);
+                        vec4 x = x_ *ns.x + ns.yyyy;
+                        vec4 y = y_ *ns.x + ns.yyyy;
+                        vec4 h = 1.0 - abs(x) - abs(y);
+                        vec4 b0 = vec4(x.xy, y.xy);
+                        vec4 b1 = vec4(x.zw, y.zw);
+                        vec4 s0 = floor(b0)*2.0 + 1.0;
+                        vec4 s1 = floor(b1)*2.0 + 1.0;
+                        vec4 sh = -step(h, vec4(0.0));
+                        vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+                        vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+                        vec3 p0 = vec3(a0.xy, h.x);
+                        vec3 p1 = vec3(a0.zw, h.y);
+                        vec3 p2 = vec3(a1.xy, h.z);
+                        vec3 p3 = vec3(a1.zw, h.w);
+                        vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+                        p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+                        vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+                        m = m * m;
+                        return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+                    }
+                    
+                    float getWaveHeight(vec2 pos, float time) {
+                        float height = 0.0;
+                        
+                        // LOW - Large rolling waves (bass)
+                        float lowMask = smoothstep(0.2, 0.5, snoise(vec3(pos * 0.002 + time * 0.05, time * 0.02)));
+                        float lowWaves = snoise(vec3(pos * 0.008, time * 0.25)) * 20.0;
+                        lowWaves += snoise(vec3(pos * 0.015 + 100.0, time * 0.35)) * 15.0;
+                        height += lowWaves * uLow * lowMask;
+                        
+                        // MID - Medium waves
+                        float midMask = smoothstep(0.1, 0.4, snoise(vec3(pos * 0.005 + 200.0 - time * 0.08, time * 0.03)));
+                        float midWaves = snoise(vec3(pos * 0.03 + 200.0, time * 0.45)) * 15.0;
+                        midWaves += snoise(vec3(pos * 0.06 + 300.0, time * 0.55)) * 10.0;
+                        height += midWaves * uMid * midMask;
+                        
+                        // HIGH - Small choppy waves
+                        float highMask = smoothstep(0.0, 0.3, snoise(vec3(pos * 0.01 + 400.0 + time * 0.1, time * 0.04)));
+                        float highWaves = snoise(vec3(pos * 0.12, time * 0.7)) * 12.0;
+                        highWaves += snoise(vec3(pos * 0.2 + 500.0, time * 0.9)) * 8.0;
+                        height += highWaves * uHigh * highMask;
+                        
+                        return height * uWaveScale;
+                    }
+                    
+                    void main() {
+                        vec3 pos = position;
+                        float time = uTime * uWaveSpeed;
+                        
+                        // Calculate wave height
+                        pos.z = getWaveHeight(pos.xy, time);
+                        
+                        // Calculate normal from neighboring heights
+                        float eps = 1.0;
+                        float hL = getWaveHeight(pos.xy - vec2(eps, 0.0), time);
+                        float hR = getWaveHeight(pos.xy + vec2(eps, 0.0), time);
+                        float hD = getWaveHeight(pos.xy - vec2(0.0, eps), time);
+                        float hU = getWaveHeight(pos.xy + vec2(0.0, eps), time);
+                        
+                        vec3 calcNormal = normalize(vec3(hL - hR, 2.0, hD - hU));
+                        
+                        vWaveHeight = pos.z;
+                        vWorldPosition = (modelMatrix * vec4(pos, 1.0)).xyz;
+                        vNormal = normalize(normalMatrix * calcNormal);
+                        vUv = uv;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 uWaterColor;
+                    uniform vec3 uDeepColor;
+                    uniform vec3 uFoamColor;
+                    uniform vec3 uSunPosition;
+                    uniform vec3 uSunColor;
+                    uniform float uTime;
+                    
+                    varying vec3 vWorldPosition;
+                    varying vec3 vNormal;
+                    varying float vWaveHeight;
+                    varying vec2 vUv;
+                    
+                    void main() {
+                        vec3 normal = normalize(vNormal);
+                        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+                        vec3 sunDir = normalize(uSunPosition - vWorldPosition);
+                        
+                        // Base water color - darker in troughs, lighter on peaks
+                        float heightFactor = smoothstep(-10.0, 15.0, vWaveHeight);
+                        vec3 baseColor = mix(uDeepColor, uWaterColor, heightFactor);
+                        
+                        // Fresnel effect - edges appear darker/different
+                        float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
+                        
+                        // Specular highlight from sun
+                        vec3 halfDir = normalize(sunDir + viewDir);
+                        float spec = pow(max(dot(normal, halfDir), 0.0), 256.0);
+                        vec3 specular = uSunColor * spec * 0.5;
+                        
+                        // Subsurface scattering simulation - light through wave peaks
+                        float scatter = pow(max(dot(viewDir, -sunDir), 0.0), 4.0);
+                        scatter *= smoothstep(5.0, 20.0, vWaveHeight);
+                        vec3 subsurface = uSunColor * scatter * 0.15;
+                        
+                        // Foam on wave peaks
+                        float foam = smoothstep(12.0, 18.0, vWaveHeight) * 0.3;
+                        
+                        // Combine
+                        vec3 color = baseColor;
+                        color = mix(color, uDeepColor * 0.5, fresnel * 0.5);
+                        color += specular;
+                        color += subsurface;
+                        color = mix(color, uFoamColor, foam);
+                        
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `,
+                side: THREE.DoubleSide
+            });
+
+            ocean = new THREE.Mesh(oceanGeometry, oceanMaterial);
+            ocean.rotation.x = -Math.PI / 2;
+            scene.add(ocean);
+
+            // Red Sun sphere with glow
+            const sunGeometry = new THREE.SphereGeometry(500, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff2200,
+                fog: false
+            });
+            const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+            sunMesh.position.set(4330, 200, -2500);
+            scene.add(sunMesh);
+            window.sunMesh = sunMesh;
+
+            // Sun glow sprite
+            const glowCanvas = document.createElement('canvas');
+            glowCanvas.width = 256;
+            glowCanvas.height = 256;
+            const ctx = glowCanvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+            gradient.addColorStop(0, 'rgba(255, 50, 0, 1)');
+            gradient.addColorStop(0.3, 'rgba(255, 30, 0, 0.6)');
+            gradient.addColorStop(0.6, 'rgba(200, 0, 0, 0.3)');
+            gradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 256);
+            
+            const glowTexture = new THREE.CanvasTexture(glowCanvas);
+            const glowMaterial = new THREE.SpriteMaterial({ 
+                map: glowTexture, 
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                fog: false
+            });
+            const glowSprite = new THREE.Sprite(glowMaterial);
+            glowSprite.scale.set(3000, 3000, 1);
+            glowSprite.position.copy(sunMesh.position);
+            scene.add(glowSprite);
+            window.sunGlowMaterial = glowMaterial;
+            window.glowCanvas = glowCanvas;
+            window.glowTexture = glowTexture;
+
+            // WASD Controls
+            const keys = { w: false, a: false, s: false, d: false, shift: false, space: false };
+            const moveSpeed = 5;
+            const lookSpeed = 0.002;
+            // Calculate yaw to face the sun (sun is at x=4330, z=-2500)
+            let yaw = Math.atan2(4330 - 150, -2500 - 250); // From camera position toward sun
+            let pitch = -0.1;
+            
+            document.addEventListener('keydown', (e) => {
+                if (e.key.toLowerCase() === 'w') keys.w = true;
+                if (e.key.toLowerCase() === 'a') keys.a = true;
+                if (e.key.toLowerCase() === 's') keys.s = true;
+                if (e.key.toLowerCase() === 'd') keys.d = true;
+                if (e.key === 'Shift') keys.shift = true;
+                if (e.key === ' ') keys.space = true;
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (e.key.toLowerCase() === 'w') keys.w = false;
+                if (e.key.toLowerCase() === 'a') keys.a = false;
+                if (e.key.toLowerCase() === 's') keys.s = false;
+                if (e.key.toLowerCase() === 'd') keys.d = false;
+                if (e.key === 'Shift') keys.shift = false;
+                if (e.key === ' ') keys.space = false;
+            });
+            
+            // Mouse look
+            let isMouseDown = false;
+            renderer.domElement.addEventListener('mousedown', () => isMouseDown = true);
+            renderer.domElement.addEventListener('mouseup', () => isMouseDown = false);
+            renderer.domElement.addEventListener('mouseleave', () => isMouseDown = false);
+            
+            renderer.domElement.addEventListener('mousemove', (e) => {
+                if (isMouseDown) {
+                    yaw -= e.movementX * lookSpeed;
+                    pitch -= e.movementY * lookSpeed;
+                    pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch));
+                }
+            });
+
+            // Resize handler
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            function updateCamera() {
+                const speed = keys.shift ? moveSpeed * 3 : moveSpeed;
+                
+                // Direction vectors
+                const forward = new THREE.Vector3(
+                    Math.sin(yaw) * Math.cos(pitch),
+                    Math.sin(pitch),
+                    Math.cos(yaw) * Math.cos(pitch)
+                );
+                const right = new THREE.Vector3(Math.sin(yaw - Math.PI / 2), 0, Math.cos(yaw - Math.PI / 2));
+                
+                // Movement
+                if (keys.w) camera.position.add(forward.clone().multiplyScalar(speed));
+                if (keys.s) camera.position.add(forward.clone().multiplyScalar(-speed));
+                if (keys.a) camera.position.add(right.clone().multiplyScalar(-speed));
+                if (keys.d) camera.position.add(right.clone().multiplyScalar(speed));
+                if (keys.space) camera.position.y += speed;
+                
+                // Look direction
+                const lookAt = camera.position.clone().add(forward);
+                camera.lookAt(lookAt);
+            }
+            
+            // Expose to animate loop
+            window.updateCamera = updateCamera;
+            
+            // Wave slider control
+            const waveSlider = document.getElementById('waveSlider');
+            const waveValue = document.getElementById('waveValue');
+            waveSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                ocean.material.uniforms.uWaveScale.value = val;
+                waveValue.textContent = val.toFixed(1);
+            });
+            
+            // Speed slider control
+            const speedSlider = document.getElementById('speedSlider');
+            const speedValue = document.getElementById('speedValue');
+            speedSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                ocean.material.uniforms.uWaveSpeed.value = val;
+                speedValue.textContent = val.toFixed(1);
+            });
+            
+            // RGB color controls
+            const rSlider = document.getElementById('rSlider');
+            const gSlider = document.getElementById('gSlider');
+            const bSlider = document.getElementById('bSlider');
+            const rValue = document.getElementById('rValue');
+            const gValue = document.getElementById('gValue');
+            const bValue = document.getElementById('bValue');
+            
+            function updateColor() {
+                const r = parseInt(rSlider.value) / 255;
+                const g = parseInt(gSlider.value) / 255;
+                const b = parseInt(bSlider.value) / 255;
+                ocean.material.uniforms.uWaterColor.value.setRGB(r, g, b);
+                // Also update deep color (darker version)
+                ocean.material.uniforms.uDeepColor.value.setRGB(r * 0.3, g * 0.3, b * 0.3);
+                // Update foam color (lighter version)
+                ocean.material.uniforms.uFoamColor.value.setRGB(
+                    Math.min(1, r + 0.2), 
+                    Math.min(1, g + 0.2), 
+                    Math.min(1, b + 0.2)
+                );
+                
+                // Update sun color
+                if (window.sunMesh) {
+                    window.sunMesh.material.color.setRGB(r, g, b);
+                }
+                
+                // Update sun glow
+                if (window.glowCanvas && window.glowTexture) {
+                    const ctx = window.glowCanvas.getContext('2d');
+                    const ri = rSlider.value, gi = gSlider.value, bi = bSlider.value;
+                    const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+                    gradient.addColorStop(0, `rgba(${ri}, ${gi}, ${bi}, 1)`);
+                    gradient.addColorStop(0.3, `rgba(${ri}, ${gi}, ${bi}, 0.6)`);
+                    gradient.addColorStop(0.6, `rgba(${Math.floor(ri*0.7)}, ${Math.floor(gi*0.7)}, ${Math.floor(bi*0.7)}, 0.3)`);
+                    gradient.addColorStop(1, `rgba(${Math.floor(ri*0.4)}, ${Math.floor(gi*0.4)}, ${Math.floor(bi*0.4)}, 0)`);
+                    ctx.clearRect(0, 0, 256, 256);
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, 0, 256, 256);
+                    window.glowTexture.needsUpdate = true;
+                }
+                
+                // Update sun color uniform for specular
+                ocean.material.uniforms.uSunColor.value.setRGB(r, g, b);
+                
+                rValue.textContent = rSlider.value;
+                gValue.textContent = gSlider.value;
+                bValue.textContent = bSlider.value;
+            }
+            
+            rSlider.addEventListener('input', updateColor);
+            gSlider.addEventListener('input', updateColor);
+            bSlider.addEventListener('input', updateColor);
+            
+            // Low/Mid/High wave controls
+            const lowSlider = document.getElementById('lowSlider');
+            const midSlider = document.getElementById('midSlider');
+            const highSlider = document.getElementById('highSlider');
+            const lowValue = document.getElementById('lowValue');
+            const midValue = document.getElementById('midValue');
+            const highValue = document.getElementById('highValue');
+            
+            lowSlider.addEventListener('input', (e) => {
+                ocean.material.uniforms.uLow.value = parseFloat(e.target.value);
+                lowValue.textContent = parseFloat(e.target.value).toFixed(1);
+            });
+            midSlider.addEventListener('input', (e) => {
+                ocean.material.uniforms.uMid.value = parseFloat(e.target.value);
+                midValue.textContent = parseFloat(e.target.value).toFixed(1);
+            });
+            highSlider.addEventListener('input', (e) => {
+                ocean.material.uniforms.uHigh.value = parseFloat(e.target.value);
+                highValue.textContent = parseFloat(e.target.value).toFixed(1);
+            });
+        }
+
+        function animate() {
+            if (window.updateCamera) window.updateCamera();
+            const elapsed = clock.getElapsedTime();
+            ocean.material.uniforms.uTime.value = elapsed;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
