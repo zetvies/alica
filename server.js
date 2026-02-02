@@ -1097,6 +1097,7 @@ async function playSequence(
   tempoParam = null,
   signatureNumeratorParam = null,
   signatureDenominatorParam = null,
+  velocityParam = null,
 ) {
   console.log("[SEQ_STEP_1] Original sequence:", sequence);
 
@@ -2133,7 +2134,7 @@ async function playSequence(
     if (!noteArg) continue;
     // Repeat syntax is already expanded at sequence level, so repeatCount is always 1
     const repeatCount = 1;
-    let velocity = 80;
+    let velocity = velocityParam !== null ? velocityParam : 80;
     let duration = null; // if not provided, use defaultDurationMs
     let channel = 1; // user-facing 1-16
     let channelArray = null; // Array of channels for randomization
@@ -4290,8 +4291,8 @@ async function playTrack(
   const cycleStrWithoutDs = useCycleStr.replace(/\.ds\([^)]+\)/g, "");
 
   // Match blocks: [sequence or automation] then optional .t(...).c(...).co(...).pm(...)
-  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|pm)\([^)]*\))*)/g;
-  const modifierRegex = /\.(t|c|co|pm)\(([^)]+)\)/g;
+  const blockRegex = /\[([^\]]+)\]\s*((?:\.(?:t|c|co|pm|v|sn|sd)\([^)]*\))*)/g;
+  const modifierRegex = /\.(t|c|co|pm|v|sn|sd)\(([^)]+)\)/g;
   let m;
   const plays = [];
   while ((m = blockRegex.exec(cycleStrWithoutDs)) !== null) {
@@ -4301,6 +4302,9 @@ async function playTrack(
     let channelOverride = null;
     let cutOff = null;
     let sequenceMuteProbability = null;
+    let sequenceVelocity = null;
+    let sequenceSn = null;
+    let sequenceSd = null;
     let mm;
     while ((mm = modifierRegex.exec(mods)) !== null) {
       const key = mm[1];
@@ -4337,6 +4341,15 @@ async function playTrack(
         if (!isNaN(prob) && prob >= 0 && prob <= 1) {
           sequenceMuteProbability = prob;
         }
+      } else if (key === "v") {
+        const vel = parseInt(rawVal, 10);
+        if (!isNaN(vel)) sequenceVelocity = Math.max(0, Math.min(127, vel));
+      } else if (key === "sn") {
+        const val = parseInt(rawVal, 10);
+        if (!isNaN(val) && val > 0) sequenceSn = val;
+      } else if (key === "sd") {
+        const val = parseInt(rawVal, 10);
+        if (!isNaN(val) && val > 0) sequenceSd = val;
       }
     }
 
@@ -4370,8 +4383,9 @@ async function playTrack(
           useChannelOverride,
           sequenceMuteProbability,
           useTempo,
-          useSignatureNumerator,
-          useSignatureDenominator,
+          sequenceSn !== null ? sequenceSn : useSignatureNumerator,
+          sequenceSd !== null ? sequenceSd : useSignatureDenominator,
+          sequenceVelocity,
         ),
       );
     }
@@ -5074,6 +5088,10 @@ app.get("/ocean", (req, res) => {
   res.sendFile(__dirname + "/ocean.html");
 });
 
+app.get("/sequencer", (req, res) => {
+  res.sendFile(__dirname + "/sequencer.html");
+});
+
 // HTTP server
 const server = http.createServer(app);
 
@@ -5152,35 +5170,37 @@ wss.on("connection", (ws) => {
             ? parsedCycle.cycleId
             : data.id || "cycle_" + Date.now();
 
-          // Check if cycle with this ID already exists
-          const existingCycleIndex = activeCycle.findIndex(
-            (c) => c.id === playCycleId,
-          );
-          const hadExistingCycle = existingCycleIndex !== -1;
-
-          if (hadExistingCycle) {
-            // Cycle exists - clear it first (interrupt immediately)
-            console.log(
-              `[WS] playCycle called - interrupting existing cycle '${playCycleId}' to start immediately`,
-            );
-            clearInterval(activeCycle[existingCycleIndex].intervalId);
-            activeCycle.splice(existingCycleIndex, 1);
-          }
-
-          // Always create/start new cycle (immediate)
-          const playCycleIntervalId = playCycle(
+          // Try to update existing cycle first (seamless update)
+          // updateCycleById handles .ds() restarts internally
+          const updated = updateCycleById(
+            playCycleId,
             cycleStrInput,
             data.tempo || null,
             data.signatureNumerator || null,
             data.signatureDenominator || null,
           );
 
-          if (playCycleIntervalId !== null) {
+          if (updated) {
             console.log(
-              `[WS] playCycle called - ${hadExistingCycle ? "restarted" : "created"} cycle '${playCycleId}' immediately (from ${parsedCycle ? "new syntax" : "provided/generated"})`,
+              `[WS] playCycle called - updated existing cycle '${playCycleId}' (queued or restarted if ds present)`,
             );
           } else {
-            console.log("[WS] playCycle called - failed to create cycle");
+            // Cycle doesn't exist - create new one
+            // Always create/start new cycle (immediate)
+            const playCycleIntervalId = playCycle(
+              cycleStrInput,
+              data.tempo || null,
+              data.signatureNumerator || null,
+              data.signatureDenominator || null,
+            );
+
+            if (playCycleIntervalId !== null) {
+              console.log(
+                `[WS] playCycle called - created cycle '${playCycleId}' immediately`,
+              );
+            } else {
+              console.log("[WS] playCycle called - failed to create cycle");
+            }
           }
           break;
 

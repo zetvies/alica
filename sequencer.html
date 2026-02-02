@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALiCA - Sequencer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'dark-bg': '#000000',
+                        'dark-bg-alt': '#0f0f0f',
+                        'dark-border': '#333',
+                        'dark-text': '#e0e0e0',
+                        'dark-text-muted': '#888',
+                        'blue-accent': '#4a9eff',
+                        'purple-accent': '#9c27b0',
+                        'active-step': '#4a9eff',
+                        'highlight-step': '#ffffff',
+                    },
+                    fontFamily: {
+                        'mono': ['Courier New', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #000;
+            color: #e0e0e0;
+        }
+        .step-btn {
+            width: 30px;
+            height: 30px;
+            background-color: #222;
+            border: 1px solid #444;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        .step-btn.active {
+            background-color: #4a9eff;
+            border-color: #4a9eff;
+            box-shadow: 0 0 5px #4a9eff;
+        }
+        .step-btn.playing {
+            border-color: #fff !important;
+            box-shadow: 0 0 8px #fff;
+        }
+        .step-btn:hover {
+            border-color: #666;
+        }
+    </style>
+</head>
+<body class="font-mono h-screen flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="h-[50px] border-b border-dark-border flex items-center justify-between px-5 bg-dark-bg-alt">
+        <div class="flex items-center gap-4">
+            <div class="font-bold text-xl">ALiCA <span class="text-xs font-normal text-dark-text-muted">Sequencer</span></div>
+            <div id="ableton-info" class="hidden flex items-center gap-3 text-xs bg-[#111] px-3 py-1 rounded border border-[#333]">
+                <div class="flex items-center gap-1">
+                    <span class="text-dark-text-muted">BPM:</span>
+                    <span id="bpm-display" class="font-bold text-blue-accent">120</span>
+                </div>
+                <div class="w-px h-3 bg-[#333]"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-dark-text-muted">SIG:</span>
+                    <span id="sig-display" class="font-bold text-purple-accent">4/4</span>
+                </div>
+                <div class="w-px h-3 bg-[#333]"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-dark-text-muted">BEAT:</span>
+                    <div id="beat-visualizer" class="flex gap-1">
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-1"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-2"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-3"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="status" class="px-2 py-1 text-xs rounded border border-red-700 bg-red-900/50 text-red-300">Disconnected</div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar / Track List -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4" id="track-container">
+            <!-- Tracks will be injected here -->
+        </div>
+    </div>
+
+    <!-- Add Track Button -->
+    <div class="h-[50px] border-t border-dark-border flex items-center justify-center bg-dark-bg-alt">
+        <button onclick="addTrack()" class="px-4 py-2 bg-blue-accent/20 border border-blue-accent text-blue-accent rounded hover:bg-blue-accent/30 transition">+ Add Track</button>
+    </div>
+
+    <script>
+        // --- WebSocket & State ---
+        let ws = null;
+        let tracks = []; 
+        let currentBpm = 120;
+        let currentSigNum = 4;
+        let currentSigDenom = 4;
+        let currentBeat = 1;
+        let currentBar = 1;
+        
+        // Track structure: { id, name, note: str, velocity: int, channel: str, steps: [ { active: bool } ] }
+
+        const statusEl = document.getElementById('status');
+        const trackContainer = document.getElementById('track-container');
+        const abletonInfoEl = document.getElementById('ableton-info');
+        const bpmDisplay = document.getElementById('bpm-display');
+        const sigDisplay = document.getElementById('sig-display');
+
+
+        function connect() {
+            ws = new WebSocket(`ws://${location.hostname}:4254`);
+            
+            ws.onopen = () => {
+                statusEl.innerText = 'Connected';
+                statusEl.className = 'px-2 py-1 text-xs rounded border border-green-700 bg-green-900/50 text-green-300';
+            };
+            
+            ws.onclose = () => {
+                statusEl.innerText = 'Disconnected';
+                statusEl.className = 'px-2 py-1 text-xs rounded border border-red-700 bg-red-900/50 text-red-300';
+                setTimeout(connect, 3000);
+            };
+            
+            ws.onerror = (err) => {
+                console.error("WS Error", err);
+            };
+
+            ws.onmessage = (msg) => {
+                try {
+                    const data = JSON.parse(msg.data);
+                    
+                    if(data.type === 'tempoAndSignature') {
+                        updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
+                    }
+                    
+                    if(data.type === 'beat') {
+                        // console.log('Beat received:', data);
+                        updateBeat(data.beatNumber, data.bar);
+                    }
+                } catch(e) {
+                    console.error("Parse error", e);
+                }
+            };
+        }
+
+        connect();
+
+        function updateAbletonInfo(tempo, num, denom) {
+            currentBpm = tempo || 120;
+            currentSigNum = num || 4;
+            currentSigDenom = denom || 4;
+            
+            bpmDisplay.innerText = Math.round(currentBpm);
+            sigDisplay.innerText = `${currentSigNum}/${currentSigDenom}`;
+            abletonInfoEl.classList.remove('hidden');
+            
+            // Re-render beat dots if signature changed (todo: adjust dot count)
+        }
+
+        let animationFrameId = null;
+        let lastBeatTime = 0;
+        let beatDuration = 500; // Default 120bpm
+
+        function updateBeat(beatNumber, bar) {
+            currentBeat = beatNumber;
+            currentBar = bar;
+            lastBeatTime = Date.now();
+            beatDuration = 60000 / (currentBpm || 120);
+
+            // Ensure correct number of dots
+            renderBeatDots();
+
+            // Visual Beat Indicator (Ableton Info)
+            const dots = document.getElementById('beat-visualizer').children;
+            for(let i=0; i<dots.length; i++) {
+                if(i + 1 === beatNumber) {
+                    dots[i].className = "w-2 h-2 rounded-full bg-blue-accent shadow-[0_0_5px_#4a9eff]";
+                } else {
+                    dots[i].className = "w-2 h-2 rounded-full bg-[#333]";
+                }
+            }
+
+            // Start/Reset Animation Loop
+            if (!animationFrameId) {
+                renderPlayheadLoop();
+            }
+        }
+        
+        function renderBeatDots() {
+            const container = document.getElementById('beat-visualizer');
+            const count = currentSigNum || 4;
+            // Only re-render if count changed
+            if(container.children.length !== count) {
+                container.innerHTML = '';
+                for(let i=0; i<count; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = "w-2 h-2 rounded-full bg-[#333]";
+                    dot.id = `beat-${i+1}`;
+                    container.appendChild(dot);
+                }
+            }
+        }
+
+        function renderPlayheadLoop() {
+             const now = Date.now();
+             const timeSinceBeat = now - lastBeatTime;
+             
+             // Calculate progress through the current beat (0.0 to 1.0)
+             // CLAMP at 1.0 to prevent overshooting into the next beat before server update
+             let beatProgress = Math.min(timeSinceBeat / beatDuration, 1.0);
+             
+             // Calculate global phase in the bar (0.0 to 1.0)
+             const beatsPerBar = currentSigNum || 4;
+             
+             // Current beat index (0-based) plus progress
+             const currentBeatIndex = (currentBeat - 1); 
+             
+             // Global Bar Progress
+             const barPhase = (currentBeatIndex + beatProgress) / beatsPerBar;
+             
+             updateTracksPlayhead(barPhase);
+
+             animationFrameId = requestAnimationFrame(renderPlayheadLoop);
+        }
+
+        function updateTracksPlayhead(barPhase) {
+            // barPhase is 0.0 -> 1.0 based on GLOBAL signature
+            
+            // Calculate Total Beats (approx) = (currentBar-1)*GlobalSn + (currentBeat-1) + beatProgress
+            // To be precise, we need 'beatProgress' inside this function or passed to it.
+            // Actually 'barPhase' is (beatIndex + beatProgress) / GlobalSn.
+            // So TotalBeatsInBar = barPhase * GlobalSn.
+            
+            const globalSn = currentSigNum || 4;
+            const currentTotalBeatsInBar = barPhase * globalSn;
+            
+            // Total Absolute Beats since "start" (conceptually)
+            // We use modulo arithmetic so we don't need absolute 0 since start of song, just consistent bar counting.
+            // But we need bar number to know offset for 3/4 vs 4/4 sync.
+            const absBeats = ((currentBar || 1) - 1) * globalSn + currentTotalBeatsInBar;
+
+            document.querySelectorAll('.step-btn').forEach(el => el.classList.remove('playing'));
+
+            tracks.forEach((track, tIdx) => {
+                // Determine track signature (Track Global first, fallback to Global)
+                let trackSn = globalSn;
+                const firstActive = track.sequences.find(s => s.active);
+                if(firstActive && firstActive.sn) {
+                    trackSn = firstActive.sn;
+                }
+                
+                // Track Phase: (AbsoluteBeats % TrackSn) / TrackSn
+                // This correctly wraps at TrackSn (e.g., 3 beats) regardless of Global Bar (e.g. 4 beats)
+                const trackPhase = (absBeats % trackSn) / trackSn;
+                
+                // Clamp and normalize
+                const wrappedPhase = trackPhase % 1.0;
+                const normalizedPhase = wrappedPhase < 0 ? wrappedPhase + 1 : wrappedPhase;
+                
+                track.sequences.forEach((seq, seqIdx) => {
+                     // Check sequence-specific override (rare, but supported by ALiCA block syntax)
+                     // If sequence has its OWN sn, we should technically use THAT.
+                     // But for now, we use TrackSn (hoisted property) for consistency unless specific req.
+                     // Actually, if we want to be perfect:
+                     let effectiveSn = trackSn;
+                     if(seq.sn) effectiveSn = seq.sn;
+                     
+                     // Recalculate if seq overrides
+                     const seqPhase = (effSn => {
+                         if(effSn === trackSn) return normalizedPhase;
+                         const p = (absBeats % effSn) / effSn;
+                         return p < 0 ? p + 1 : p;
+                     })(effectiveSn);
+
+                     const steps = seq.steps;
+                     if(steps.length > 0 && seq.active !== false) {
+                        const stepIndex = Math.floor(seqPhase * steps.length);
+                        // Safe clamp
+                        const activeIndex = Math.min(stepIndex, steps.length - 1);
+    
+                        const btn = document.querySelector(`.step-btn[data-track="${tIdx}"][data-sequence="${seqIdx}"][data-step="${activeIndex}"]`);
+                        if(btn) btn.classList.add('playing');
+                     }
+                });
+            });
+        }
+
+        // --- UI Logic ---
+
+        function createTrackElement(trackData, index) {
+            const trackDiv = document.createElement('div');
+            trackDiv.className = 'bg-dark-bg-alt border border-dark-border p-4 rounded-lg flex-col gap-2 mb-4';
+            trackDiv.dataset.trackId = trackData.id;
+
+            // Header Row (Track Name + Delete Track)
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'flex justify-between items-center mb-2 pb-1 border-b border-dark-border';
+            headerDiv.innerHTML = `
+                 <span class="font-bold flex-1"><input type="text" value="${trackData.name}" class="bg-transparent border-none w-full outline-none text-blue-accent font-bold" onchange="updateTrackName(${index}, this.value)"></span>
+                 <button class="text-red-500 hover:text-red-400 font-bold px-2" onclick="removeTrack(${index})">Delete Track</button>
+            `;
+            trackDiv.appendChild(headerDiv);
+
+            // Container for Sequences
+            const sequencesContainer = document.createElement('div');
+            sequencesContainer.className = 'flex flex-col gap-3';
+            
+            trackData.sequences.forEach((seq, seqIndex) => {
+                const seqRow = document.createElement('div');
+                seqRow.className = 'flex items-start gap-2 border border-dark-border/50 bg-black/20 p-2 rounded';
+                
+                // Left: Grid (Takes available space)
+                const gridDiv = document.createElement('div');
+                gridDiv.className = 'flex-1 flex gap-1 flex-wrap content-start';
+                
+                seq.steps.forEach((step, stepIdx) => {
+                    const stepBtn = document.createElement('div');
+                    stepBtn.className = `step-btn ${step.active ? 'active' : ''} h-8 w-6`; // Slightly bigger/taller step
+                    stepBtn.dataset.track = index;
+                    stepBtn.dataset.sequence = seqIndex;
+                    stepBtn.dataset.step = stepIdx;
+                    stepBtn.onclick = () => toggleStep(index, seqIndex, stepIdx);
+                    gridDiv.appendChild(stepBtn);
+                });
+                seqRow.appendChild(gridDiv);
+
+                // Right: Controls (Compact 2-line layout)
+                const controlsRow = document.createElement('div');
+                controlsRow.className = 'flex flex-col gap-1 p-1.5 bg-black/40 rounded border border-dark-border/30 w-auto flex-none';
+                
+                controlsRow.innerHTML = `
+                    <!-- Row 1: Seq#, Note, Channel, Velocity, Delete -->
+                    <div class="flex items-center gap-2 text-xs">
+                         <div class="font-bold text-dark-text-muted text-[10px] w-3">${seqIndex + 1}</div>
+                         
+                         <div class="flex items-center gap-1">
+                             <label class="text-[9px] text-dark-text-muted uppercase">N</label>
+                             <input type="text" value="${seq.note}" class="bg-black border border-dark-border px-1 py-0.5 w-14 text-center rounded text-blue-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'note', this.value)">
+                        </div>
+                        
+                        <div class="flex items-center gap-1">
+                             <label class="text-[9px] text-dark-text-muted uppercase">Ch</label>
+                             <input type="text" value="${seq.channel}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-green-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'channel', this.value)">
+                        </div>
+
+                        <div class="flex items-center gap-1">
+                             <label class="text-[9px] text-dark-text-muted uppercase">Vel</label>
+                             <input type="number" value="${seq.velocity}" class="bg-black border border-dark-border px-1 py-0.5 w-14 text-center rounded text-gray-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'velocity', parseInt(this.value))">
+                        </div>
+                        
+                        <button class="text-red-500 hover:text-red-300 font-bold px-1 ml-1" onclick="removeSequence(${index}, ${seqIndex})">×</button>
+                    </div>
+
+                    <!-- Row 2: Length, Sig, Active -->
+                    <div class="flex items-center gap-3 text-xs pl-5">   
+                        <div class="flex items-center gap-1">
+                             <label class="text-[9px] text-dark-text-muted uppercase">Len</label>
+                             <input type="number" value="${seq.steps.length}" class="bg-black border border-dark-border px-1 py-0.5 w-12 text-center rounded text-gray-300 font-mono" onchange="updateSeqStepCount(${index}, ${seqIndex}, this.value)">
+                        </div>
+
+                        <div class="flex items-center gap-1">
+                             <label class="text-[9px] text-dark-text-muted uppercase">Sig</label>
+                             <div class="flex items-center gap-0.5">
+                                 <input type="number" placeholder="4" value="${seq.sn || 4}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'sn', this.value)">
+                                <span class="text-dark-text-muted">/</span>
+                                <input type="number" placeholder="4" value="${seq.sd || 4}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'sd', this.value)">
+                             </div>
+                        </div>
+
+                        <label class="flex items-center gap-1 cursor-pointer select-none border border-dark-border px-1.5 py-0.5 rounded bg-black/60 hover:bg-black/90 ml-auto">
+                            <input type="checkbox" onchange="updateSeqParam(${index}, ${seqIndex}, 'active', this.checked)" ${seq.active !== false ? 'checked' : ''}>
+                            <span class="text-[9px] text-dark-text-muted uppercase font-bold">On</span>
+                        </label>
+                    </div>
+                `;
+                
+                seqRow.appendChild(controlsRow);
+                sequencesContainer.appendChild(seqRow);
+            });
+            trackDiv.appendChild(sequencesContainer);
+            
+            // Add Sequence Button
+            const addSeqBtn = document.createElement('button');
+            addSeqBtn.className = 'mt-3 text-xs bg-[#222] hover:bg-[#333] text-dark-text-muted px-2 py-1 rounded w-full';
+            addSeqBtn.innerText = '+ Add Parallel Sequence Layer';
+            addSeqBtn.onclick = () => addSequence(index);
+            trackDiv.appendChild(addSeqBtn);
+
+            // ALiCA Code Display
+            const codeDisplay = document.createElement('div');
+            codeDisplay.id = `cmd-display-${trackData.id}`;
+            codeDisplay.className = 'mt-2 text-[10px] font-mono text-green-400/70 whitespace-pre-wrap break-all bg-black/40 p-1 rounded';
+            codeDisplay.innerText = '// ALiCA Code...'; // Initial placeholder
+            trackDiv.appendChild(codeDisplay);
+            
+            // Trigger initial update to populate code
+            setTimeout(() => sendUpdate(trackData.id), 0);
+
+            return trackDiv;
+        }
+
+        function renderTracks() {
+            trackContainer.innerHTML = '';
+            tracks.forEach((track, i) => {
+                trackContainer.appendChild(createTrackElement(track, i));
+            });
+        }
+
+        // --- Data Handling ---
+
+        function addTrack() {
+            // Default steps based on current signature
+            const defaultSteps = (currentSigNum || 4) * 4;
+            
+            const id = 't_' + Date.now();
+            tracks.push({
+                id: id,
+                name: 'Track ' + (tracks.length + 1),
+                // Track itself has no params now, just sequences holder
+                sequences: [{ 
+                    note: 'C3', 
+                    velocity: 100, 
+                    channel: '1', 
+                    sn: currentSigNum, 
+                    sd: currentSigDenom,
+                    active: true,
+                    steps: Array(defaultSteps).fill(0).map(() => ({ active: false })) 
+                }]
+            });
+            renderTracks();
+        }
+
+        function removeTrack(index) {
+            const track = tracks[index];
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                 const safeName = track.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+                 track.sequences.forEach((_, sIdx) => {
+                      ws.send(JSON.stringify({
+                        action: 'playCycle', 
+                        cycleStr: `t(${safeName}_${sIdx}).stop()`
+                    }));
+                 });
+            }
+            tracks.splice(index, 1);
+            renderTracks();
+        }
+
+        function toggleTrackActive(index, isActive) {
+            // This function might be deprecated or needs to toggle ALL sequences?
+            // Or toggle a global overrides?
+            // In the UI I removed the global "Active" toggle in favor of per-sequence.
+            // Wait, looking at my createTrackElement replacement... 
+            // I REMOVED the global controls on the right?
+            // Let me check createTrackElement code I pushed.
+            
+            // I actually KEPT the Right Controls for "Global for Track" in my first attempt...
+            // AND I pushed a replacement for createTrackElement that HAD per-sequence controls.
+            // But wait, did I remove the global controls?
+            // In `createTrackElement` replacement:
+            // "Top: Controls" -> per sequence.
+            // "Right: Controls (Global for Track)" -> I REMOVED THIS in the replacement block I sent in Step 563?
+            // Let's re-verify Step 563 replacement content.
+            
+            // Step 563 attributes:
+            // It has `// Top: Controls` inside the loop.
+            // It has `// Add Sequence Button` appended to `trackDiv`.
+            // It does NOT appear to have the Side Panel anymore.
+            // So `toggleTrackActive` is dead code if the UI doesn't call it.
+            // But I should keep it safe or remove it.
+            // I'll leave it empty or remove it.
+            
+            // Wait, if I removed the side panel, where do I add tracks?
+            // `addTrack` is global button.
+            
+            // Let's assume I removed global track toggles.
+        }
+
+        function toggleStep(trackIndex, seqIndex, stepIndex) {
+            tracks[trackIndex].sequences[seqIndex].steps[stepIndex].active = !tracks[trackIndex].sequences[seqIndex].steps[stepIndex].active;
+            const btn = document.querySelector(`.step-btn[data-track="${trackIndex}"][data-sequence="${seqIndex}"][data-step="${stepIndex}"]`);
+            if(btn) btn.classList.toggle('active');
+            sendUpdate(tracks[trackIndex].id);
+        }
+
+        function updateTrackName(index, val) {
+            // Must stop old IDs before renaming!
+            const track = tracks[index];
+            const oldSafeName = track.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+            
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                 track.sequences.forEach((_, sIdx) => {
+                      ws.send(JSON.stringify({
+                        action: 'playCycle', 
+                        cycleStr: `t(${oldSafeName}_${sIdx}).stop()`
+                    }));
+                 });
+            }
+            
+            tracks[index].name = val;
+            // Send new updates with new name
+            sendUpdate(tracks[index].id);
+        }
+        
+        // Generic param updater for a sequence
+        function updateSeqParam(trackIndex, seqIndex, key, val) {
+            tracks[trackIndex].sequences[seqIndex][key] = val;
+            sendUpdate(tracks[trackIndex].id);
+        }
+
+        function addSequence(trackIndex) {
+            const track = tracks[trackIndex];
+            const defaultSteps = (currentSigNum || 4) * 4;
+            const stepsCount = track.sequences.length > 0 ? track.sequences[0].steps.length : defaultSteps;
+            
+            track.sequences.push({
+                note: 'C3', 
+                velocity: 100, 
+                channel: '1', 
+                sn: currentSigNum, 
+                sd: currentSigDenom,
+                active: true,
+                steps: Array(stepsCount).fill(0).map(() => ({ active: false }))
+            });
+            renderTracks();
+            sendUpdate(track.id);
+        }
+
+        function removeSequence(trackIndex, seqIndex) {
+             const track = tracks[trackIndex];
+             const safeName = track.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+             
+             // Just update model and re-send the full track command
+
+
+            track.sequences.splice(seqIndex, 1);
+            renderTracks();
+            // Re-send updates for track (will recreate necessary IDs for remaining)
+            sendUpdate(track.id);
+        }
+
+        function updateSeqStepCount(trackIndex, seqIndex, val) {
+            const newCount = parseInt(val);
+            if(isNaN(newCount) || newCount < 1) return;
+            
+            const seq = tracks[trackIndex].sequences[seqIndex];
+            const steps = seq.steps;
+            
+            if (newCount > steps.length) {
+                while(steps.length < newCount) steps.push({ active: false });
+            } else if (newCount < steps.length) {
+                while(steps.length > newCount) steps.pop();
+            }
+            
+            renderTracks();
+            sendUpdate(tracks[trackIndex].id);
+        }
+
+        // --- ALiCA Logic ---
+
+
+        
+        // Helper to generate a single command string for the entire track (all active sequences)
+        function generateAlicaCommand(track) {
+             const trackName = track.name;
+             const safeId = trackName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+             
+             let activeBlocks = [];
+             let globalSn = null;
+             let globalSd = null;
+             
+             // Find first active sequence to define track-level signature
+             const firstActive = track.sequences.find(s => s.active);
+             if (firstActive) {
+                 globalSn = firstActive.sn;
+                 globalSd = firstActive.sd;
+             }
+             
+             track.sequences.forEach((seq, index) => {
+                 if(!seq.active) return;
+                 
+                 let sequenceContent = "";
+                 seq.steps.forEach(s => {
+                     // If step is active, add note. If not, add ~ (pause)
+                     if(s.active) {
+                         sequenceContent += `n(${seq.note}) `;
+                     } else {
+                         sequenceContent += `~ `;
+                     }
+                 });
+                 
+                 let mods = "";
+                 // Add Velocity (v)
+                 if(seq.velocity) mods += `.v(${seq.velocity})`;
+                 
+                 // Add Channel (c) - only if not default 1
+                 if(seq.channel && seq.channel !== '1') {
+                     mods += `.c(${seq.channel})`;
+                 }
+                 
+                 // Add Signature (sn, sd) ONLY if different from global or if global not set
+                 // (Though global is set from first active, so first one matches)
+                 if(seq.sn && seq.sn !== globalSn) mods += `.sn(${seq.sn})`;
+                 if(seq.sd && seq.sd !== globalSd) mods += `.sd(${seq.sd})`;
+                 
+                 activeBlocks.push(`[${sequenceContent.trim()}]${mods}`);
+             });
+             
+             if(activeBlocks.length === 0) {
+                 return `t(${safeId}).stop()`;
+             }
+             
+             // Construct the chain: t(ID).sn(..).sd(..).play(..)
+             let chain = `t(${safeId})`;
+             if(globalSn) chain += `.sn(${globalSn})`;
+             if(globalSd) chain += `.sd(${globalSd})`;
+             
+             chain += `.play(${activeBlocks.join(' ')})`;
+             
+             return chain;
+        }
+
+        function sendUpdate(trackId) {
+            const track = tracks.find(t => t.id === trackId);
+            if(!track) return;
+            
+            const command = generateAlicaCommand(track);
+            
+            // Update display
+            const displayEl = document.getElementById(`cmd-display-${track.id}`);
+            if(displayEl) displayEl.innerText = command;
+            
+            // Send to server
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                // If command is stop, use playCycle logic (server handles .stop() inside playCycle parser too? 
+                // Actually server has 'playCycle' action which handles new syntax t(id).play(...)
+                // And explicit stop check.
+                
+                // For stop command: t(ID).stop()
+                // For play command: t(ID).play(...)
+                
+                // We'll just send 'playCycle' action for both, as the server parses the string.
+                // Wait, server WebSocket handler has a check for stop FIRST.
+                // "if (data.cycleStr) { const stopParsed = parseStopSyntax(data.cycleStr); ... }"
+                // So sending action:'playCycle' with cycleStr="t(id).stop()" works perfectly.
+                
+                ws.send(JSON.stringify({
+                    action: "playCycle",
+                    cycleStr: command,
+                    id: track.name.replace(/[^a-zA-Z0-9_\-]/g, '_') // Fallback ID
+                }));
+            }
+        }
+    </script>
+</body>
+</html>
