@@ -153,6 +153,20 @@
                     
                     const data = JSON.parse(msgData);
                     
+                    // Handle Shared State (Initial Load)
+                    if (data.type === 'sharedState') {
+                        if (data.sequencerState) {
+                            tracks = data.sequencerState;
+                            renderTracks();
+                        }
+                    }
+
+                    // Handle Sequencer Changes from others
+                    if (data.type === 'sequencerChange') {
+                        tracks = data.state;
+                        renderTracks();
+                    }
+                    
                     if(data.type === 'tempoAndSignature') {
                         updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
                     }
@@ -496,6 +510,7 @@
             const btn = document.querySelector(`.step-btn[data-track="${trackIndex}"][data-sequence="${seqIndex}"][data-step="${stepIndex}"]`);
             if(btn) btn.classList.toggle('active');
             sendUpdate(tracks[trackIndex].id);
+            broadcastSequencerState();
         }
 
         function updateTrackName(index, val) {
@@ -662,6 +677,15 @@
                     action: "playCycle",
                     cycleStr: command,
                     id: track.name.replace(/[^a-zA-Z0-9_\-]/g, '_') // Fallback ID
+                }));
+            }
+        }
+
+        function broadcastSequencerState() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'sequencerChange',
+                    state: tracks
                 }));
             }
         }

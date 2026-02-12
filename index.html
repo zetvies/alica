@@ -562,25 +562,45 @@
                 ws.onmessage = async (event) => {
                     let msgData = event.data;
                     
-                    // Handle Blob data (common with some WS setups)
                     if (msgData instanceof Blob) {
                         msgData = await msgData.text();
                     }
                     
                     try {
                         const data = JSON.parse(msgData);
-                        console.log('Received:', data);
+                        
+                        // Handle Shared State (Initial Load)
+                        if (data.type === 'sharedState') {
+                            if (data.code) {
+                                commandArea.value = data.code;
+                                // Update highlighting without triggering another send
+                                updateHighlighting(); 
+                            }
+                        }
+                        
+                        // Handle Code Changes from others
+                        if (data.type === 'codeChange') {
+                            // Only update if content is different to avoid cursor jumping issues (basic)
+                            if (commandArea.value !== data.code) {
+                                const cursorStart = commandArea.selectionStart;
+                                const cursorEnd = commandArea.selectionEnd;
+                                
+                                commandArea.value = data.code;
+                                updateHighlighting();
+                                
+                                // Attempt to restore cursor (imperfect if text changed length significantly)
+                                commandArea.setSelectionRange(cursorStart, cursorEnd);
+                            }
+                        }
 
                         // Handle BPM and signature updates
                         if (data.type === 'tempoAndSignature') {
                             updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
-                            // Update sequencer when signature changes
                             if (data.signatureNumerator) {
                                 updateBeatSequencer(data.signatureNumerator);
                             }
                         }
 
-                        // Handle beat updates
                         if (data.type === 'beat' && data.beatNumber !== undefined) {
                             updateBeatIndicator(data.beatNumber, data.bar);
                         }
@@ -588,6 +608,23 @@
                          console.error("Error handling message:", e);
                     }
                 };
+
+                // Code Sync Logic
+                let debounceTimeout = null;
+                commandArea.addEventListener('input', () => {
+                    updateHighlighting(); // Existing highlighting logic
+                    
+                    // Send updates to Relay
+                    clearTimeout(debounceTimeout);
+                    debounceTimeout = setTimeout(() => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'codeChange',
+                                code: commandArea.value
+                            }));
+                        }
+                    }, 50); // Debounce ms
+                });
 
             } catch (error) {
                 console.error('Failed to create WebSocket:', error);
