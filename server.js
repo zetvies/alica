@@ -16,6 +16,8 @@ const {
 const {
   initializeMidi,
   sendNote,
+  sendNoteOn,
+  sendNoteOff,
   sendCC,
   streamCC,
   streamMultipleCC,
@@ -5404,6 +5406,32 @@ function handleMessage(data, ws = null) {
       } else {
         console.log("[WS] stopCCStream requires streamId");
       }
+      break;
+
+    case "sendNote":
+      // Trigger a Note On event immediately
+      // Required: note, velocity
+      // Optional: channel (default: 0), debug (default: false)
+      const noteOn = data.note !== undefined ? data.note : 60;
+      const velocityOn = data.velocity !== undefined ? data.velocity : 100;
+      const channelOn = data.channel !== undefined ? data.channel : 0;
+      const debugOn = data.debug !== undefined ? data.debug : false;
+      
+      sendNoteOn(noteOn, velocityOn, channelOn);
+      if (debugOn) console.log(`[MIDI] Note ON: ${noteOn} vel ${velocityOn} ch ${channelOn}`);
+      break;
+
+    case "sendNoteOff":
+      // Trigger a Note Off event immediately
+      // Required: note
+      // Optional: velocity (default: 0), channel (default: 0), debug (default: false)
+      const noteOff = data.note !== undefined ? data.note : 60;
+      const velocityOff = data.velocity !== undefined ? data.velocity : 0;
+      const channelOff = data.channel !== undefined ? data.channel : 0;
+      const debugOff = data.debug !== undefined ? data.debug : false;
+      
+      sendNoteOff(noteOff, velocityOff, channelOff);
+      if (debugOff) console.log(`[MIDI] Note OFF: ${noteOff} vel ${velocityOff} ch ${channelOff}`);
       break;
 
     case "stopAllCCStreams":

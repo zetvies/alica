@@ -70,6 +70,32 @@ async function sendNote(note, velocity = 80, duration = 500, channel = 0) {
   }
 }
 
+function sendNoteOn(note, velocity = 80, channel = 0) {
+  if (!sequenceMidiOutput) return;
+  try {
+    sequenceMidiOutput.send('noteon', {
+      note: Math.min(127, Math.max(0, note)),
+      velocity: Math.min(127, Math.max(0, velocity)),
+      channel: Math.min(15, Math.max(0, channel))
+    });
+  } catch (e) {
+    console.error('[MIDI] sendNoteOn error:', e.message);
+  }
+}
+
+function sendNoteOff(note, velocity = 0, channel = 0) {
+  if (!sequenceMidiOutput) return;
+  try {
+    sequenceMidiOutput.send('noteoff', {
+      note: Math.min(127, Math.max(0, note)),
+      velocity: Math.min(127, Math.max(0, velocity)),
+      channel: Math.min(15, Math.max(0, channel))
+    });
+  } catch (e) {
+    console.error('[MIDI] sendNoteOff error:', e.message);
+  }
+}
+
 function closeMidi() {
   try {
     // Stop all active CC streams
@@ -332,6 +358,8 @@ function getActiveCCStreams() {
 module.exports = {
   initializeMidi,
   sendNote,
+  sendNoteOn,
+  sendNoteOff,
   sendCC,
   streamCC,
   streamMultipleCC,

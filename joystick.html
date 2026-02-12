@@ -941,25 +941,27 @@
         function updateJoystick(clientX, clientY) {
             const { dx, dy, maxRadius } = getJoystickPosition(clientX, clientY);
 
-            joystickStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-
-            // Normalize direction (-1 to 1)
-            let rawDx = dx / maxRadius;
-            let rawDy = dy / maxRadius;
+            // Convert screen movement (dx, dy) to local element coordinates
+            // This handles the visual rotation of the joystick knob
+            let visualDx, visualDy;
 
             if (isRotated) {
-                // Rotated 90deg CW: 
-                // Screen X+ (dx) -> Game Y- (Up, but Y is down-positive, so Up is Y-)
-                // Screen Y+ (dy) -> Game X+ (Right)
-                // Wait. Game Y decrease means UP. But dx increase means Screen Right.
-                // Screen Right is visual TOP.
-                // So +dx (Screen Right) should mean -joyDy (Game Up).
-                joyDx = rawDy;
-                joyDy = -rawDx;
+                // When rotated 90deg CW:
+                // Screen X (Right) -> Local Y- (Left)
+                // Screen Y (Down)  -> Local X+ (Down relative to screen, Right relative to local X?)
+                // Local Basis: X is Screen Down, Y is Screen Left.
+                visualDx = dy;    // Screen Down (+move) aligns with Local X
+                visualDy = -dx;   // Screen Right (+move) aligns with Local -Y
             } else {
-                joyDx = rawDx;
-                joyDy = rawDy;
+                visualDx = dx;
+                visualDy = dy;
             }
+
+            joystickStick.style.transform = `translate(calc(-50% + ${visualDx}px), calc(-50% + ${visualDy}px))`;
+
+            // Normalize for game input (Game axes align with Local axes)
+            joyDx = visualDx / maxRadius;
+            joyDy = visualDy / maxRadius;
 
             // Dead zone
             if (Math.abs(joyDx) < 0.15) joyDx = 0;
