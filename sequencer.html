@@ -251,12 +251,8 @@
             document.querySelectorAll('.step-btn').forEach(el => el.classList.remove('playing'));
 
             tracks.forEach((track, tIdx) => {
-                // Determine track signature (Track Global first, fallback to Global)
-                let trackSn = globalSn;
-                const firstActive = track.sequences.find(s => s.active);
-                if(firstActive && firstActive.sn) {
-                    trackSn = firstActive.sn;
-                }
+                // Determine track signature (Use global Track property, fallback to app global)
+                let trackSn = track.sn || globalSn;
                 
                 // Track Phase: (AbsoluteBeats % TrackSn) / TrackSn
                 // This correctly wraps at TrackSn (e.g., 3 beats) regardless of Global Bar (e.g. 4 beats)
@@ -268,11 +264,9 @@
                 
                 track.sequences.forEach((seq, seqIdx) => {
                      // Check sequence-specific override (rare, but supported by ALiCA block syntax)
-                     // If sequence has its OWN sn, we should technically use THAT.
-                     // But for now, we use TrackSn (hoisted property) for consistency unless specific req.
-                     // Actually, if we want to be perfect:
-                     let effectiveSn = trackSn;
-                     if(seq.sn) effectiveSn = seq.sn;
+                     // Now we use Track property. Seq property is deprecated in UI but logic remains compatible.
+                     // If we wanted seq override, we'd check seq.sn, but UI removed it.
+                     const effectiveSn = trackSn;
                      
                      // Recalculate if seq overrides
                      const seqPhase = (effSn => {
@@ -301,12 +295,22 @@
             trackDiv.className = 'bg-dark-bg-alt border border-dark-border p-4 rounded-lg flex-col gap-2 mb-4';
             trackDiv.dataset.trackId = trackData.id;
 
-            // Header Row (Track Name + Delete Track)
+            // Header Row (Track Name + SN/SD + Delete)
             const headerDiv = document.createElement('div');
-            headerDiv.className = 'flex justify-between items-center mb-2 pb-1 border-b border-dark-border';
+            headerDiv.className = 'flex justify-between items-center mb-2 pb-1 border-b border-dark-border gap-2';
             headerDiv.innerHTML = `
                  <span class="font-bold flex-1"><input type="text" value="${trackData.name}" class="bg-transparent border-none w-full outline-none text-blue-accent font-bold" onchange="updateTrackName(${index}, this.value)"></span>
-                 <button class="text-red-500 hover:text-red-400 font-bold px-2" onclick="removeTrack(${index})">Delete Track</button>
+                 
+                 <div class="flex items-center gap-1 text-xs">
+                     <span class="text-dark-text-muted text-[10px] uppercase">Sig</span>
+                     <div class="flex items-center gap-0.5">
+                         <input type="number" placeholder="4" value="${trackData.sn || 4}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono" onchange="updateTrackParam(${index}, 'sn', this.value)">
+                        <span class="text-dark-text-muted">/</span>
+                        <input type="number" placeholder="4" value="${trackData.sd || 4}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono" onchange="updateTrackParam(${index}, 'sd', this.value)">
+                     </div>
+                 </div>
+
+                 <button class="text-red-500 hover:text-red-400 font-bold px-2 py-0.5 bg-red-900/20 hover:bg-red-900/40 rounded ml-2" onclick="removeTrack(${index})" title="Delete Track">X</button>
             `;
             trackDiv.appendChild(headerDiv);
 
@@ -333,54 +337,43 @@
                 });
                 seqRow.appendChild(gridDiv);
 
-                // Right: Controls (Compact 2-line layout)
+                // Right: Controls (Compact Single Row)
                 const controlsRow = document.createElement('div');
-                controlsRow.className = 'flex flex-col gap-1 p-1.5 bg-black/40 rounded border border-dark-border/30 w-auto flex-none';
+                controlsRow.className = 'flex items-center gap-2 p-1.5 bg-black/40 rounded border border-dark-border/30 w-auto flex-none';
                 
                 controlsRow.innerHTML = `
-                    <!-- Row 1: Seq#, Note, Channel, Velocity, Delete -->
-                    <div class="flex items-center gap-2 text-xs">
-                         <div class="font-bold text-dark-text-muted text-[10px] w-3">${seqIndex + 1}</div>
-                         
-                         <div class="flex items-center gap-1">
-                             <label class="text-[9px] text-dark-text-muted uppercase">N</label>
-                             <input type="text" value="${seq.note}" class="bg-black border border-dark-border px-1 py-0.5 w-14 text-center rounded text-blue-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'note', this.value)">
-                        </div>
-                        
-                        <div class="flex items-center gap-1">
-                             <label class="text-[9px] text-dark-text-muted uppercase">Ch</label>
-                             <input type="text" value="${seq.channel}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-green-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'channel', this.value)">
-                        </div>
-
-                        <div class="flex items-center gap-1">
-                             <label class="text-[9px] text-dark-text-muted uppercase">Vel</label>
-                             <input type="number" value="${seq.velocity}" class="bg-black border border-dark-border px-1 py-0.5 w-14 text-center rounded text-gray-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'velocity', parseInt(this.value))">
-                        </div>
-                        
-                        <button class="text-red-500 hover:text-red-300 font-bold px-1 ml-1" onclick="removeSequence(${index}, ${seqIndex})">×</button>
+                    <div class="font-bold text-dark-text-muted text-[10px] w-3 text-center">${seqIndex + 1}</div>
+                    
+                    <!-- Note -->
+                    <div class="flex items-center gap-1">
+                         <label class="text-[9px] text-dark-text-muted uppercase">N</label>
+                         <input type="text" value="${seq.note}" class="bg-black border border-dark-border px-1 py-0.5 w-14 text-center rounded text-blue-300 font-mono text-xs" onchange="updateSeqParam(${index}, ${seqIndex}, 'note', this.value)">
+                    </div>
+                    
+                    <!-- Channel -->
+                    <div class="flex items-center gap-1">
+                         <label class="text-[9px] text-dark-text-muted uppercase">Ch</label>
+                         <input type="text" value="${seq.channel}" class="bg-black border border-dark-border px-1 py-0.5 w-8 text-center rounded text-green-300 font-mono text-xs" onchange="updateSeqParam(${index}, ${seqIndex}, 'channel', this.value)">
                     </div>
 
-                    <!-- Row 2: Length, Sig, Active -->
-                    <div class="flex items-center gap-3 text-xs pl-5">   
-                        <div class="flex items-center gap-1">
-                             <label class="text-[9px] text-dark-text-muted uppercase">Len</label>
-                             <input type="number" value="${seq.steps.length}" class="bg-black border border-dark-border px-1 py-0.5 w-12 text-center rounded text-gray-300 font-mono" onchange="updateSeqStepCount(${index}, ${seqIndex}, this.value)">
-                        </div>
-
-                        <div class="flex items-center gap-1">
-                             <label class="text-[9px] text-dark-text-muted uppercase">Sig</label>
-                             <div class="flex items-center gap-0.5">
-                                 <input type="number" placeholder="4" value="${seq.sn || 4}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'sn', this.value)">
-                                <span class="text-dark-text-muted">/</span>
-                                <input type="number" placeholder="4" value="${seq.sd || 4}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono" onchange="updateSeqParam(${index}, ${seqIndex}, 'sd', this.value)">
-                             </div>
-                        </div>
-
-                        <label class="flex items-center gap-1 cursor-pointer select-none border border-dark-border px-1.5 py-0.5 rounded bg-black/60 hover:bg-black/90 ml-auto">
-                            <input type="checkbox" onchange="updateSeqParam(${index}, ${seqIndex}, 'active', this.checked)" ${seq.active !== false ? 'checked' : ''}>
-                            <span class="text-[9px] text-dark-text-muted uppercase font-bold">On</span>
-                        </label>
+                    <!-- Velocity -->
+                    <div class="flex items-center gap-1">
+                         <label class="text-[9px] text-dark-text-muted uppercase">Vel</label>
+                         <input type="number" value="${seq.velocity}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono text-xs" onchange="updateSeqParam(${index}, ${seqIndex}, 'velocity', parseInt(this.value))">
                     </div>
+                    
+                    <!-- Length -->
+                    <div class="flex items-center gap-1">
+                         <label class="text-[9px] text-dark-text-muted uppercase">Len</label>
+                         <input type="number" value="${seq.steps.length}" class="bg-black border border-dark-border px-1 py-0.5 w-10 text-center rounded text-gray-300 font-mono text-xs" onchange="updateSeqStepCount(${index}, ${seqIndex}, this.value)">
+                    </div>
+
+                    <!-- Active Toggle -->
+                    <label class="flex items-center gap-1 cursor-pointer select-none border border-dark-border px-1.5 py-0.5 rounded bg-black/60 hover:bg-black/90 ml-1">
+                        <input type="checkbox" onchange="updateSeqParam(${index}, ${seqIndex}, 'active', this.checked)" ${seq.active !== false ? 'checked' : ''}>
+                    </label>
+                    
+                    <button class="text-red-500 hover:text-red-300 font-bold px-1 ml-1" onclick="removeSequence(${index}, ${seqIndex})" title="Remove Sequence">×</button>
                 `;
                 
                 seqRow.appendChild(controlsRow);
@@ -425,13 +418,12 @@
             tracks.push({
                 id: id,
                 name: 'Track ' + (tracks.length + 1),
-                // Track itself has no params now, just sequences holder
+                sn: currentSigNum,
+                sd: currentSigDenom,
                 sequences: [{ 
                     note: 'C3', 
                     velocity: 100, 
                     channel: '1', 
-                    sn: currentSigNum, 
-                    sd: currentSigDenom,
                     active: true,
                     steps: Array(defaultSteps).fill(0).map(() => ({ active: false })) 
                 }]
@@ -510,6 +502,15 @@
             sendUpdate(tracks[index].id);
         }
         
+        function updateTrackParam(index, key, val) {
+             const v = parseInt(val);
+             if(!isNaN(v) && v > 0) {
+                 tracks[index][key] = v;
+                 sendUpdate(tracks[index].id);
+                 renderTracks(); // Re-render to update playhead logic
+             }
+        }
+        
         // Generic param updater for a sequence
         function updateSeqParam(trackIndex, seqIndex, key, val) {
             tracks[trackIndex].sequences[seqIndex][key] = val;
@@ -525,8 +526,6 @@
                 note: 'C3', 
                 velocity: 100, 
                 channel: '1', 
-                sn: currentSigNum, 
-                sd: currentSigDenom,
                 active: true,
                 steps: Array(stepsCount).fill(0).map(() => ({ active: false }))
             });
@@ -574,15 +573,9 @@
              const safeId = trackName.replace(/[^a-zA-Z0-9_\-]/g, '_');
              
              let activeBlocks = [];
-             let globalSn = null;
-             let globalSd = null;
+             let globalSn = track.sn || null;
+             let globalSd = track.sd || null;
              
-             // Find first active sequence to define track-level signature
-             const firstActive = track.sequences.find(s => s.active);
-             if (firstActive) {
-                 globalSn = firstActive.sn;
-                 globalSd = firstActive.sd;
-             }
              
              track.sequences.forEach((seq, index) => {
                  if(!seq.active) return;
@@ -606,8 +599,6 @@
                      mods += `.c(${seq.channel})`;
                  }
                  
-                 // Add Signature (sn, sd) ONLY if different from global or if global not set
-                 // (Though global is set from first active, so first one matches)
                  if(seq.sn && seq.sn !== globalSn) mods += `.sn(${seq.sn})`;
                  if(seq.sd && seq.sd !== globalSd) mods += `.sd(${seq.sd})`;
                  

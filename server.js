@@ -3911,188 +3911,112 @@ function parseStopSyntax(inputStr) {
 function parseMethodChainSyntax(inputStr) {
   if (!inputStr || typeof inputStr !== "string") return null;
 
-  // Remove all whitespace including newlines for parsing
-  const trimmed = inputStr.replace(/\s+/g, "");
-  console.log(
-    `[PARSE METHOD] Input: "${inputStr.substring(0, 100)}" -> Trimmed: "${trimmed.substring(0, 100)}"`,
-  );
+  const original = inputStr;
+  let pos = 0;
+  
+  // Helper to skip whitespace
+  function skipWs() {
+      while (pos < original.length && /\s/.test(original[pos])) pos++;
+  }
 
+  // Helper to extract balanced parens content
+  function extractBalanced() {
+      if (original[pos] !== '(') return null;
+      let depth = 1;
+      let start = pos + 1;
+      pos++; // skip first (
+      while (pos < original.length && depth > 0) {
+          if (original[pos] === '(') depth++;
+          else if (original[pos] === ')') depth--;
+          pos++;
+      }
+      if (depth !== 0) return null;
+      return original.substring(start, pos - 1);
+  }
+
+  skipWs();
+  
   // Must start with t(
-  if (!trimmed.startsWith("t(")) {
-    console.log(`[PARSE METHOD] Doesn't start with t(`);
-    return null;
-  }
-
-  // Find the end of t(...)
-  let pos = 2; // After 't('
-  let depth = 1;
-  while (pos < trimmed.length && depth > 0) {
-    if (trimmed[pos] === "(") depth++;
-    else if (trimmed[pos] === ")") depth--;
-    pos++;
-  }
-  if (depth !== 0) return null; // Unmatched parentheses
-
-  const cycleId = trimmed.substring(2, pos - 1).trim();
-
-  // Validate cycleId is alphanumeric (and allow underscores/hyphens)
+  if (!original.substring(pos).startsWith("t(")) return null;
+  pos += 1; // move to (
+  const cycleIdVal = extractBalanced();
+  if (cycleIdVal === null) return null;
+  
+  const cycleId = cycleIdVal.trim();
   if (!/^[a-zA-Z0-9_-]+$/.test(cycleId)) {
-    console.warn(
-      `[PARSE] Invalid cycleId '${cycleId}': must be alphanumeric with underscores/hyphens`,
-    );
-    return null;
+     console.warn(`[PARSE] Invalid cycleId '${cycleId}'`);
+     return null;
   }
 
-  // Parse optional parameters: .bpm(...).sn(...).sd(...)
-  let bpm = null,
-    sn = null,
-    sd = null;
-  let currentPos = pos;
-
-  // Parse .bpm(...)
-  if (trimmed.substring(currentPos).startsWith(".bpm(")) {
-    currentPos += 5; // Skip '.bpm('
-    depth = 1;
-    let start = currentPos;
-    while (currentPos < trimmed.length && depth > 0) {
-      if (trimmed[currentPos] === "(") depth++;
-      else if (trimmed[currentPos] === ")") depth--;
-      currentPos++;
-    }
-    if (depth === 0) {
-      const bpmStr = trimmed.substring(start, currentPos - 1).trim();
-      // Support tmp*2/3*4 syntax where tmp is Ableton tempo, or regular number*2/3*4
-      const exprResult = evaluateExpression(bpmStr.toLowerCase(), {
-        tmp: tempo,
-      });
-      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
-        bpm = exprResult;
-      }
-    }
-  }
-
-  // Parse .sn(...)
-  if (trimmed.substring(currentPos).startsWith(".sn(")) {
-    currentPos += 4; // Skip '.sn('
-    depth = 1;
-    let start = currentPos;
-    while (currentPos < trimmed.length && depth > 0) {
-      if (trimmed[currentPos] === "(") depth++;
-      else if (trimmed[currentPos] === ")") depth--;
-      currentPos++;
-    }
-    if (depth === 0) {
-      const snStr = trimmed.substring(start, currentPos - 1).trim();
-      // Support sn*2/3*4 syntax where sn is Ableton signature numerator, or regular number*2/3*4
-      const exprResult = evaluateExpression(snStr.toLowerCase(), {
-        sn: signatureNumerator,
-      });
-      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
-        sn = Math.round(exprResult);
-      }
-    }
-  }
-
-  // Parse .sd(...)
-  if (trimmed.substring(currentPos).startsWith(".sd(")) {
-    currentPos += 4; // Skip '.sd('
-    depth = 1;
-    let start = currentPos;
-    while (currentPos < trimmed.length && depth > 0) {
-      if (trimmed[currentPos] === "(") depth++;
-      else if (trimmed[currentPos] === ")") depth--;
-      currentPos++;
-    }
-    if (depth === 0) {
-      const sdStr = trimmed.substring(start, currentPos - 1).trim();
-      // Support sd*2/3*4 syntax where sd is Ableton signature denominator, or regular number*2/3*4
-      const exprResult = evaluateExpression(sdStr.toLowerCase(), {
-        sd: signatureDenominator,
-      });
-      if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) {
-        sd = Math.round(exprResult);
-      }
-    }
-  }
-
-  // Parse .ds(...) - delay start
+  let bpm = null;
+  let sn = null;
+  let sd = null;
   let dsValue = null;
-  if (trimmed.substring(currentPos).startsWith(".ds(")) {
-    currentPos += 4; // Skip '.ds('
-    depth = 1;
-    let start = currentPos;
-    while (currentPos < trimmed.length && depth > 0) {
-      if (trimmed[currentPos] === "(") depth++;
-      else if (trimmed[currentPos] === ")") depth--;
-      currentPos++;
-    }
-    if (depth === 0) {
-      dsValue = trimmed.substring(start, currentPos - 1).trim();
-    }
-  }
-
-  // Must end with .play(...)
-  if (!trimmed.substring(currentPos).startsWith(".play(")) return null;
-  currentPos += 6; // Skip '.play('
-
-  // Extract play content - everything until the final closing paren
-  // Count parentheses to find the matching closing paren for .play(
-  depth = 1;
-  let start = currentPos;
-  while (currentPos < trimmed.length && depth > 0) {
-    if (trimmed[currentPos] === "(") depth++;
-    else if (trimmed[currentPos] === ")") depth--;
-    currentPos++;
-  }
-  if (depth !== 0) return null; // Unmatched parentheses
-
-  const playContent = trimmed.substring(start, currentPos - 1).trim();
-
-  // Check if there's .ds(...) after .play(...)
-  // Skip whitespace after .play(...) closing paren
-  while (currentPos < trimmed.length && /\s/.test(trimmed[currentPos])) {
-    currentPos++;
-  }
-
-  // Parse .ds(...) if present after .play(...)
-  if (trimmed.substring(currentPos).startsWith(".ds(")) {
-    currentPos += 4; // Skip '.ds('
-    depth = 1;
-    start = currentPos;
-    while (currentPos < trimmed.length && depth > 0) {
-      if (trimmed[currentPos] === "(") depth++;
-      else if (trimmed[currentPos] === ")") depth--;
-      currentPos++;
-    }
-    if (depth === 0) {
-      // Only update dsValue if it wasn't already set (before .play())
-      if (dsValue === null) {
-        dsValue = trimmed.substring(start, currentPos - 1).trim();
+  let playContent = null;
+  
+  // Loop to parse method chain
+  while (pos < original.length) {
+      skipWs();
+      if (pos >= original.length) break;
+      
+      if (original[pos] !== '.') break; // expect dot
+      
+      if (original.substring(pos).startsWith(".bpm(")) {
+          pos += 4;
+          const val = extractBalanced();
+          if (val === null) return null;
+          // Process bpm val
+          const exprResult = evaluateExpression(val.trim().toLowerCase(), { tmp: tempo });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) bpm = exprResult;
+          
+      } else if (original.substring(pos).startsWith(".sn(")) {
+          pos += 3;
+          const val = extractBalanced();
+          if (val === null) return null;
+          // Process sn val
+          const exprResult = evaluateExpression(val.trim().toLowerCase(), { sn: signatureNumerator });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) sn = Math.round(exprResult);
+          
+      } else if (original.substring(pos).startsWith(".sd(")) {
+          pos += 3;
+          const val = extractBalanced();
+          if (val === null) return null;
+          // Process sd val
+          const exprResult = evaluateExpression(val.trim().toLowerCase(), { sd: signatureDenominator });
+          if (exprResult !== null && !isNaN(exprResult) && exprResult > 0) sd = Math.round(exprResult);
+          
+      } else if (original.substring(pos).startsWith(".ds(")) {
+          pos += 3;
+          const val = extractBalanced();
+          if (val === null) return null;
+          dsValue = val.trim();
+          
+      } else if (original.substring(pos).startsWith(".play(")) {
+          pos += 5;
+          const val = extractBalanced();
+          if (val === null) return null;
+          playContent = val; // Preserve whitespace inside play() !
+          
+          // continue loop to allow trailing methods like .ds()? 
+          // Previous logic allowed .ds after play.
+          
+      } else {
+          // Unknown method or end
+          break;
       }
-    }
   }
+  
+  if (!playContent) return null;
 
-  // Must be at end of string after .play(...) and optional .ds(...)
-  if (
-    currentPos < trimmed.length &&
-    trimmed.substring(currentPos).trim().length > 0
-  ) {
-    console.log(
-      `[PARSE METHOD] Extra content after .play(...): "${trimmed.substring(currentPos)}"`,
-    );
-    return null; // Extra content after .play(...) or .ds(...)
-  }
-
-  console.log(
-    `[PARSE METHOD] Successfully parsed - cycleId: ${cycleId}, delayStart: ${dsValue}, playContent: "${playContent.substring(0, 50)}..."`,
-  );
-
+  // Check for any remaining non-whitespace junk? 
+  // skipWs(); if pos < len, log warning?
+  
   return {
     cycleId: cycleId,
-    tempo: bpm !== null ? bpm : tempo, // Use Ableton tempo if not specified
-    signatureNumerator: sn !== null ? sn : signatureNumerator, // Use Ableton numerator if not specified
-    signatureDenominator: sd !== null ? sd : signatureDenominator, // Use Ableton denominator if not specified
-    delayStart: dsValue, // Store ds value for track-level delay
+    tempo: bpm !== null ? bpm : tempo,
+    signatureNumerator: sn !== null ? sn : signatureNumerator,
+    signatureDenominator: sd !== null ? sd : signatureDenominator,
+    delayStart: dsValue,
     playContent: playContent,
   };
 }
