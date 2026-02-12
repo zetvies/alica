@@ -763,6 +763,14 @@
                 // This mimics the Ctrl+Enter "Play" functionality but combines it with Save
                 playTrackForCurrentTrack();
 
+                // 2.5 Force sync code to relay immediately
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'codeChange',
+                        code: content
+                    }));
+                }
+
                 // 3. Save to URL hash for local state persistence
                 if (content.trim()) {
                     const encoded = encodeURIComponent(content);
@@ -1009,6 +1017,9 @@
 
             // Update textarea
             commandArea.value = newText;
+
+            // Trigger input event for highlighting and sync
+            commandArea.dispatchEvent(new Event('input', { bubbles: true }));
 
             // Restore selection (adjust for length changes)
             const lengthDiff = newText.length - fullText.length;

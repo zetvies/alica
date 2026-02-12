@@ -5129,6 +5129,23 @@ function handleMessage(data, ws = null) {
       }
       if (!playTrackId) playTrackId = "track_" + Date.now();
 
+      // IF a cycle with this ID already exists, treat this as a cycle update
+      // This ensures Ctrl+S updates the playing loop instead of just playing on top of it.
+      const isCycleActive = activeCycle.some(c => c.id === playTrackId);
+      if (isCycleActive) {
+          const updatedTrackAsCycle = updateCycleById(
+            playTrackId,
+            trackContent,
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null,
+          );
+          if (updatedTrackAsCycle) {
+              console.log(`[WS] playTrack called - updated existing active cycle '${playTrackId}' for next cycle`);
+              break;
+          }
+      }
+
       queue.push({
         id: playTrackId,
         function: () =>
