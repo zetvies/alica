@@ -19,7 +19,7 @@ app.get('/', (req, res) => {
 const wss = new WebSocket.Server({ server });
 
 // Shared State
-let currentCode = "// Welcome to ALiCA Live!\n// Start coding here...";
+let currentCode = ""; // Empty by default to allow client hydration
 let currentSequencerState = null; // Will be populated by the first client connecting or sending updates
 
 wss.on('connection', (ws) => {
@@ -56,7 +56,14 @@ wss.on('connection', (ws) => {
                     sequencerState: currentSequencerState
                 }));
             }
-            // Default: Broadcast everything else (like chat or other events)
+            // Handle 'code' action (Play button / Ctrl+S)
+            // This is meant for the Backend Server (server.js).
+            // We broadcast it so server.js receives it.
+            // Browsers should ignore 'action: code' messages if they don't process them.
+            if (data.action === 'code') {
+                 broadcastToOthers(ws, message);
+            }
+            // Default: Broadcast everything else
             else {
                 broadcastToOthers(ws, message);
             }

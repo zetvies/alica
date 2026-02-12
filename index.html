@@ -571,10 +571,29 @@
                         
                         // Handle Shared State (Initial Load)
                         if (data.type === 'sharedState') {
-                            if (data.code) {
-                                commandArea.value = data.code;
-                                // Update highlighting without triggering another send
-                                updateHighlighting(); 
+                            const serverCode = data.code;
+                            const isServerDefault = serverCode.startsWith("// Welcome to ALiCA Live!");
+                            const localContent = commandArea.value;
+
+                            // Hydration Logic:
+                            // 1. If Server has real content (not default), trust Server.
+                            // 2. If Server is default/empty, but Client has content (from URL/Cache), push Client -> Server.
+                            
+                            if (serverCode && !isServerDefault && serverCode !== localContent) {
+                                console.log("Hydrating from Server State");
+                                commandArea.value = serverCode;
+                                updateHighlighting();
+                            } else if ((!serverCode || isServerDefault) && localContent && localContent.length > 50) {
+                                console.log("Hydrating Server from Client State");
+                                // We have content, server is empty/default. Push ours.
+                                ws.send(JSON.stringify({
+                                    type: 'codeChange',
+                                    code: localContent
+                                }));
+                            } else if (serverCode) {
+                                // Fallback: Just sync with server if we don't have significant local content
+                                commandArea.value = serverCode;
+                                updateHighlighting();
                             }
                         }
                         
@@ -733,19 +752,28 @@
                 highlightAllText();
                 clearAllCycles();
             }
-            // Ctrl + S = save whole track (queue playCycle for current track + save to URL)
+            // Ctrl + S = Sync & Play (Send code to backend for execution + update URL)
             else if (isCtrl && !isAlt && !isShift && e.key === 's') {
                 e.preventDefault();
                 highlightTrackBriefly();
-                queuePlayCycleForCurrentTrack();
-
-                // Save to URL hash and push to history
+                
                 const content = commandArea.value;
+
+                // 1. Send for Execution (to Server via Relay or Direct)
+                // Use 'code' action for executing the script
+                // Note: The 'input' event listener already handles 'codeChange' sync.
+                // But we can force a sync here too just in case.
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        action: 'code',
+                        code: content
+                    }));
+                }
+                
+                // 2. Save to URL hash for local state persistence
                 if (content.trim()) {
                     const encoded = encodeURIComponent(content);
-                    // Always use hash fragment (limit ~65KB, much higher than query params)
                     const newUrl = window.location.origin + window.location.pathname + '#code=' + encoded;
-                    // Push state with content for history navigation
                     window.history.pushState({ code: content, url: newUrl }, '', newUrl);
                 }
             }
