@@ -77,7 +77,7 @@ initializeMidi();
 // --- RELAY SERVER CONNECTION ---
 // Connect to the Relay Server (which runs on cloud usually, or localhost:8080)
 // For now, if no env var, default to localhost:8080
-const RELAY_URL = process.env.RELAY_URL || "ws://localhost:8080";
+const RELAY_URL = process.env.RELAY_URL || "wss://alica.onrender.com";
 let relayWs = null;
 
 function connectToRelay() {

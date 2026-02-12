@@ -117,7 +117,13 @@
 
 
         function connect() {
-            ws = new WebSocket(`ws://localhost:8080`); // Connect to Relay Server
+            // Dynamic WebSocket Connection
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const wsUrl = `${protocol}//${host}`;
+            
+            console.log(`Connecting to WebSocket at: ${wsUrl}`);
+            ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
                 statusEl.innerText = 'Connected';

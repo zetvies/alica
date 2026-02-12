@@ -3,10 +3,17 @@ const http = require('http');
 
 const PORT = process.env.PORT || 8080;
 
-// Create HTTP server (required for some PaaS to bind to port)
-const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('ALiCA Relay Server Running');
+const express = require('express');
+
+const app = express();
+const server = http.createServer(app);
+
+// Serve static files from the root directory
+app.use(express.static(__dirname));
+
+// Default route
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
 });
 
 const wss = new WebSocket.Server({ server });

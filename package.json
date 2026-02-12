@@ -2,10 +2,11 @@
   "name": "alica",
   "version": "1.0.0",
   "description": "Ableton Live Coding Automation - A live coding language for sequencing in Ableton Live",
-  "main": "src/server.js",
+  "main": "relay.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node relay.js",
+    "dev": "nodemon server.js",
+    "local-server": "node server.js"
   },
   "keywords": [
     "ableton",
