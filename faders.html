@@ -205,6 +205,7 @@
         let currentBpm = 120;
         let currentSigNum = 4;
         let currentSigDenom = 4;
+        let suppressBroadcast = false; // Prevent re-broadcasting when receiving state from relay
 
         const statusEl = document.getElementById('status');
         const fadersGrid = document.getElementById('faders-grid');
@@ -251,6 +252,16 @@
                     if (data.type === 'beat') {
                         updateBeat(data.beatNumber, data.bar);
                     }
+
+                    // Receive fader state from another client
+                    if (data.type === 'fadersChange' && data.state) {
+                        applyFadersState(data.state);
+                    }
+
+                    // Receive shared state on connect
+                    if (data.type === 'sharedState' && data.fadersState) {
+                        applyFadersState(data.fadersState);
+                    }
                 } catch(e) {
                     console.error("Parse error", e);
                 }
@@ -289,6 +300,39 @@
             });
         }
 
+        // --- Broadcast fader state to relay ---
+        function broadcastFadersState() {
+            if (suppressBroadcast) return;
+            sendToServer({
+                type: 'fadersChange',
+                state: {
+                    faders: faders.map(f => ({
+                        id: f.id,
+                        type: f.type,
+                        name: f.name,
+                        cc: f.cc,
+                        cc2: f.cc2,
+                        channel: f.channel,
+                        value: f.value,
+                        valueX: f.valueX,
+                        valueY: f.valueY,
+                    })),
+                    nextId: nextId,
+                }
+            });
+        }
+
+        // --- Apply incoming fader state ---
+        function applyFadersState(state) {
+            if (!state || !Array.isArray(state.faders)) return;
+            suppressBroadcast = true;
+            faders = state.faders;
+            if (state.nextId) nextId = Math.max(nextId, state.nextId);
+            renderFaders();
+            suppressBroadcast = false;
+            console.log(`[FADERS] Synced ${faders.length} fader(s) from relay`);
+        }
+
         // --- Add Fader ---
         function addFader() {
             const id = 'fader_' + nextId++;
@@ -301,6 +345,7 @@
                 value: 0,
             });
             renderFaders();
+            broadcastFadersState();
         }
 
         // --- Add XY Fader ---
@@ -317,12 +362,14 @@
                 valueY: 64,
             });
             renderFaders();
+            broadcastFadersState();
         }
 
         // --- Remove Fader ---
         function removeFader(id) {
             faders = faders.filter(f => f.id !== id);
             renderFaders();
+            broadcastFadersState();
         }
 
         // --- Render ---
@@ -465,6 +512,7 @@
             const fader = faders.find(f => f.id === id);
             if (fader) {
                 fader[key] = value;
+                broadcastFadersState();
             }
         }
 

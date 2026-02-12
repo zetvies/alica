@@ -21,6 +21,7 @@ const wss = new WebSocket.Server({ server });
 // Shared State
 let currentCode = ""; // Empty by default to allow client hydration
 let currentSequencerState = null; // Will be populated by the first client connecting or sending updates
+let currentFadersState = null; // Fader/XY pad configurations
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -29,7 +30,8 @@ wss.on('connection', (ws) => {
     ws.send(JSON.stringify({
         type: 'sharedState',
         code: currentCode,
-        sequencerState: currentSequencerState
+        sequencerState: currentSequencerState,
+        fadersState: currentFadersState
     }));
 
     ws.on('message', (message) => {
@@ -48,12 +50,19 @@ wss.on('connection', (ws) => {
                 // Broadcast to others
                 broadcastToOthers(ws, message);
             }
+            // Handle Faders Changes
+            else if (data.type === 'fadersChange') {
+                currentFadersState = data.state;
+                // Broadcast to others
+                broadcastToOthers(ws, message);
+            }
             // Handle Get State Request (Explicit)
             else if (data.type === 'getSharedState') {
                  ws.send(JSON.stringify({
                     type: 'sharedState',
                     code: currentCode,
-                    sequencerState: currentSequencerState
+                    sequencerState: currentSequencerState,
+                    fadersState: currentFadersState
                 }));
             }
             // Handle 'code' action (Play button / Ctrl+S)
