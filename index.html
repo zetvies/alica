@@ -752,18 +752,17 @@
                 highlightAllText();
                 clearAllCycles();
             }
-            // Ctrl + S = Sync & Play (Send code to backend for execution + update URL)
+            // Ctrl + S = Sync & Queue Cycle (queue for next bar if new, update at cycle end if exists)
             else if (isCtrl && !isAlt && !isShift && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 highlightTrackBriefly();
                 
                 const content = commandArea.value;
 
-                // 2. Play the current track at cursor
-                // This mimics the Ctrl+Enter "Play" functionality but combines it with Save
-                playTrackForCurrentTrack();
+                // Queue cycle for next bar (if not playing) or update at cycle end (if already playing)
+                queueCycleForCurrentTrack();
 
-                // 2.5 Force sync code to relay immediately
+                // Force sync code to relay immediately
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'codeChange',
@@ -771,13 +770,11 @@
                     }));
                 }
 
-                // 3. Save to URL hash for local state persistence
+                // Save to URL hash for local state persistence
                 if (content.trim()) {
                     const encoded = encodeURIComponent(content);
                     try {
                         const newUrl = window.location.origin + window.location.pathname + '#code=' + encoded;
-                        // Use replaceState to avoid cluttering history with every save, or pushState if desired
-                        // Using pushState as requested to "keep typing state" accessible via history
                         window.history.pushState({ code: content, url: newUrl }, '', newUrl);
                     } catch (e) {
                         console.error('Failed to update URL history:', e);
@@ -974,39 +971,55 @@
 
             // Get all lines in the selection
             const selectedText = fullText.substring(lineStart, lineEnd);
+            if (!selectedText) {
+                // If nothing selected, just toggle the current line
+                const currentLineStart = lineStart;
+                let currentLineEnd = lineStart;
+                while (currentLineEnd < fullText.length && fullText[currentLineEnd] !== '\n') {
+                    currentLineEnd++;
+                }
+                const line = fullText.substring(currentLineStart, currentLineEnd);
+                const isCommented = line.trimStart().startsWith('//');
+                let newLine;
+                if (isCommented) {
+                    newLine = line.replace(/\/\/ ?/, '');
+                } else {
+                    const indent = line.match(/^\s*/)[0];
+                    newLine = indent + '// ' + line.substring(indent.length);
+                }
+                commandArea.value = fullText.substring(0, currentLineStart) + newLine + fullText.substring(currentLineEnd);
+                commandArea.selectionStart = currentLineStart;
+                commandArea.selectionEnd = currentLineStart + newLine.length;
+                commandArea.dispatchEvent(new Event('input', { bubbles: true }));
+                return;
+            }
+
             const lines = selectedText.split('\n');
 
             // Determine if all selected lines are commented (to decide toggle direction)
-            let allCommented = true;
-            let someCommented = false;
+            let anyUncommented = false;
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed && !trimmed.startsWith('//')) {
-                    allCommented = false;
-                } else if (trimmed && trimmed.startsWith('//')) {
-                    someCommented = true;
+                    anyUncommented = true;
+                    break;
                 }
             }
 
             // Process each line
             const processedLines = lines.map(line => {
                 const trimmed = line.trim();
-
                 // Empty line - return as-is
                 if (!trimmed) return line;
 
-                // If line starts with //, remove comment
-                if (trimmed.startsWith('//')) {
-                    // Remove // and any space after it, but preserve indentation
-                    const commentIndex = line.indexOf('//');
-                    const afterComment = line.substring(commentIndex + 2).trimStart();
-                    const beforeComment = line.substring(0, commentIndex);
-                    return beforeComment + afterComment;
-                } else {
+                if (anyUncommented) {
                     // Add // at the start (preserve indentation)
-                    const leadingWhitespace = line.match(/^\s*/)[0];
-                    const restOfLine = line.substring(leadingWhitespace.length);
-                    return leadingWhitespace + '//' + restOfLine;
+                    if (trimmed.startsWith('//')) return line; // Already commented
+                    const indent = line.match(/^\s*/)[0];
+                    return indent + '// ' + line.substring(indent.length);
+                } else {
+                    // Remove // and any space after it
+                    return line.replace(/\/\/ ?/, '');
                 }
             });
 
@@ -1018,7 +1031,7 @@
             // Update textarea
             commandArea.value = newText;
 
-            // Trigger input event for highlighting and sync
+            // Trigger input event for highlighting and relay sync
             commandArea.dispatchEvent(new Event('input', { bubbles: true }));
 
             // Restore selection (adjust for length changes)
@@ -2004,6 +2017,99 @@
                 signatureNumerator: parsed?.sn || null,
                 signatureDenominator: parsed?.sd || null
             });
+        }
+
+        // Queue cycle for current track (starts on next bar if new, updates at cycle end if playing)
+        function queueCycleForCurrentTrack() {
+            const fullText = commandArea.value;
+            const start = commandArea.selectionStart;
+            const end = commandArea.selectionEnd;
+            const hasSelection = start !== end;
+            const allTextSelected = hasSelection && start === 0 && end === fullText.length;
+
+            if (!hasSelection) {
+                // No selection: single track at cursor
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found at cursor');
+                    return;
+                }
+
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({ action: 'playTrack', cycleStr: normalized });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
+                sendToServer({
+                    action: 'addCycleToQueue',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
+                });
+                return;
+            }
+
+            // Has selection: check for multiple tracks
+            const selectedText = fullText.substring(start, end);
+            const selectedTracks = findAllTracks(selectedText);
+
+            if (allTextSelected || selectedTracks.length > 1) {
+                const tracksToProcess = allTextSelected ? findAllTracks(fullText) : selectedTracks;
+                console.log(`[QUEUE CYCLE] Found ${tracksToProcess.length} track(s), queuing all`);
+
+                tracksToProcess.forEach(trackInfo => {
+                    const track = trackInfo.track;
+
+                    if (isStopSyntax(track)) {
+                        const normalized = normalizeWhitespace(track);
+                        sendToServer({ action: 'playTrack', cycleStr: normalized });
+                        return;
+                    }
+
+                    const cleanTrack = removeComments(track);
+                    const normalizedTrack = normalizeWhitespace(cleanTrack);
+                    const parsed = parseMethodChain(normalizedTrack);
+                    sendToServer({
+                        action: 'addCycleToQueue',
+                        id: null,
+                        cycleStr: normalizedTrack,
+                        tempo: parsed?.tempo || null,
+                        signatureNumerator: parsed?.sn || null,
+                        signatureDenominator: parsed?.sd || null
+                    });
+                });
+            } else {
+                // Single track in selection
+                const track = findCurrentTrack();
+                if (!track) {
+                    console.warn('No t() track found in selection');
+                    return;
+                }
+
+                if (isStopSyntax(track)) {
+                    const normalized = normalizeWhitespace(track);
+                    sendToServer({ action: 'playTrack', cycleStr: normalized });
+                    return;
+                }
+
+                const cleanTrack = removeComments(track);
+                const normalizedTrack = normalizeWhitespace(cleanTrack);
+                const parsed = parseMethodChain(normalizedTrack);
+                sendToServer({
+                    action: 'addCycleToQueue',
+                    id: null,
+                    cycleStr: normalizedTrack,
+                    tempo: parsed?.tempo || null,
+                    signatureNumerator: parsed?.sn || null,
+                    signatureDenominator: parsed?.sd || null
+                });
+            }
         }
 
         // Play playTrack for selected lines (immediate)

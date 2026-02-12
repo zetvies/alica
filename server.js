@@ -77,7 +77,7 @@ initializeMidi();
 // --- RELAY SERVER CONNECTION ---
 // Connect to the Relay Server (which runs on cloud usually, or localhost:8080)
 // For now, if no env var, default to localhost:8080
-const RELAY_URL = process.env.RELAY_URL || "wss://alica.onrender.com";
+const RELAY_URL = process.env.RELAY_URL || "ws://localhost:8080";
 let relayWs = null;
 
 function connectToRelay() {
@@ -3982,8 +3982,9 @@ function parseMethodChainSyntax(inputStr) {
 
   skipWs();
   
-  // Must start with t(
-  if (!original.substring(pos).startsWith("t(")) return null;
+  // Must start with t( - allow leading whitespace/newlines
+  const tMatch = original.substring(pos).match(/^t\(/);
+  if (!tMatch) return null;
   pos += 1; // move to (
   const cycleIdVal = extractBalanced();
   if (cycleIdVal === null) return null;
@@ -5120,7 +5121,6 @@ function handleMessage(data, ws = null) {
   switch (data.action) {
     case "playTrack":
       // Play a track once (quantized to next bar)
-      // Extracts cycleId/trackId if present in syntax for queue logging, but execution handles parsing
       let playTrackId = data.id;
       const trackContent = data.cycleStr || "[n(60)^2 n(65)^2].c(1)";
       const parsedTrackForId = parseMethodChainSyntax(trackContent);
@@ -5129,8 +5129,7 @@ function handleMessage(data, ws = null) {
       }
       if (!playTrackId) playTrackId = "track_" + Date.now();
 
-      // IF a cycle with this ID already exists, treat this as a cycle update
-      // This ensures Ctrl+S updates the playing loop instead of just playing on top of it.
+      // IF a cycle with this ID already exists, treat this as a cycle update (Seamless)
       const isCycleActive = activeCycle.some(c => c.id === playTrackId);
       if (isCycleActive) {
           const updatedTrackAsCycle = updateCycleById(
@@ -5141,11 +5140,25 @@ function handleMessage(data, ws = null) {
             data.signatureDenominator || null,
           );
           if (updatedTrackAsCycle) {
-              console.log(`[WS] playTrack called - updated existing active cycle '${playTrackId}' for next cycle`);
+              console.log(`[WS] playTrack called - updated existing active cycle '${playTrackId}' for next cycle iteration`);
               break;
           }
       }
 
+      // If not active, check if it's ALREADY in the queue waiting to start
+      const queuedItem = queue.find(item => item.id === playTrackId);
+      if (queuedItem) {
+          queuedItem.function = () => playTrack(
+            trackContent,
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null,
+          );
+          console.log(`[WS] playTrack called - updated pending track '${playTrackId}' in queue`);
+          break;
+      }
+
+      // Otherwise, queue it as a new one-off play
       queue.push({
         id: playTrackId,
         function: () =>
@@ -5156,21 +5169,18 @@ function handleMessage(data, ws = null) {
             data.signatureDenominator || null,
           ),
       });
-      console.log(`[WS] playTrack called - queued track '${playTrackId}' for next bar`);
+      console.log(`[WS] playTrack called - queued new one-off track '${playTrackId}' for next bar. Active IDs: ${activeCycle.map(c=>c.id).join(', ')}`);
       break;
 
     case "playCycle":
       // Extract cycleId from new syntax - this is the authoritative source
       const cycleStrInput = data.cycleStr || "[n(70)^4].c(2)";
       const parsedCycle = parseMethodChainSyntax(cycleStrInput);
-      // When new syntax is detected, always use the cycleId from t(cycleId)
-      // Otherwise fall back to provided id or generate one
       const playCycleId = parsedCycle
         ? parsedCycle.cycleId
         : data.id || "cycle_" + Date.now();
 
-      // Try to update existing cycle first (seamless update)
-      // updateCycleById handles .ds() restarts internally
+      // Try to update existing cycle first (Seamless)
       const updated = updateCycleById(
         playCycleId,
         cycleStrInput,
@@ -5181,24 +5191,31 @@ function handleMessage(data, ws = null) {
       );
 
       if (updated) {
-        console.log(
-          `[WS] playCycle called - updated existing cycle '${playCycleId}' (queued or restarted if ds present)`,
-        );
+        console.log(`[WS] playCycle called - updated existing cycle '${playCycleId}' for next cycle iteration`);
       } else {
-        // Cycle doesn't exist - create new one
-        // Queue it to start on the next bar (quantized)
-        queue.push({
-            id: playCycleId,
-            function: () => playCycle(
+        // If not active, check if it's ALREADY in the queue waiting to start
+        const queuedCycle = queue.find(item => item.id === playCycleId);
+        if (queuedCycle) {
+            queuedCycle.function = () => playCycle(
                 cycleStrInput,
                 data.tempo || null,
                 data.signatureNumerator || null,
                 data.signatureDenominator || null
-            )
-        });
-        console.log(
-          `[WS] playCycle called - queued new cycle '${playCycleId}' for next bar`,
-        );
+            );
+            console.log(`[WS] playCycle called - updated pending cycle '${playCycleId}' in queue`);
+        } else {
+            // Queue it to start on the next bar (Quantized)
+            queue.push({
+                id: playCycleId,
+                function: () => playCycle(
+                    cycleStrInput,
+                    data.tempo || null,
+                    data.signatureNumerator || null,
+                    data.signatureDenominator || null
+                )
+            });
+            console.log(`[WS] playCycle called - queued new cycle '${playCycleId}' for next bar. Active IDs: ${activeCycle.map(c=>c.id).join(', ')}`);
+        }
       }
       break;
 
