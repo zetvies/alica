@@ -753,28 +753,27 @@
                 clearAllCycles();
             }
             // Ctrl + S = Sync & Play (Send code to backend for execution + update URL)
-            else if (isCtrl && !isAlt && !isShift && e.key === 's') {
+            else if (isCtrl && !isAlt && !isShift && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 highlightTrackBriefly();
                 
                 const content = commandArea.value;
 
-                // 1. Send for Execution (to Server via Relay or Direct)
-                // Use 'code' action for executing the script
-                // Note: The 'input' event listener already handles 'codeChange' sync.
-                // But we can force a sync here too just in case.
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        action: 'code',
-                        code: content
-                    }));
-                }
-                
-                // 2. Save to URL hash for local state persistence
+                // 2. Play the current track at cursor
+                // This mimics the Ctrl+Enter "Play" functionality but combines it with Save
+                playTrackForCurrentTrack();
+
+                // 3. Save to URL hash for local state persistence
                 if (content.trim()) {
                     const encoded = encodeURIComponent(content);
-                    const newUrl = window.location.origin + window.location.pathname + '#code=' + encoded;
-                    window.history.pushState({ code: content, url: newUrl }, '', newUrl);
+                    try {
+                        const newUrl = window.location.origin + window.location.pathname + '#code=' + encoded;
+                        // Use replaceState to avoid cluttering history with every save, or pushState if desired
+                        // Using pushState as requested to "keep typing state" accessible via history
+                        window.history.pushState({ code: content, url: newUrl }, '', newUrl);
+                    } catch (e) {
+                        console.error('Failed to update URL history:', e);
+                    }
                 }
             }
             // Ctrl + Z = undo (go back in code change cache)
@@ -2450,6 +2449,11 @@
             if (highlightOverlay && commandArea) {
                 highlightBrackets();
             }
+        }
+
+        // Update highlighting (alias for highlightBrackets for compatibility)
+        function updateHighlighting() {
+            highlightBrackets();
         }
 
         function highlightBrackets() {

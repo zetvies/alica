@@ -5119,13 +5119,27 @@ function handleMessage(data, ws = null) {
 
   switch (data.action) {
     case "playTrack":
-      playTrack(
-        data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
-        data.tempo || null,
-        data.signatureNumerator || null,
-        data.signatureDenominator || null,
-      );
-      console.log("[WS] playTrack called");
+      // Play a track once (quantized to next bar)
+      // Extracts cycleId/trackId if present in syntax for queue logging, but execution handles parsing
+      let playTrackId = data.id;
+      const trackContent = data.cycleStr || "[n(60)^2 n(65)^2].c(1)";
+      const parsedTrackForId = parseMethodChainSyntax(trackContent);
+      if (parsedTrackForId && parsedTrackForId.cycleId) {
+        playTrackId = parsedTrackForId.cycleId;
+      }
+      if (!playTrackId) playTrackId = "track_" + Date.now();
+
+      queue.push({
+        id: playTrackId,
+        function: () =>
+          playTrack(
+            trackContent,
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null,
+          ),
+      });
+      console.log(`[WS] playTrack called - queued track '${playTrackId}' for next bar`);
       break;
 
     case "playCycle":
@@ -5155,21 +5169,19 @@ function handleMessage(data, ws = null) {
         );
       } else {
         // Cycle doesn't exist - create new one
-        // Always create/start new cycle (immediate)
-        const playCycleIntervalId = playCycle(
-          cycleStrInput,
-          data.tempo || null,
-          data.signatureNumerator || null,
-          data.signatureDenominator || null,
+        // Queue it to start on the next bar (quantized)
+        queue.push({
+            id: playCycleId,
+            function: () => playCycle(
+                cycleStrInput,
+                data.tempo || null,
+                data.signatureNumerator || null,
+                data.signatureDenominator || null
+            )
+        });
+        console.log(
+          `[WS] playCycle called - queued new cycle '${playCycleId}' for next bar`,
         );
-
-        if (playCycleIntervalId !== null) {
-          console.log(
-            `[WS] playCycle called - created cycle '${playCycleId}' immediately`,
-          );
-        } else {
-          console.log("[WS] playCycle called - failed to create cycle");
-        }
       }
       break;
 
@@ -5404,6 +5416,15 @@ function handleMessage(data, ws = null) {
       break;
 
     default:
+        // Handle messages that might not have an 'action' property but have a 'type'
+        // These are typically relay messages for collaboration (codeChange, sharedState, etc.)
+        if (data.type === 'codeChange' || data.type === 'sharedState' || data.type === 'sequencerChange') {
+            // These are collaborative messages broadcasted by relay.
+            // The server (this process) doesn't need to do anything with them except maybe log them.
+            // console.log(`[WS] Received collaborative message: ${data.type}`);
+            return;
+        }
+
       console.log(`[WS] Unknown action: ${data.action}`);
   }
 }
