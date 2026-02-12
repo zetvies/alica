@@ -22,9 +22,11 @@ const wss = new WebSocket.Server({ server });
 let currentCode = ""; // Empty by default to allow client hydration
 let currentSequencerState = null; // Will be populated by the first client connecting or sending updates
 let currentFadersState = null; // Fader/XY pad configurations
+let characters = {}; // characterId -> { id, name, x, y, avatar }
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
+    ws.characterId = null; // Track which character this connection owns
 
     // Send the current shared state to the new client immediately
     ws.send(JSON.stringify({
@@ -33,6 +35,14 @@ wss.on('connection', (ws) => {
         sequencerState: currentSequencerState,
         fadersState: currentFadersState
     }));
+
+    // Send all existing characters to the new client
+    if (Object.keys(characters).length > 0) {
+        ws.send(JSON.stringify({
+            type: 'characterSync',
+            characters: characters
+        }));
+    }
 
     ws.on('message', (message) => {
         try {
@@ -49,6 +59,22 @@ wss.on('connection', (ws) => {
                 currentSequencerState = data.state;
                 // Broadcast to others
                 broadcastToOthers(ws, message);
+            }
+            // Handle Character Join
+            else if (data.type === 'characterJoin') {
+                ws.characterId = data.character.id;
+                characters[data.character.id] = data.character;
+                console.log(`Character joined: ${data.character.name} (${data.character.id})`);
+                broadcastToOthers(ws, JSON.stringify(data));
+            }
+            // Handle Character Move
+            else if (data.type === 'characterMove') {
+                if (characters[data.id]) {
+                    characters[data.id].x = data.x;
+                    characters[data.id].y = data.y;
+                    if (data.facing) characters[data.id].facing = data.facing;
+                }
+                broadcastToOthers(ws, JSON.stringify(data));
             }
             // Handle Faders Changes
             else if (data.type === 'fadersChange') {
@@ -86,6 +112,17 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => {
         console.log('Client disconnected');
+        // Remove character on disconnect
+        if (ws.characterId && characters[ws.characterId]) {
+            const charId = ws.characterId;
+            console.log(`Character left: ${characters[charId].name} (${charId})`);
+            delete characters[charId];
+            // Broadcast removal to all remaining clients
+            broadcastToOthers(ws, JSON.stringify({
+                type: 'characterLeave',
+                id: charId
+            }));
+        }
     });
 
     // Keep connection alive

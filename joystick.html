@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>ALiCA - Joystick</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            background-color: #fff;
+            color: #333;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        #viewport {
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            overflow: hidden;
+            transform-origin: center center;
+        }
+
+        /* Inner game world container - Scaled 16:9 */
+        #app-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 1280px;
+            height: 720px;
+            /* Seamless background */
+            background: transparent;
+            transform-origin: center center;
+            /* No shadow for seamless look */
+        }
+
+        /* ========= GAME AREA ========= */
+        .game-area {
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            overflow: hidden;
+            z-index: 0;
+        }
+
+        /* Subtle grid */
+        .game-area::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                radial-gradient(circle, #e0e0e0 1px, transparent 1px);
+            background-size: 32px 32px;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        /* ========= CHARACTER ========= */
+        .character {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: none;
+            transition: left 0.08s linear, top 0.08s linear;
+            z-index: 10;
+            will-change: left, top;
+        }
+
+        .character-avatar {
+            width: 128px;
+            height: 128px;
+        }
+
+        .character-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            image-rendering: auto;
+        }
+
+        .character-name {
+            margin-top: 2px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #555;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .character.self .character-name {
+            color: #4a9eff;
+        }
+
+        /* ========= JOIN SCREEN ========= */
+        .join-screen {
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+        }
+
+        .join-screen.hidden {
+            display: none;
+        }
+
+        .join-preview {
+            width: 120px;
+            height: 120px;
+        }
+
+        .join-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .join-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .join-input {
+            font-size: 18px;
+            padding: 10px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            outline: none;
+            text-align: center;
+            font-family: inherit;
+            color: #333;
+            width: 240px;
+            transition: border-color 0.2s;
+        }
+
+        .join-input:focus {
+            border-color: #4a9eff;
+        }
+
+        .join-btn {
+            font-size: 16px;
+            font-weight: 600;
+            padding: 12px 40px;
+            border: none;
+            border-radius: 12px;
+            background: #4a9eff;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .join-btn:hover {
+            background: #3a8eef;
+            transform: scale(1.02);
+        }
+
+        .join-btn:active {
+            transform: scale(0.97);
+        }
+
+        /* ========= JOYSTICK ========= */
+        .joystick-zone {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            z-index: 100;
+        }
+
+        .joystick-base {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.85);
+            border: 2px solid rgba(0,0,0,0.08);
+            position: relative;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        .joystick-base::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 20%;
+            right: 20%;
+            height: 1px;
+            background: rgba(0,0,0,0.06);
+            pointer-events: none;
+        }
+
+        .joystick-base::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 20%;
+            bottom: 20%;
+            width: 1px;
+            background: rgba(0,0,0,0.06);
+            pointer-events: none;
+        }
+
+        .joystick-stick {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #ffffff, #e8e8e8);
+            border: 2px solid rgba(0,0,0,0.1);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow:
+                0 4px 12px rgba(0,0,0,0.12),
+                inset 0 1px 2px rgba(255,255,255,0.8);
+            transition: box-shadow 0.15s ease;
+            cursor: grab;
+        }
+
+        .joystick-stick.active {
+            box-shadow:
+                0 6px 20px rgba(74, 158, 255, 0.25),
+                inset 0 1px 2px rgba(255,255,255,0.8);
+            border-color: rgba(74, 158, 255, 0.4);
+            cursor: grabbing;
+        }
+
+        /* ========= ACTION BUTTONS ========= */
+        .buttons-zone {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            z-index: 100;
+            width: 200px;
+            height: 200px;
+        }
+
+        .action-btn {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 2px solid;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            cursor: pointer;
+            transition: all 0.12s ease;
+            backdrop-filter: blur(8px);
+            letter-spacing: 0.5px;
+        }
+
+        .action-btn:active,
+        .action-btn.pressed {
+            transform: scale(0.9);
+        }
+
+        .btn-a {
+            right: 0;
+            bottom: 50%;
+            transform: translateY(50%);
+            background: rgba(74, 158, 255, 0.12);
+            border-color: rgba(74, 158, 255, 0.3);
+            color: #4a9eff;
+            box-shadow: 0 4px 16px rgba(74, 158, 255, 0.1);
+        }
+
+        .btn-a:active, .btn-a.pressed {
+            background: rgba(74, 158, 255, 0.25);
+            box-shadow: 0 4px 20px rgba(74, 158, 255, 0.25);
+            transform: translateY(50%) scale(0.9);
+        }
+
+        .btn-b {
+            right: 25px;
+            bottom: 0;
+            background: rgba(156, 39, 176, 0.12);
+            border-color: rgba(156, 39, 176, 0.3);
+            color: #9c27b0;
+            box-shadow: 0 4px 16px rgba(156, 39, 176, 0.1);
+        }
+
+        .btn-b:active, .btn-b.pressed {
+            background: rgba(156, 39, 176, 0.25);
+            box-shadow: 0 4px 20px rgba(156, 39, 176, 0.25);
+            transform: scale(0.9);
+        }
+
+        .btn-c {
+            right: 25px;
+            top: 0;
+            background: rgba(255, 152, 0, 0.12);
+            border-color: rgba(255, 152, 0, 0.3);
+            color: #f59e0b;
+            box-shadow: 0 4px 16px rgba(255, 152, 0, 0.1);
+        }
+
+        .btn-c:active, .btn-c.pressed {
+            background: rgba(255, 152, 0, 0.25);
+            box-shadow: 0 4px 20px rgba(255, 152, 0, 0.25);
+            transform: scale(0.9);
+        }
+
+        /* ========= HUD ========= */
+        .hud-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 200;
+            pointer-events: none;
+        }
+
+        .hud-overlay > * {
+            pointer-events: auto;
+        }
+
+        .hud-brand {
+            font-size: 14px;
+            font-weight: 700;
+            color: #333;
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(8px);
+            padding: 6px 14px;
+            border-radius: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hud-brand .sub {
+            font-size: 10px;
+            font-weight: 400;
+            color: #999;
+        }
+
+        .hud-status {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #ef4444;
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected {
+            background: #22c55e;
+        }
+
+        .player-count {
+            font-size: 10px;
+            color: #999;
+        }
+
+        /* Settings */
+        .settings-toggle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(0,0,0,0.06);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            color: #999;
+            transition: all 0.2s;
+        }
+
+        .settings-toggle:hover {
+            background: rgba(255,255,255,0.95);
+            color: #555;
+        }
+
+        .settings-panel {
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 300;
+            font-size: 12px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            display: none;
+            width: 220px;
+        }
+
+        .settings-panel.open {
+            display: block;
+        }
+
+        .settings-panel label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .settings-panel input[type="number"],
+        .settings-panel input[type="text"] {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            color: #333;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            outline: none;
+            width: 70px;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+
+        .settings-panel input:focus {
+            border-color: #4a9eff;
+        }
+
+        .settings-section-title {
+            font-weight: 700;
+            color: #4a9eff;
+            margin-bottom: 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .settings-divider {
+            border-top: 1px solid #eee;
+            margin: 12px 0;
+        }
+
+
+    </style>
+</head>
+<body>
+    <div id="viewport">
+        <!-- Game Area (Scaled 16:9) -->
+        <div id="app-container">
+            <div class="game-area" id="game-area">
+                <!-- Characters rendered here -->
+            </div>
+        </div>
+
+        <!-- Join Screen -->
+        <div class="join-screen" id="join-screen">
+            <div class="join-preview" id="join-preview"></div>
+            <div class="join-title">Enter your name</div>
+            <input class="join-input" id="join-name-input" type="text" placeholder="Your name..." maxlength="12" autofocus>
+            <button class="join-btn" id="join-btn">Join</button>
+        </div>
+
+    <!-- HUD -->
+    <div class="hud-overlay">
+        <div class="hud-brand">
+            ALiCA <span class="sub">Joystick</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="hud-status" id="hud-status">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Offline</span>
+                <span class="player-count" id="player-count"></span>
+            </div>
+            <button class="settings-toggle" id="settings-toggle">⚙</button>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settings-panel">
+        <div class="settings-section-title">Character</div>
+        <label>
+            <span>Name</span>
+            <input type="text" id="char-name" value="" maxlength="12" style="width: 90px;">
+        </label>
+
+        <div class="settings-divider"></div>
+        <div class="settings-section-title">Buttons</div>
+        <label>
+            <span>Btn A Note</span>
+            <input type="number" id="btn-a-note" value="60" min="0" max="127">
+        </label>
+        <label>
+            <span>Btn B Note</span>
+            <input type="number" id="btn-b-note" value="62" min="0" max="127">
+        </label>
+        <label>
+            <span>Btn C Note</span>
+            <input type="number" id="btn-c-note" value="64" min="0" max="127">
+        </label>
+        <label>
+            <span>Channel</span>
+            <input type="number" id="btn-channel" value="1" min="1" max="16">
+        </label>
+        <label>
+            <span>Velocity</span>
+            <input type="number" id="btn-velocity" value="127" min="0" max="127">
+        </label>
+    </div>
+
+    <!-- Joystick (Bottom-Left) -->
+    <div class="joystick-zone" id="joystick-zone">
+        <div class="joystick-base" id="joystick-base">
+            <div class="joystick-stick" id="joystick-stick"></div>
+        </div>
+    </div>
+
+    <!-- Action Buttons (Bottom-Right) -->
+    <div class="buttons-zone" id="buttons-zone">
+        <button class="action-btn btn-c" id="btn-c" data-btn="c">C</button>
+        <button class="action-btn btn-a" id="btn-a" data-btn="a">A</button>
+        <button class="action-btn btn-b" id="btn-b" data-btn="b">B</button>
+    </div>
+
+    <script>
+        // ==================== UTILS ====================
+        const ADJECTIVES = ['Swift','Brave','Tiny','Mighty','Lazy','Happy','Sneaky','Bold','Calm','Wild'];
+        const NOUNS = ['Cat','Fox','Owl','Bear','Wolf','Lynx','Puma','Hawk','Deer','Frog'];
+
+        function randomName() {
+            const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+            const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+            return adj + noun;
+        }
+
+        function generateId() {
+            return 'c_' + Math.random().toString(36).substring(2, 9);
+        }
+
+        // ==================== SCALE LOGIC ====================
+        const GAME_WIDTH = 1280;
+        const GAME_HEIGHT = 720;
+        let scale = 1;
+        let isRotated = false;
+
+        function resizeGame() {
+            const viewport = document.getElementById('viewport');
+            const appContainer = document.getElementById('app-container');
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            const isPortrait = winH > winW;
+            isRotated = isPortrait;
+
+            // 1. Handle Viewport Rotation (for mobile portrait)
+            if (isRotated) {
+                // Force landscape via rotation
+                viewport.style.width = winH + 'px';
+                viewport.style.height = winW + 'px';
+                viewport.style.transform = 'translate(-50%, -50%) rotate(90deg)';
+                // Center viewport
+                viewport.style.left = '50%';
+                viewport.style.top = '50%';
+            } else {
+                viewport.style.width = '100vw';
+                viewport.style.height = '100vh';
+                viewport.style.transform = 'none';
+                viewport.style.left = '0';
+                viewport.style.top = '0';
+            }
+
+            // 2. Handle Game World Scale (Inside Viewport)
+            // Available space inside the (potentially rotated) viewport
+            let availW = isRotated ? winH : winW;
+            let availH = isRotated ? winW : winH;
+
+            const scaleX = availW / GAME_WIDTH;
+            const scaleY = availH / GAME_HEIGHT;
+            scale = Math.min(scaleX, scaleY);
+
+            // Scale app-container to fit
+            appContainer.style.transform = `translate(-50%, -50%) scale(${scale})`;
+        }
+        window.addEventListener('resize', resizeGame);
+        window.addEventListener('load', resizeGame);
+        setTimeout(resizeGame, 10);
+
+        // ==================== STATE ====================
+        let ws = null;
+        const gameArea = document.getElementById('game-area');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const playerCountEl = document.getElementById('player-count');
+
+        const MOVE_SPEED = 4; // pixels per tick
+        const TICK_MS = 30;   // movement tick interval
+
+        const myId = generateId();
+        let myName = '';
+        const myAvatar = `https://robohash.org/${myId}?set=set4&size=200x200`;
+
+        // All characters (including self)
+        const allCharacters = {};
+
+        // Joystick direction state
+        let joyDx = 0;
+        let joyDy = 0;
+
+        // Config
+        const config = {
+            btnANote: 60,
+            btnBNote: 62,
+            btnCNote: 64,
+            btnChannel: 1,
+            btnVelocity: 127,
+        };
+
+        // ==================== JOIN SCREEN ====================
+        const joinScreen = document.getElementById('join-screen');
+        const joinNameInput = document.getElementById('join-name-input');
+        const joinBtn = document.getElementById('join-btn');
+        const joinPreview = document.getElementById('join-preview');
+
+        // Show avatar preview
+        joinPreview.innerHTML = `<img src="${myAvatar}" alt="Your avatar" draggable="false">`;
+        joinNameInput.value = randomName();
+        joinNameInput.select();
+
+        function startGame() {
+            myName = joinNameInput.value.trim() || randomName();
+            joinScreen.classList.add('hidden');
+
+            // Set settings name input
+            const charNameInput = document.getElementById('char-name');
+            charNameInput.value = myName;
+
+            // Create my character
+            const startPos = getStartPosition();
+            allCharacters[myId] = {
+                id: myId,
+                name: myName,
+                avatar: myAvatar,
+                x: startPos.x,
+                y: startPos.y
+            };
+            createCharacterEl(allCharacters[myId]);
+            updatePlayerCount();
+
+            // Connect after joining
+            connect();
+        }
+
+        joinBtn.addEventListener('click', startGame);
+        joinNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') startGame();
+        });
+
+        // ==================== CHARACTER RENDERING ====================
+        function createCharacterEl(char) {
+            const el = document.createElement('div');
+            el.className = 'character' + (char.id === myId ? ' self' : '');
+            el.id = 'char-' + char.id;
+            el.innerHTML = `
+                <div class="character-avatar">
+                    <img src="${char.avatar}" alt="${char.name}" draggable="false">
+                </div>
+                <div class="character-name">${char.name}</div>
+            `;
+            positionCharacter(el, char.x, char.y);
+            gameArea.appendChild(el);
+            return el;
+        }
+
+        function positionCharacter(el, x, y, facing) {
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            el.style.transform = 'translate(-50%, -50%)';
+            // Flip avatar when facing left
+            const avatarEl = el.querySelector('.character-avatar');
+            if (avatarEl) {
+                avatarEl.style.transform = facing === 'left' ? 'scaleX(-1)' : '';
+            }
+        }
+
+        function updateCharacterEl(char) {
+            let el = document.getElementById('char-' + char.id);
+            if (!el) {
+                el = createCharacterEl(char);
+            }
+            positionCharacter(el, char.x, char.y, char.facing);
+            // Update name if changed
+            const nameEl = el.querySelector('.character-name');
+            if (nameEl && nameEl.textContent !== char.name) {
+                nameEl.textContent = char.name;
+            }
+        }
+
+        function removeCharacterEl(id) {
+            const el = document.getElementById('char-' + id);
+            if (el) el.remove();
+            delete allCharacters[id];
+        }
+
+        function updatePlayerCount() {
+            const count = Object.keys(allCharacters).length;
+            playerCountEl.textContent = count > 0 ? `${count} online` : '';
+        }
+
+        // ==================== MY CHARACTER ====================
+        function getStartPosition() {
+            return {
+                x: GAME_WIDTH / 2,
+                y: GAME_HEIGHT / 2
+            };
+        }
+
+        // ==================== MOVEMENT LOOP ====================
+        let moveThrottle = 0;
+
+        setInterval(() => {
+            if (joyDx === 0 && joyDy === 0) return;
+
+            const me = allCharacters[myId];
+            if (!me) return;
+
+            // Track facing direction
+            if (joyDx < -0.1) me.facing = 'left';
+            else if (joyDx > 0.1) me.facing = 'right';
+
+            // Move character
+            me.x += joyDx * MOVE_SPEED;
+            me.y += joyDy * MOVE_SPEED;
+
+            // Clamp to screen
+            me.x = Math.max(64, Math.min(GAME_WIDTH - 64, me.x));
+            me.y = Math.max(64, Math.min(GAME_HEIGHT - 64, me.y));
+
+            updateCharacterEl(me);
+
+            // Throttle network updates (every ~90ms)
+            moveThrottle++;
+            if (moveThrottle >= 3) {
+                moveThrottle = 0;
+                sendToServer({
+                    type: 'characterMove',
+                    id: myId,
+                    x: Math.round(me.x),
+                    y: Math.round(me.y),
+                    facing: me.facing
+                });
+            }
+        }, TICK_MS);
+
+        // ==================== WEBSOCKET ====================
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            ws = new WebSocket(`${protocol}//${host}`);
+
+            ws.onopen = () => {
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Online';
+
+                // Join with our character
+                sendToServer({
+                    type: 'characterJoin',
+                    character: allCharacters[myId]
+                });
+            };
+
+            ws.onclose = () => {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Offline';
+                // Remove all remote characters on disconnect
+                Object.keys(allCharacters).forEach(id => {
+                    if (id !== myId) removeCharacterEl(id);
+                });
+                updatePlayerCount();
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (err) => console.error('WS Error', err);
+
+            ws.onmessage = async (msg) => {
+                try {
+                    let msgData = msg.data;
+                    if (msgData instanceof Blob) msgData = await msgData.text();
+                    const data = JSON.parse(msgData);
+
+                    // Another character joined
+                    if (data.type === 'characterJoin' && data.character) {
+                        const c = data.character;
+                        if (c.id !== myId) {
+                            allCharacters[c.id] = c;
+                            updateCharacterEl(c);
+                            updatePlayerCount();
+                        }
+                    }
+
+                    // Character moved
+                    if (data.type === 'characterMove' && data.id !== myId) {
+                        if (allCharacters[data.id]) {
+                            allCharacters[data.id].x = data.x;
+                            allCharacters[data.id].y = data.y;
+                            if (data.facing) allCharacters[data.id].facing = data.facing;
+                            updateCharacterEl(allCharacters[data.id]);
+                        }
+                    }
+
+                    // Character left
+                    if (data.type === 'characterLeave' && data.id !== myId) {
+                        removeCharacterEl(data.id);
+                        updatePlayerCount();
+                    }
+
+                    // Full character sync (on connect, get all existing)
+                    if (data.type === 'characterSync' && data.characters) {
+                        Object.values(data.characters).forEach(c => {
+                            if (c.id !== myId) {
+                                allCharacters[c.id] = c;
+                                updateCharacterEl(c);
+                            }
+                        });
+                        updatePlayerCount();
+                    }
+
+                } catch (e) {
+                    // ignore
+                }
+            };
+        }
+
+        function sendToServer(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            }
+        }
+
+        // ==================== SETTINGS ====================
+        const settingsToggle = document.getElementById('settings-toggle');
+        const settingsPanel = document.getElementById('settings-panel');
+
+        settingsToggle.addEventListener('click', () => {
+            settingsPanel.classList.toggle('open');
+        });
+
+        document.addEventListener('touchstart', (e) => {
+            if (settingsPanel.classList.contains('open') &&
+                !settingsPanel.contains(e.target) &&
+                !settingsToggle.contains(e.target)) {
+                settingsPanel.classList.remove('open');
+            }
+        });
+
+        // Name change
+        document.getElementById('char-name').addEventListener('change', (e) => {
+            const newName = e.target.value.trim() || myName;
+            if (allCharacters[myId]) {
+                allCharacters[myId].name = newName;
+                updateCharacterEl(allCharacters[myId]);
+                sendToServer({
+                    type: 'characterJoin',
+                    character: allCharacters[myId]
+                });
+            }
+        });
+
+        function bindSetting(id, key, parser = parseInt) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', () => {
+                    config[key] = parser(el.value);
+                });
+            }
+        }
+
+        bindSetting('btn-a-note', 'btnANote');
+        bindSetting('btn-b-note', 'btnBNote');
+        bindSetting('btn-c-note', 'btnCNote');
+        bindSetting('btn-channel', 'btnChannel');
+        bindSetting('btn-velocity', 'btnVelocity');
+
+        // ==================== JOYSTICK LOGIC ====================
+        const joystickBase = document.getElementById('joystick-base');
+        const joystickStick = document.getElementById('joystick-stick');
+
+        let joyActive = false;
+        let joyTouchId = null;
+
+        function getJoystickPosition(clientX, clientY) {
+            const rect = joystickBase.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const maxRadius = rect.width / 2 - 28;
+
+            let dx = clientX - centerX;
+            let dy = clientY - centerY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > maxRadius) {
+                dx = (dx / dist) * maxRadius;
+                dy = (dy / dist) * maxRadius;
+            }
+
+            return { dx, dy, maxRadius };
+        }
+
+        function updateJoystick(clientX, clientY) {
+            const { dx, dy, maxRadius } = getJoystickPosition(clientX, clientY);
+
+            joystickStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+            // Normalize direction (-1 to 1)
+            let rawDx = dx / maxRadius;
+            let rawDy = dy / maxRadius;
+
+            if (isRotated) {
+                // Rotated 90deg CW: 
+                // Screen X+ (dx) -> Game Y- (Up, but Y is down-positive, so Up is Y-)
+                // Screen Y+ (dy) -> Game X+ (Right)
+                // Wait. Game Y decrease means UP. But dx increase means Screen Right.
+                // Screen Right is visual TOP.
+                // So +dx (Screen Right) should mean -joyDy (Game Up).
+                joyDx = rawDy;
+                joyDy = -rawDx;
+            } else {
+                joyDx = rawDx;
+                joyDy = rawDy;
+            }
+
+            // Dead zone
+            if (Math.abs(joyDx) < 0.15) joyDx = 0;
+            if (Math.abs(joyDy) < 0.15) joyDy = 0;
+        }
+
+        function resetJoystick() {
+            joystickStick.style.transform = 'translate(-50%, -50%)';
+            joystickStick.classList.remove('active');
+            joyActive = false;
+            joyTouchId = null;
+            joyDx = 0;
+            joyDy = 0;
+        }
+
+        // Touch
+        joystickBase.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (joyActive) return;
+            const touch = e.changedTouches[0];
+            joyTouchId = touch.identifier;
+            joyActive = true;
+            joystickStick.classList.add('active');
+            updateJoystick(touch.clientX, touch.clientY);
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!joyActive) return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joyTouchId) {
+                    e.preventDefault();
+                    updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                    break;
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joyTouchId) {
+                    resetJoystick();
+                    break;
+                }
+            }
+        });
+
+        document.addEventListener('touchcancel', (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joyTouchId) {
+                    resetJoystick();
+                    break;
+                }
+            }
+        });
+
+        // Mouse
+        joystickBase.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            joyActive = true;
+            joystickStick.classList.add('active');
+            updateJoystick(e.clientX, e.clientY);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!joyActive) return;
+            updateJoystick(e.clientX, e.clientY);
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (joyActive) resetJoystick();
+        });
+
+        // ==================== BUTTON LOGIC ====================
+        const btnNoteMap = { a: 'btnANote', b: 'btnBNote', c: 'btnCNote' };
+        const activeBtnTouches = new Map();
+
+        function pressButton(btnId) {
+            const el = document.getElementById(`btn-${btnId}`);
+            if (el) el.classList.add('pressed');
+
+            const noteKey = btnNoteMap[btnId];
+            if (!noteKey) return;
+
+            sendToServer({
+                action: 'sendNote',
+                note: config[noteKey],
+                velocity: config.btnVelocity,
+                channel: config.btnChannel - 1,
+                debug: false
+            });
+        }
+
+        function releaseButton(btnId) {
+            const el = document.getElementById(`btn-${btnId}`);
+            if (el) el.classList.remove('pressed');
+
+            const noteKey = btnNoteMap[btnId];
+            if (!noteKey) return;
+
+            sendToServer({
+                action: 'sendNoteOff',
+                note: config[noteKey],
+                channel: config.btnChannel - 1,
+                debug: false
+            });
+        }
+
+        document.querySelectorAll('.action-btn').forEach(btn => {
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const btnId = btn.dataset.btn;
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    activeBtnTouches.set(e.changedTouches[i].identifier, btnId);
+                }
+                pressButton(btnId);
+            }, { passive: false });
+        });
+
+        document.addEventListener('touchend', (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const tid = e.changedTouches[i].identifier;
+                const btnId = activeBtnTouches.get(tid);
+                if (btnId) {
+                    releaseButton(btnId);
+                    activeBtnTouches.delete(tid);
+                }
+            }
+        });
+
+        document.addEventListener('touchcancel', (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const tid = e.changedTouches[i].identifier;
+                const btnId = activeBtnTouches.get(tid);
+                if (btnId) {
+                    releaseButton(btnId);
+                    activeBtnTouches.delete(tid);
+                }
+            }
+        });
+
+        document.querySelectorAll('.action-btn').forEach(btn => {
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                pressButton(btn.dataset.btn);
+            });
+            btn.addEventListener('mouseup', () => releaseButton(btn.dataset.btn));
+            btn.addEventListener('mouseleave', () => releaseButton(btn.dataset.btn));
+        });
+    </script>
+    </div> <!-- Close viewport -->
+</body>
+</html>
