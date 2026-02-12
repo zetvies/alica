@@ -122,6 +122,9 @@
             ws.onopen = () => {
                 statusEl.innerText = 'Connected';
                 statusEl.className = 'px-2 py-1 text-xs rounded border border-green-700 bg-green-900/50 text-green-300';
+                
+                // Request current state immediately
+                ws.send(JSON.stringify({ action: "getState" }));
             };
             
             ws.onclose = () => {
@@ -134,9 +137,15 @@
                 console.error("WS Error", err);
             };
 
-            ws.onmessage = (msg) => {
+            ws.onmessage = async (msg) => {
                 try {
-                    const data = JSON.parse(msg.data);
+                    let msgData = msg.data;
+                    
+                    if (msgData instanceof Blob) {
+                        msgData = await msgData.text();
+                    }
+                    
+                    const data = JSON.parse(msgData);
                     
                     if(data.type === 'tempoAndSignature') {
                         updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);

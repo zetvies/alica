@@ -93,7 +93,7 @@ function connectToRelay() {
       // Treat message from Relay same as message from local WS client
       try {
         const msg = JSON.parse(data);
-        handleMessage(msg); // Reuse existing message handler
+        handleMessage(msg, relayWs); // Pass relay connection for response handling
       } catch (e) {
         console.error("Error parsing relay message:", e);
       }
@@ -5376,6 +5376,30 @@ function handleMessage(data, ws = null) {
             streams: activeStreams,
           }),
         );
+      }
+      break;
+
+    case "getState":
+      // Send current state to the requesting client (or broadcast if came from relay)
+      // We send to 'ws' which is the connection that sent the request.
+      // If it came from Relay, 'ws' is the Relay connection, so it goes back to Relay -> Frontend.
+      if (ws && ws.readyState === 1) {
+          const tempoSignatureMessage = JSON.stringify({
+            type: "tempoAndSignature",
+            tempo: tempo,
+            signatureNumerator: signatureNumerator,
+            signatureDenominator: signatureDenominator,
+          });
+          ws.send(tempoSignatureMessage);
+
+          const beatMessage = JSON.stringify({
+            type: "beat",
+            beat: currentBeat,
+            bar: currentBar,
+          });
+          ws.send(beatMessage);
+          
+          console.log("[WS] getState: Sent current state to client/relay");
       }
       break;
 

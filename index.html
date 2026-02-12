@@ -531,6 +531,9 @@
                     statusEl.className = 'px-4 py-2 rounded text-xs font-bold bg-green-900/50 border border-green-700 text-green-300';
                     reconnectAttempts = 0; // Reset on successful connection
                     console.log('WebSocket connected');
+                    
+                    // Request current state immediately
+                    ws.send(JSON.stringify({ action: "getState" }));
                 };
 
                 ws.onclose = (event) => {
@@ -550,22 +553,33 @@
                     statusEl.className = 'px-4 py-2 rounded text-xs font-bold bg-red-900/50 border border-red-700 text-red-300';
                 };
 
-                ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    console.log('Received:', data);
-
-                    // Handle BPM and signature updates
-                    if (data.type === 'tempoAndSignature') {
-                        updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
-                        // Update sequencer when signature changes
-                        if (data.signatureNumerator) {
-                            updateBeatSequencer(data.signatureNumerator);
-                        }
+                ws.onmessage = async (event) => {
+                    let msgData = event.data;
+                    
+                    // Handle Blob data (common with some WS setups)
+                    if (msgData instanceof Blob) {
+                        msgData = await msgData.text();
                     }
+                    
+                    try {
+                        const data = JSON.parse(msgData);
+                        console.log('Received:', data);
 
-                    // Handle beat updates
-                    if (data.type === 'beat' && data.beatNumber !== undefined) {
-                        updateBeatIndicator(data.beatNumber, data.bar);
+                        // Handle BPM and signature updates
+                        if (data.type === 'tempoAndSignature') {
+                            updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
+                            // Update sequencer when signature changes
+                            if (data.signatureNumerator) {
+                                updateBeatSequencer(data.signatureNumerator);
+                            }
+                        }
+
+                        // Handle beat updates
+                        if (data.type === 'beat' && data.beatNumber !== undefined) {
+                            updateBeatIndicator(data.beatNumber, data.bar);
+                        }
+                    } catch (e) {
+                         console.error("Error handling message:", e);
                     }
                 };
 
