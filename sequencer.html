@@ -117,7 +117,7 @@
 
 
         function connect() {
-            ws = new WebSocket(`ws://${location.hostname}:4254`);
+            ws = new WebSocket(`ws://localhost:8080`); // Connect to Relay Server
             
             ws.onopen = () => {
                 statusEl.innerText = 'Connected';

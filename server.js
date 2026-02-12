@@ -2,6 +2,7 @@ const express = require("express");
 const dgram = require("dgram");
 const osc = require("osc");
 const http = require("http");
+const WebSocket = require("ws");
 const { WebSocketServer } = require("ws");
 const {
   noteTokenToMidi,
@@ -70,7 +71,52 @@ function checkInitialization() {
 let clients = null;
 
 // Initialize MIDI output (using midiHandler module)
+// Initialize MIDI output (using midiHandler module)
 initializeMidi();
+
+// --- RELAY SERVER CONNECTION ---
+// Connect to the Relay Server (which runs on cloud usually, or localhost:8080)
+// For now, if no env var, default to localhost:8080
+const RELAY_URL = process.env.RELAY_URL || "ws://localhost:8080";
+let relayWs = null;
+
+function connectToRelay() {
+  try {
+    console.log(`Attempting to connect to Relay: ${RELAY_URL}`);
+    relayWs = new WebSocket(RELAY_URL);
+
+    relayWs.on("open", () => {
+      console.log("Connected to Relay Server as Client");
+    });
+
+    relayWs.on("message", (data) => {
+      // Treat message from Relay same as message from local WS client
+      try {
+        const msg = JSON.parse(data);
+        handleMessage(msg); // Reuse existing message handler
+      } catch (e) {
+        console.error("Error parsing relay message:", e);
+      }
+    });
+
+    relayWs.on("close", () => {
+      console.log("Disconnected from Relay. Reconnecting in 5s...");
+      setTimeout(connectToRelay, 5000);
+    });
+
+    relayWs.on("error", (err) => {
+      console.error("Relay connection error:", err.message);
+      // close event will trigger reconnect
+    });
+  } catch (e) {
+    console.error("Relay connection setup failed:", e);
+    setTimeout(connectToRelay, 5000);
+  }
+}
+
+connectToRelay();
+
+// --- END RELAY SERVER CONNECTION ---
 
 // UDP sender to 127.0.0.1:4254 on bar change
 const udpOut = dgram.createSocket("udp4");
@@ -4853,19 +4899,25 @@ function calculateBarAndBeat() {
       }
 
       // Broadcast beat change to WebSocket clients
+      const beatMessage = JSON.stringify({
+        type: "beat",
+        beat: currentBeat,
+        bar: currentBar,
+        beatNumber: newBeat,
+      });
+
       if (clients && clients.size > 0) {
-        const beatMessage = JSON.stringify({
-          type: "beat",
-          beat: currentBeat,
-          bar: currentBar,
-          beatNumber: newBeat,
-        });
         clients.forEach((client) => {
           if (client.readyState === 1) {
             // WebSocket.OPEN
             client.send(beatMessage);
           }
         });
+      }
+
+      // Broadcast to Relay Server
+      if (relayWs && relayWs.readyState === 1) {
+        relayWs.send(beatMessage);
       }
     }
   } catch (error) {
@@ -5027,8 +5079,6 @@ clients = new Set();
 
 // Function to broadcast BPM and signature to all WebSocket clients
 function broadcastTempoAndSignature() {
-  if (!clients || clients.size === 0) return;
-
   const message = JSON.stringify({
     type: "tempoAndSignature",
     tempo: tempo,
@@ -5036,12 +5086,302 @@ function broadcastTempoAndSignature() {
     signatureDenominator: signatureDenominator,
   });
 
-  clients.forEach((client) => {
-    if (client.readyState === 1) {
-      // WebSocket.OPEN
-      client.send(message);
+  if (clients && clients.size > 0) {
+    clients.forEach((client) => {
+      if (client.readyState === 1) {
+        // WebSocket.OPEN
+        client.send(message);
+      }
+    });
+  }
+
+  // Broadcast to Relay Server
+  if (relayWs && relayWs.readyState === 1) {
+    relayWs.send(message);
+  }
+}
+
+// Handle incoming messages (reused for local WS and Relay)
+function handleMessage(data, ws = null) {
+  console.log("[WS] Received action:", data.action, data);
+
+  // Check for stop syntax first: t(cycleId).stop()
+  if (data.cycleStr) {
+    const stopParsed = parseStopSyntax(data.cycleStr);
+    if (stopParsed) {
+      const cleared = clearCycleById(stopParsed.cycleId);
+      console.log(
+        `[WS] Stop cycle '${stopParsed.cycleId}' requested - ${cleared ? "success" : "failed"}`,
+      );
+      return; // Exit early after handling stop
     }
-  });
+  }
+
+  switch (data.action) {
+    case "playTrack":
+      playTrack(
+        data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
+        data.tempo || null,
+        data.signatureNumerator || null,
+        data.signatureDenominator || null,
+      );
+      console.log("[WS] playTrack called");
+      break;
+
+    case "playCycle":
+      // Extract cycleId from new syntax - this is the authoritative source
+      const cycleStrInput = data.cycleStr || "[n(70)^4].c(2)";
+      const parsedCycle = parseMethodChainSyntax(cycleStrInput);
+      // When new syntax is detected, always use the cycleId from t(cycleId)
+      // Otherwise fall back to provided id or generate one
+      const playCycleId = parsedCycle
+        ? parsedCycle.cycleId
+        : data.id || "cycle_" + Date.now();
+
+      // Try to update existing cycle first (seamless update)
+      // updateCycleById handles .ds() restarts internally
+      const updated = updateCycleById(
+        playCycleId,
+        cycleStrInput,
+        data.tempo || null,
+        data.signatureNumerator || null,
+        data.signatureDenominator || null,
+        data.signatureDenominatorParam,
+      );
+
+      if (updated) {
+        console.log(
+          `[WS] playCycle called - updated existing cycle '${playCycleId}' (queued or restarted if ds present)`,
+        );
+      } else {
+        // Cycle doesn't exist - create new one
+        // Always create/start new cycle (immediate)
+        const playCycleIntervalId = playCycle(
+          cycleStrInput,
+          data.tempo || null,
+          data.signatureNumerator || null,
+          data.signatureDenominator || null,
+        );
+
+        if (playCycleIntervalId !== null) {
+          console.log(
+            `[WS] playCycle called - created cycle '${playCycleId}' immediately`,
+          );
+        } else {
+          console.log("[WS] playCycle called - failed to create cycle");
+        }
+      }
+      break;
+
+    case "addTrackToQueue":
+      // Try to extract cycleId from new syntax or use provided id
+      let trackId = data.id;
+      const trackStrInput = data.cycleStr || "[n(60)^2 n(65)^2].c(1)";
+      const parsedTrack = parseMethodChainSyntax(trackStrInput);
+      if (parsedTrack) {
+        trackId = parsedTrack.cycleId;
+      }
+      if (!trackId) {
+        trackId = "track_" + Date.now();
+      }
+      queue.push({
+        id: trackId,
+        function: () =>
+          playTrack(
+            trackStrInput,
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null,
+          ),
+      });
+      console.log(`[WS] Added track '${trackId}' to queue`);
+      break;
+
+    case "addCycleToQueue":
+      // Try to extract cycleId from new syntax or use provided id
+      let cycleQueueId = data.id;
+      const cycleQueueStrInput = data.cycleStr || "[n(70)^4].c(2)";
+      const parsedCycleQueue = parseMethodChainSyntax(cycleQueueStrInput);
+      if (parsedCycleQueue) {
+        cycleQueueId = parsedCycleQueue.cycleId;
+      }
+      if (!cycleQueueId) {
+        cycleQueueId = "cycle_" + Date.now();
+      }
+      // Check if cycle already exists - if so, update at end of cycle instead of queuing
+      const queueCycleExists = activeCycle.some(
+        (c) => c.id === cycleQueueId,
+      );
+      if (queueCycleExists) {
+        // Check if the new cycle has ds() - if so, clear immediately and queue fresh
+        // parsedCycleQueue is already defined above
+        const hasDelayStart =
+          parsedCycleQueue &&
+          parsedCycleQueue.delayStart !== null &&
+          parsedCycleQueue.delayStart !== undefined;
+
+        if (hasDelayStart) {
+          // Cycle with ds() exists - clear it immediately and queue the new one
+          // This ensures the old cycle stops right away when ds changes
+          const existingQueueIndex = activeCycle.findIndex(
+            (c) => c.id === cycleQueueId,
+          );
+          if (existingQueueIndex !== -1) {
+            clearInterval(activeCycle[existingQueueIndex].intervalId);
+            activeCycle.splice(existingQueueIndex, 1);
+            console.log(
+              `[WS] Cycle '${cycleQueueId}' with ds() exists - cleared immediately to queue new one`,
+            );
+          }
+          // Fall through to queue the new cycle (don't break)
+        } else {
+          // No ds() - update at end of cycle instead of on bar change
+          updateCycleById(
+            cycleQueueId,
+            cycleQueueStrInput,
+            data.tempo || null,
+            data.signatureNumerator || null,
+            data.signatureDenominator || null,
+          );
+          console.log(
+            `[WS] Cycle '${cycleQueueId}' already exists - updating at end of cycle instead of queuing`,
+          );
+          break; // Don't queue, already updated
+        }
+      }
+
+      // Queue the cycle if it doesn't exist or if it had ds() and was cleared
+      if (
+        !queueCycleExists ||
+        (parsedCycleQueue &&
+          parsedCycleQueue.delayStart !== null &&
+          parsedCycleQueue.delayStart !== undefined)
+      ) {
+        // Cycle doesn't exist - add to queue as normal
+        queue.push({
+          id: cycleQueueId,
+          function: () =>
+            playCycle(
+              cycleQueueStrInput,
+              data.tempo || null,
+              data.signatureNumerator || null,
+              data.signatureDenominator || null,
+            ),
+        });
+        console.log(`[WS] Added cycle '${cycleQueueId}' to queue`);
+      }
+      break;
+
+    case "updateCycleById":
+      updateCycleById(
+        data.id,
+        data.cycleStr || "[n(70)^4].c(2)",
+        data.tempo || null,
+        data.signatureNumerator || null,
+        data.signatureDenominator || null,
+      );
+      console.log(`[WS] Update cycle '${data.id}' requested`);
+      break;
+
+    case "clearCycleById":
+      if (!data.id) {
+        console.log("[WS] clearCycleById requires an id");
+        break;
+      }
+      const cleared = clearCycleById(data.id);
+      console.log(
+        `[WS] Clear cycle '${data.id}' requested - ${cleared ? "success" : "failed"}`,
+      );
+      break;
+
+    case "clearAllCycles":
+      const clearedCount = clearAllCycles();
+      console.log(
+        `[WS] Clear all cycles requested - cleared ${clearedCount} cycle(s)`,
+      );
+      break;
+
+    case "sendCC":
+      // Send a single CC value instantly
+      // Required: controller, value
+      // Optional: channel (default: 0), debug (default: true for debugging)
+      const ccController =
+        data.controller !== undefined ? data.controller : 7;
+      const ccValue = data.value !== undefined ? data.value : 64;
+      const ccChannel = data.channel !== undefined ? data.channel : 0;
+      const ccDebug = data.debug !== undefined ? data.debug : true; // Enable debug by default
+
+      sendCC(ccController, ccValue, ccChannel, ccDebug);
+      break;
+
+    case "streamCC":
+      // Stream a CC value smoothly
+      // Required: controller, startValue, endValue, duration
+      // Optional: channel (default: 0), easing (default: 'linear'), updateInterval (default: 20), streamId
+      const stream = streamCC(
+        data.controller || 7,
+        data.startValue !== undefined ? data.startValue : 0,
+        data.endValue !== undefined ? data.endValue : 127,
+        data.duration || 2000,
+        data.channel !== undefined ? data.channel : 0,
+        data.easing || "linear",
+        data.updateInterval || 20,
+        data.streamId || null,
+      );
+      if (stream) {
+        console.log(
+          `[WS] streamCC started: id=${stream.id}, controller=${data.controller || 7}`,
+        );
+      } else {
+        console.log("[WS] streamCC failed: MIDI not initialized");
+      }
+      break;
+
+    case "streamMultipleCC":
+      // Stream multiple CC values simultaneously
+      // Required: streams (array of {controller, startValue, endValue, duration, channel?, easing?, updateInterval?, streamId?})
+      if (Array.isArray(data.streams) && data.streams.length > 0) {
+        const streams = streamMultipleCC(data.streams);
+        console.log(
+          `[WS] streamMultipleCC started: ${streams.length} stream(s)`,
+        );
+      } else {
+        console.log("[WS] streamMultipleCC failed: invalid streams array");
+      }
+      break;
+
+    case "stopCCStream":
+      // Stop a specific CC stream by ID
+      if (data.streamId) {
+        stopCCStream(data.streamId);
+        console.log(`[WS] stopCCStream: ${data.streamId}`);
+      } else {
+        console.log("[WS] stopCCStream requires streamId");
+      }
+      break;
+
+    case "stopAllCCStreams":
+      // Stop all active CC streams
+      stopAllCCStreams();
+      console.log("[WS] stopAllCCStreams: all streams stopped");
+      break;
+
+    case "getActiveCCStreams":
+      // Get list of active CC stream IDs
+      const activeStreams = getActiveCCStreams();
+      if (ws) {
+        ws.send(
+          JSON.stringify({
+            type: "activeCCStreams",
+            streams: activeStreams,
+          }),
+        );
+      }
+      break;
+
+    default:
+      console.log(`[WS] Unknown action: ${data.action}`);
+  }
 }
 
 wss.on("connection", (ws) => {
@@ -5059,282 +5399,7 @@ wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     try {
       const data = JSON.parse(message.toString());
-      console.log("[WS] Received action:", data.action, data);
-
-      // Check for stop syntax first: t(cycleId).stop()
-      if (data.cycleStr) {
-        const stopParsed = parseStopSyntax(data.cycleStr);
-        if (stopParsed) {
-          const cleared = clearCycleById(stopParsed.cycleId);
-          console.log(
-            `[WS] Stop cycle '${stopParsed.cycleId}' requested - ${cleared ? "success" : "failed"}`,
-          );
-          return; // Exit early after handling stop
-        }
-      }
-
-      switch (data.action) {
-        case "playTrack":
-          playTrack(
-            data.cycleStr || "[n(60)^2 n(65)^2].c(1)",
-            data.tempo || null,
-            data.signatureNumerator || null,
-            data.signatureDenominator || null,
-          );
-          console.log("[WS] playTrack called");
-          break;
-
-        case "playCycle":
-          // Extract cycleId from new syntax - this is the authoritative source
-          const cycleStrInput = data.cycleStr || "[n(70)^4].c(2)";
-          const parsedCycle = parseMethodChainSyntax(cycleStrInput);
-          // When new syntax is detected, always use the cycleId from t(cycleId)
-          // Otherwise fall back to provided id or generate one
-          const playCycleId = parsedCycle
-            ? parsedCycle.cycleId
-            : data.id || "cycle_" + Date.now();
-
-          // Try to update existing cycle first (seamless update)
-          // updateCycleById handles .ds() restarts internally
-          const updated = updateCycleById(
-            playCycleId,
-            cycleStrInput,
-            data.tempo || null,
-            data.signatureNumerator || null,
-            data.signatureDenominator || null,
-          );
-
-          if (updated) {
-            console.log(
-              `[WS] playCycle called - updated existing cycle '${playCycleId}' (queued or restarted if ds present)`,
-            );
-          } else {
-            // Cycle doesn't exist - create new one
-            // Always create/start new cycle (immediate)
-            const playCycleIntervalId = playCycle(
-              cycleStrInput,
-              data.tempo || null,
-              data.signatureNumerator || null,
-              data.signatureDenominator || null,
-            );
-
-            if (playCycleIntervalId !== null) {
-              console.log(
-                `[WS] playCycle called - created cycle '${playCycleId}' immediately`,
-              );
-            } else {
-              console.log("[WS] playCycle called - failed to create cycle");
-            }
-          }
-          break;
-
-        case "addTrackToQueue":
-          // Try to extract cycleId from new syntax or use provided id
-          let trackId = data.id;
-          const trackStrInput = data.cycleStr || "[n(60)^2 n(65)^2].c(1)";
-          const parsedTrack = parseMethodChainSyntax(trackStrInput);
-          if (parsedTrack) {
-            trackId = parsedTrack.cycleId;
-          }
-          if (!trackId) {
-            trackId = "track_" + Date.now();
-          }
-          queue.push({
-            id: trackId,
-            function: () =>
-              playTrack(
-                trackStrInput,
-                data.tempo || null,
-                data.signatureNumerator || null,
-                data.signatureDenominator || null,
-              ),
-          });
-          console.log(`[WS] Added track '${trackId}' to queue`);
-          break;
-
-        case "addCycleToQueue":
-          // Try to extract cycleId from new syntax or use provided id
-          let cycleQueueId = data.id;
-          const cycleQueueStrInput = data.cycleStr || "[n(70)^4].c(2)";
-          const parsedCycleQueue = parseMethodChainSyntax(cycleQueueStrInput);
-          if (parsedCycleQueue) {
-            cycleQueueId = parsedCycleQueue.cycleId;
-          }
-          if (!cycleQueueId) {
-            cycleQueueId = "cycle_" + Date.now();
-          }
-          // Check if cycle already exists - if so, update at end of cycle instead of queuing
-          const queueCycleExists = activeCycle.some(
-            (c) => c.id === cycleQueueId,
-          );
-          if (queueCycleExists) {
-            // Check if the new cycle has ds() - if so, clear immediately and queue fresh
-            // parsedCycleQueue is already defined above
-            const hasDelayStart =
-              parsedCycleQueue &&
-              parsedCycleQueue.delayStart !== null &&
-              parsedCycleQueue.delayStart !== undefined;
-
-            if (hasDelayStart) {
-              // Cycle with ds() exists - clear it immediately and queue the new one
-              // This ensures the old cycle stops right away when ds changes
-              const existingQueueIndex = activeCycle.findIndex(
-                (c) => c.id === cycleQueueId,
-              );
-              if (existingQueueIndex !== -1) {
-                clearInterval(activeCycle[existingQueueIndex].intervalId);
-                activeCycle.splice(existingQueueIndex, 1);
-                console.log(
-                  `[WS] Cycle '${cycleQueueId}' with ds() exists - cleared immediately to queue new one`,
-                );
-              }
-              // Fall through to queue the new cycle (don't break)
-            } else {
-              // No ds() - update at end of cycle instead of on bar change
-              updateCycleById(
-                cycleQueueId,
-                cycleQueueStrInput,
-                data.tempo || null,
-                data.signatureNumerator || null,
-                data.signatureDenominator || null,
-              );
-              console.log(
-                `[WS] Cycle '${cycleQueueId}' already exists - updating at end of cycle instead of queuing`,
-              );
-              break; // Don't queue, already updated
-            }
-          }
-
-          // Queue the cycle if it doesn't exist or if it had ds() and was cleared
-          if (
-            !queueCycleExists ||
-            (parsedCycleQueue &&
-              parsedCycleQueue.delayStart !== null &&
-              parsedCycleQueue.delayStart !== undefined)
-          ) {
-            // Cycle doesn't exist - add to queue as normal
-            queue.push({
-              id: cycleQueueId,
-              function: () =>
-                playCycle(
-                  cycleQueueStrInput,
-                  data.tempo || null,
-                  data.signatureNumerator || null,
-                  data.signatureDenominator || null,
-                ),
-            });
-            console.log(`[WS] Added cycle '${cycleQueueId}' to queue`);
-          }
-          break;
-
-        case "updateCycleById":
-          updateCycleById(
-            data.id,
-            data.cycleStr || "[n(70)^4].c(2)",
-            data.tempo || null,
-            data.signatureNumerator || null,
-            data.signatureDenominator || null,
-          );
-          console.log(`[WS] Update cycle '${data.id}' requested`);
-          break;
-
-        case "clearCycleById":
-          if (!data.id) {
-            console.log("[WS] clearCycleById requires an id");
-            break;
-          }
-          const cleared = clearCycleById(data.id);
-          console.log(
-            `[WS] Clear cycle '${data.id}' requested - ${cleared ? "success" : "failed"}`,
-          );
-          break;
-
-        case "clearAllCycles":
-          const clearedCount = clearAllCycles();
-          console.log(
-            `[WS] Clear all cycles requested - cleared ${clearedCount} cycle(s)`,
-          );
-          break;
-
-        case "sendCC":
-          // Send a single CC value instantly
-          // Required: controller, value
-          // Optional: channel (default: 0), debug (default: true for debugging)
-          const ccController =
-            data.controller !== undefined ? data.controller : 7;
-          const ccValue = data.value !== undefined ? data.value : 64;
-          const ccChannel = data.channel !== undefined ? data.channel : 0;
-          const ccDebug = data.debug !== undefined ? data.debug : true; // Enable debug by default
-
-          sendCC(ccController, ccValue, ccChannel, ccDebug);
-          break;
-
-        case "streamCC":
-          // Stream a CC value smoothly
-          // Required: controller, startValue, endValue, duration
-          // Optional: channel (default: 0), easing (default: 'linear'), updateInterval (default: 20), streamId
-          const stream = streamCC(
-            data.controller || 7,
-            data.startValue !== undefined ? data.startValue : 0,
-            data.endValue !== undefined ? data.endValue : 127,
-            data.duration || 2000,
-            data.channel !== undefined ? data.channel : 0,
-            data.easing || "linear",
-            data.updateInterval || 20,
-            data.streamId || null,
-          );
-          if (stream) {
-            console.log(
-              `[WS] streamCC started: id=${stream.id}, controller=${data.controller || 7}`,
-            );
-          } else {
-            console.log("[WS] streamCC failed: MIDI not initialized");
-          }
-          break;
-
-        case "streamMultipleCC":
-          // Stream multiple CC values simultaneously
-          // Required: streams (array of {controller, startValue, endValue, duration, channel?, easing?, updateInterval?, streamId?})
-          if (Array.isArray(data.streams) && data.streams.length > 0) {
-            const streams = streamMultipleCC(data.streams);
-            console.log(
-              `[WS] streamMultipleCC started: ${streams.length} stream(s)`,
-            );
-          } else {
-            console.log("[WS] streamMultipleCC failed: invalid streams array");
-          }
-          break;
-
-        case "stopCCStream":
-          // Stop a specific CC stream by ID
-          if (data.streamId) {
-            stopCCStream(data.streamId);
-            console.log(`[WS] stopCCStream: ${data.streamId}`);
-          } else {
-            console.log("[WS] stopCCStream requires streamId");
-          }
-          break;
-
-        case "stopAllCCStreams":
-          // Stop all active CC streams
-          stopAllCCStreams();
-          console.log("[WS] stopAllCCStreams: all streams stopped");
-          break;
-
-        case "getActiveCCStreams":
-          // Get list of active CC stream IDs
-          const activeStreams = getActiveCCStreams();
-          ws.send(
-            JSON.stringify({
-              type: "activeCCStreams",
-              streams: activeStreams,
-            }),
-          );
-          break;
-
-        default:
-          console.log(`[WS] Unknown action: ${data.action}`);
-      }
+      handleMessage(data, ws);
     } catch (error) {
       console.error("[WS] Error processing message:", error);
     }

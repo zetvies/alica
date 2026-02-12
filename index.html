@@ -524,7 +524,7 @@
             }
 
             try {
-                ws = new WebSocket(`ws://localhost:4254`);
+                ws = new WebSocket(`ws://localhost:8080`); // Connect to Relay Server
 
                 ws.onopen = () => {
                     statusEl.textContent = 'Connected';
