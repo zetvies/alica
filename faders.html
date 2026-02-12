@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALiCA - Faders</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'dark-bg': '#000000',
+                        'dark-bg-alt': '#0f0f0f',
+                        'dark-border': '#333',
+                        'dark-text': '#e0e0e0',
+                        'dark-text-muted': '#888',
+                        'blue-accent': '#4a9eff',
+                        'purple-accent': '#9c27b0',
+                        'green-accent': '#22c55e',
+                        'orange-accent': '#f97316',
+                    },
+                    fontFamily: {
+                        'mono': ['Courier New', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #000;
+            color: #e0e0e0;
+            user-select: none;
+        }
+
+        /* Vertical Fader */
+        .fader-track {
+            width: 8px;
+            background: #222;
+            border-radius: 4px;
+            position: relative;
+            cursor: pointer;
+        }
+        .fader-thumb {
+            width: 32px;
+            height: 14px;
+            background: linear-gradient(180deg, #5ab0ff, #3a8edf);
+            border: 1px solid #6cc0ff;
+            border-radius: 3px;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: grab;
+            box-shadow: 0 0 8px rgba(74, 158, 255, 0.4);
+            transition: box-shadow 0.15s;
+        }
+        .fader-thumb:active, .fader-thumb.dragging {
+            cursor: grabbing;
+            box-shadow: 0 0 14px rgba(74, 158, 255, 0.7);
+        }
+        .fader-glow {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            border-radius: 4px;
+            background: linear-gradient(to top, rgba(74, 158, 255, 0.3), transparent);
+            pointer-events: none;
+            transition: height 0.05s;
+        }
+
+        /* XY Pad */
+        .xy-pad {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 6px;
+            position: relative;
+            cursor: crosshair;
+            overflow: hidden;
+        }
+        .xy-pad::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #222;
+            pointer-events: none;
+        }
+        .xy-pad::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #222;
+            pointer-events: none;
+        }
+        .xy-cursor {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #9c27b0;
+            border-radius: 50%;
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 0 12px rgba(156, 39, 176, 0.5), inset 0 0 6px rgba(156, 39, 176, 0.3);
+            transition: box-shadow 0.15s;
+        }
+        .xy-cursor.active {
+            box-shadow: 0 0 20px rgba(156, 39, 176, 0.8), inset 0 0 8px rgba(156, 39, 176, 0.5);
+        }
+        .xy-grid-line {
+            position: absolute;
+            background: #1a1a1a;
+            pointer-events: none;
+        }
+
+        /* Input styles */
+        .param-input {
+            background: #111;
+            border: 1px solid #333;
+            color: #e0e0e0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .param-input:focus {
+            border-color: #4a9eff;
+        }
+        .param-input:hover {
+            border-color: #555;
+        }
+
+        /* Value display */
+        .value-display {
+            font-variant-numeric: tabular-nums;
+            min-width: 28px;
+            text-align: center;
+        }
+
+        /* Card hover */
+        .fader-card {
+            transition: border-color 0.2s;
+        }
+        .fader-card:hover {
+            border-color: #444;
+        }
+    </style>
+</head>
+<body class="font-mono h-screen flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="h-[50px] border-b border-dark-border flex items-center justify-between px-5 bg-dark-bg-alt">
+        <div class="flex items-center gap-4">
+            <div class="font-bold text-xl">ALiCA <span class="text-xs font-normal text-dark-text-muted">Faders</span></div>
+            <div id="ableton-info" class="hidden flex items-center gap-3 text-xs bg-[#111] px-3 py-1 rounded border border-[#333]">
+                <div class="flex items-center gap-1">
+                    <span class="text-dark-text-muted">BPM:</span>
+                    <span id="bpm-display" class="font-bold text-blue-accent">120</span>
+                </div>
+                <div class="w-px h-3 bg-[#333]"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-dark-text-muted">SIG:</span>
+                    <span id="sig-display" class="font-bold text-purple-accent">4/4</span>
+                </div>
+                <div class="w-px h-3 bg-[#333]"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-dark-text-muted">BEAT:</span>
+                    <div id="beat-visualizer" class="flex gap-1">
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-1"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-2"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-3"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#333]" id="beat-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="status" class="px-2 py-1 text-xs rounded border border-red-700 bg-red-900/50 text-red-300">Disconnected</div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 overflow-y-auto p-4" id="fader-container">
+        <div id="faders-grid" class="flex flex-wrap gap-4">
+            <!-- Faders will be injected here -->
+        </div>
+    </div>
+
+    <!-- Footer: Add buttons -->
+    <div class="h-[50px] border-t border-dark-border flex items-center justify-center gap-3 bg-dark-bg-alt">
+        <button onclick="addFader()" class="px-4 py-2 bg-blue-accent/20 border border-blue-accent text-blue-accent rounded hover:bg-blue-accent/30 transition text-sm">+ Add Fader</button>
+        <button onclick="addXYFader()" class="px-4 py-2 bg-purple-accent/20 border border-purple-accent text-purple-accent rounded hover:bg-purple-accent/30 transition text-sm">+ Add XY Fader</button>
+    </div>
+
+    <script>
+        // --- State ---
+        let ws = null;
+        let faders = []; // { id, type: 'fader'|'xy', name, cc, cc2?, channel, value, valueX?, valueY? }
+        let nextId = 1;
+        let currentBpm = 120;
+        let currentSigNum = 4;
+        let currentSigDenom = 4;
+
+        const statusEl = document.getElementById('status');
+        const fadersGrid = document.getElementById('faders-grid');
+        const abletonInfoEl = document.getElementById('ableton-info');
+        const bpmDisplay = document.getElementById('bpm-display');
+        const sigDisplay = document.getElementById('sig-display');
+
+        // --- WebSocket ---
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const wsUrl = `${protocol}//${host}`;
+
+            console.log(`Connecting to WebSocket at: ${wsUrl}`);
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                statusEl.innerText = 'Connected';
+                statusEl.className = 'px-2 py-1 text-xs rounded border border-green-700 bg-green-900/50 text-green-300';
+            };
+
+            ws.onclose = () => {
+                statusEl.innerText = 'Disconnected';
+                statusEl.className = 'px-2 py-1 text-xs rounded border border-red-700 bg-red-900/50 text-red-300';
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("WS Error", err);
+            };
+
+            ws.onmessage = async (msg) => {
+                try {
+                    let msgData = msg.data;
+                    if (msgData instanceof Blob) {
+                        msgData = await msgData.text();
+                    }
+                    const data = JSON.parse(msgData);
+
+                    if (data.type === 'tempoAndSignature') {
+                        updateAbletonInfo(data.tempo, data.signatureNumerator, data.signatureDenominator);
+                    }
+
+                    if (data.type === 'beat') {
+                        updateBeat(data.beatNumber, data.bar);
+                    }
+                } catch(e) {
+                    console.error("Parse error", e);
+                }
+            };
+        }
+
+        connect();
+
+        function sendToServer(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            }
+        }
+
+        // --- Ableton info ---
+        function updateAbletonInfo(tempo, num, denom) {
+            if (tempo) {
+                currentBpm = tempo;
+                bpmDisplay.innerText = Math.round(tempo);
+            }
+            if (num) {
+                currentSigNum = num;
+            }
+            if (denom) currentSigDenom = denom;
+            if (num || denom) {
+                sigDisplay.innerText = `${currentSigNum}/${currentSigDenom}`;
+            }
+            abletonInfoEl.classList.remove('hidden');
+            abletonInfoEl.classList.add('flex');
+        }
+
+        function updateBeat(beatNumber, bar) {
+            const dots = document.querySelectorAll('#beat-visualizer > div');
+            dots.forEach((dot, i) => {
+                dot.style.backgroundColor = (i < beatNumber) ? '#4a9eff' : '#333';
+            });
+        }
+
+        // --- Add Fader ---
+        function addFader() {
+            const id = 'fader_' + nextId++;
+            faders.push({
+                id,
+                type: 'fader',
+                name: 'Fader ' + faders.length,
+                cc: 1, // Default: Mod Wheel
+                channel: 1,
+                value: 0,
+            });
+            renderFaders();
+        }
+
+        // --- Add XY Fader ---
+        function addXYFader() {
+            const id = 'xy_' + nextId++;
+            faders.push({
+                id,
+                type: 'xy',
+                name: 'XY Pad ' + faders.length,
+                cc: 1, // X axis CC
+                cc2: 2, // Y axis CC
+                channel: 1,
+                valueX: 64,
+                valueY: 64,
+            });
+            renderFaders();
+        }
+
+        // --- Remove Fader ---
+        function removeFader(id) {
+            faders = faders.filter(f => f.id !== id);
+            renderFaders();
+        }
+
+        // --- Render ---
+        function renderFaders() {
+            fadersGrid.innerHTML = '';
+            faders.forEach((fader, index) => {
+                if (fader.type === 'fader') {
+                    fadersGrid.appendChild(createFaderElement(fader, index));
+                } else if (fader.type === 'xy') {
+                    fadersGrid.appendChild(createXYElement(fader, index));
+                }
+            });
+        }
+
+        // --- Create Fader Element ---
+        function createFaderElement(fader, index) {
+            const card = document.createElement('div');
+            card.className = 'fader-card bg-[#0a0a0a] border border-[#222] rounded-lg p-4 flex flex-col items-center gap-3';
+            card.style.width = '120px';
+
+            card.innerHTML = `
+                <!-- Name -->
+                <input type="text" value="${fader.name}" 
+                    class="param-input w-full text-center text-xs font-bold"
+                    onchange="updateFaderProp('${fader.id}', 'name', this.value)">
+                
+                <!-- Value display -->
+                <div class="value-display text-2xl font-bold text-blue-accent" id="val-${fader.id}">${fader.value}</div>
+                
+                <!-- Fader track -->
+                <div class="fader-track" style="height: 200px;" id="track-${fader.id}">
+                    <div class="fader-glow" id="glow-${fader.id}" style="height: ${(fader.value / 127) * 100}%"></div>
+                    <div class="fader-thumb" id="thumb-${fader.id}" style="bottom: ${(fader.value / 127) * (200 - 14)}px"></div>
+                </div>
+
+                <!-- CC input -->
+                <div class="flex items-center gap-1 text-[10px]">
+                    <span class="text-dark-text-muted">CC:</span>
+                    <input type="number" value="${fader.cc}" min="0" max="127"
+                        class="param-input w-10 text-center"
+                        onchange="updateFaderProp('${fader.id}', 'cc', parseInt(this.value))">
+                </div>
+
+                <!-- Channel input -->
+                <div class="flex items-center gap-1 text-[10px]">
+                    <span class="text-dark-text-muted">CH:</span>
+                    <input type="number" value="${fader.channel}" min="1" max="16"
+                        class="param-input w-10 text-center"
+                        onchange="updateFaderProp('${fader.id}', 'channel', parseInt(this.value))">
+                </div>
+
+                <!-- Remove -->
+                <button onclick="removeFader('${fader.id}')" 
+                    class="text-[10px] text-red-500/50 hover:text-red-400 transition">✕ Remove</button>
+            `;
+
+            // Setup drag behavior
+            requestAnimationFrame(() => {
+                setupFaderDrag(fader.id, index);
+            });
+
+            return card;
+        }
+
+        // --- Create XY Pad Element ---
+        function createXYElement(fader, index) {
+            const card = document.createElement('div');
+            card.className = 'fader-card bg-[#0a0a0a] border border-[#222] rounded-lg p-4 flex flex-col items-center gap-3';
+            card.style.width = '280px';
+
+            card.innerHTML = `
+                <!-- Name -->
+                <input type="text" value="${fader.name}" 
+                    class="param-input w-full text-center text-xs font-bold"
+                    onchange="updateFaderProp('${fader.id}', 'name', this.value)">
+
+                <!-- Value display -->
+                <div class="flex gap-4 text-xs">
+                    <div class="flex items-center gap-1">
+                        <span class="text-dark-text-muted">X:</span>
+                        <span class="value-display text-blue-accent font-bold" id="valX-${fader.id}">${fader.valueX}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-dark-text-muted">Y:</span>
+                        <span class="value-display text-purple-accent font-bold" id="valY-${fader.id}">${fader.valueY}</span>
+                    </div>
+                </div>
+
+                <!-- XY Pad -->
+                <div class="xy-pad" style="width: 240px; height: 240px;" id="pad-${fader.id}">
+                    <!-- Grid lines -->
+                    <div class="xy-grid-line" style="left:25%;top:0;bottom:0;width:1px;"></div>
+                    <div class="xy-grid-line" style="left:75%;top:0;bottom:0;width:1px;"></div>
+                    <div class="xy-grid-line" style="top:25%;left:0;right:0;height:1px;"></div>
+                    <div class="xy-grid-line" style="top:75%;left:0;right:0;height:1px;"></div>
+                    <!-- Cursor -->
+                    <div class="xy-cursor" id="cursor-${fader.id}" 
+                         style="left: ${(fader.valueX / 127) * 100}%; top: ${((127 - fader.valueY) / 127) * 100}%"></div>
+                </div>
+
+                <!-- CC inputs -->
+                <div class="flex gap-4 text-[10px]">
+                    <div class="flex items-center gap-1">
+                        <span class="text-dark-text-muted">CC X:</span>
+                        <input type="number" value="${fader.cc}" min="0" max="127"
+                            class="param-input w-10 text-center"
+                            onchange="updateFaderProp('${fader.id}', 'cc', parseInt(this.value))">
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="text-dark-text-muted">CC Y:</span>
+                        <input type="number" value="${fader.cc2}" min="0" max="127"
+                            class="param-input w-10 text-center"
+                            onchange="updateFaderProp('${fader.id}', 'cc2', parseInt(this.value))">
+                    </div>
+                </div>
+
+                <!-- Channel input -->
+                <div class="flex items-center gap-1 text-[10px]">
+                    <span class="text-dark-text-muted">CH:</span>
+                    <input type="number" value="${fader.channel}" min="1" max="16"
+                        class="param-input w-10 text-center"
+                        onchange="updateFaderProp('${fader.id}', 'channel', parseInt(this.value))">
+                </div>
+
+                <!-- Remove -->
+                <button onclick="removeFader('${fader.id}')" 
+                    class="text-[10px] text-red-500/50 hover:text-red-400 transition">✕ Remove</button>
+            `;
+
+            // Setup drag behavior
+            requestAnimationFrame(() => {
+                setupXYDrag(fader.id, index);
+            });
+
+            return card;
+        }
+
+        // --- Update property ---
+        function updateFaderProp(id, key, value) {
+            const fader = faders.find(f => f.id === id);
+            if (fader) {
+                fader[key] = value;
+            }
+        }
+
+        // --- Fader Drag ---
+        function setupFaderDrag(faderId, index) {
+            const track = document.getElementById(`track-${faderId}`);
+            const thumb = document.getElementById(`thumb-${faderId}`);
+            if (!track || !thumb) return;
+
+            let isDragging = false;
+
+            function updateValue(clientY) {
+                const rect = track.getBoundingClientRect();
+                const trackHeight = rect.height;
+                const thumbHeight = 14;
+                const usableHeight = trackHeight - thumbHeight;
+
+                // Calculate position (0 = bottom, 1 = top)
+                let ratio = 1 - ((clientY - rect.top - thumbHeight / 2) / usableHeight);
+                ratio = Math.max(0, Math.min(1, ratio));
+
+                const value = Math.round(ratio * 127);
+                const fader = faders[index];
+                if (!fader) return;
+
+                fader.value = value;
+
+                // Update UI
+                thumb.style.bottom = `${ratio * usableHeight}px`;
+                const glow = document.getElementById(`glow-${faderId}`);
+                if (glow) glow.style.height = `${ratio * 100}%`;
+                const valEl = document.getElementById(`val-${faderId}`);
+                if (valEl) valEl.innerText = value;
+
+                // Send CC to server
+                sendToServer({
+                    action: 'sendCC',
+                    controller: fader.cc,
+                    value: value,
+                    channel: (fader.channel || 1) - 1, // Server uses 0-indexed channels
+                    debug: false
+                });
+            }
+
+            track.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                thumb.classList.add('dragging');
+                updateValue(e.clientY);
+                e.preventDefault();
+            });
+
+            track.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                thumb.classList.add('dragging');
+                updateValue(e.touches[0].clientY);
+                e.preventDefault();
+            }, { passive: false });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                updateValue(e.clientY);
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                updateValue(e.touches[0].clientY);
+            }, { passive: false });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    thumb.classList.remove('dragging');
+                }
+            });
+
+            document.addEventListener('touchend', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    thumb.classList.remove('dragging');
+                }
+            });
+
+            // Double-click to reset to center
+            track.addEventListener('dblclick', () => {
+                const fader = faders[index];
+                if (!fader) return;
+                fader.value = 64;
+                const usableHeight = track.getBoundingClientRect().height - 14;
+                thumb.style.bottom = `${(64 / 127) * usableHeight}px`;
+                const glow = document.getElementById(`glow-${faderId}`);
+                if (glow) glow.style.height = '50.4%';
+                const valEl = document.getElementById(`val-${faderId}`);
+                if (valEl) valEl.innerText = '64';
+                sendToServer({
+                    action: 'sendCC',
+                    controller: fader.cc,
+                    value: 64,
+                    channel: (fader.channel || 1) - 1,
+                    debug: false
+                });
+            });
+        }
+
+        // --- XY Pad Drag ---
+        function setupXYDrag(faderId, index) {
+            const pad = document.getElementById(`pad-${faderId}`);
+            const cursor = document.getElementById(`cursor-${faderId}`);
+            if (!pad || !cursor) return;
+
+            let isDragging = false;
+
+            function updateXY(clientX, clientY) {
+                const rect = pad.getBoundingClientRect();
+
+                let ratioX = (clientX - rect.left) / rect.width;
+                let ratioY = 1 - ((clientY - rect.top) / rect.height); // Invert Y (top = high)
+
+                ratioX = Math.max(0, Math.min(1, ratioX));
+                ratioY = Math.max(0, Math.min(1, ratioY));
+
+                const valueX = Math.round(ratioX * 127);
+                const valueY = Math.round(ratioY * 127);
+
+                const fader = faders[index];
+                if (!fader) return;
+
+                fader.valueX = valueX;
+                fader.valueY = valueY;
+
+                // Update UI
+                cursor.style.left = `${ratioX * 100}%`;
+                cursor.style.top = `${(1 - ratioY) * 100}%`;
+
+                const valXEl = document.getElementById(`valX-${faderId}`);
+                const valYEl = document.getElementById(`valY-${faderId}`);
+                if (valXEl) valXEl.innerText = valueX;
+                if (valYEl) valYEl.innerText = valueY;
+
+                // Send both CCs to server
+                sendToServer({
+                    action: 'sendCC',
+                    controller: fader.cc,
+                    value: valueX,
+                    channel: (fader.channel || 1) - 1,
+                    debug: false
+                });
+                sendToServer({
+                    action: 'sendCC',
+                    controller: fader.cc2,
+                    value: valueY,
+                    channel: (fader.channel || 1) - 1,
+                    debug: false
+                });
+            }
+
+            pad.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                cursor.classList.add('active');
+                updateXY(e.clientX, e.clientY);
+                e.preventDefault();
+            });
+
+            pad.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                cursor.classList.add('active');
+                updateXY(e.touches[0].clientX, e.touches[0].clientY);
+                e.preventDefault();
+            }, { passive: false });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                updateXY(e.clientX, e.clientY);
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                updateXY(e.touches[0].clientX, e.touches[0].clientY);
+            }, { passive: false });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    cursor.classList.remove('active');
+                }
+            });
+
+            document.addEventListener('touchend', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    cursor.classList.remove('active');
+                }
+            });
+
+            // Double-click to reset to center
+            pad.addEventListener('dblclick', () => {
+                const fader = faders[index];
+                if (!fader) return;
+                fader.valueX = 64;
+                fader.valueY = 64;
+                cursor.style.left = '50.4%';
+                cursor.style.top = '49.6%';
+                const valXEl = document.getElementById(`valX-${faderId}`);
+                const valYEl = document.getElementById(`valY-${faderId}`);
+                if (valXEl) valXEl.innerText = '64';
+                if (valYEl) valYEl.innerText = '64';
+                sendToServer({
+                    action: 'sendCC',
+                    controller: fader.cc,
+                    value: 64,
+                    channel: (fader.channel || 1) - 1,
+                    debug: false
+                });
+                sendToServer({
+                    action: 'sendCC',
+                    controller: fader.cc2,
+                    value: 64,
+                    channel: (fader.channel || 1) - 1,
+                    debug: false
+                });
+            });
+        }
+    </script>
+</body>
+</html>
