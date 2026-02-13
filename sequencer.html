@@ -155,9 +155,17 @@
                     
                     // Handle Shared State (Initial Load)
                     if (data.type === 'sharedState') {
-                        if (data.sequencerState) {
-                            tracks = data.sequencerState;
-                            renderTracks();
+                        // Hydration Logic
+                        // 1. If server has state, use it (Server Wins)
+                        // 2. If server empty, use local state (Client Pushes)
+                        if (data.sequencerState && Array.isArray(data.sequencerState) && data.sequencerState.length > 0) {
+                             console.log('Hydrating from Server State');
+                             tracks = data.sequencerState;
+                             renderTracks();
+                             updateUrl(); // Sync URL to server state
+                        } else if (tracks.length > 0) {
+                             console.log('Hydrating Server from URL State');
+                             broadcastSequencerState(); // Push local state to server
                         }
                     }
 
@@ -165,6 +173,7 @@
                     if (data.type === 'sequencerChange') {
                         tracks = data.state;
                         renderTracks();
+                        updateUrl(); // Sync URL to new state
                     }
                     
                     if(data.type === 'tempoAndSignature') {
@@ -181,6 +190,7 @@
             };
         }
 
+        loadContentFromUrl(); // Load from URL first
         connect();
 
         function updateAbletonInfo(tempo, num, denom) {
@@ -261,43 +271,30 @@
              animationFrameId = requestAnimationFrame(renderPlayheadLoop);
         }
 
+        // Global set to track currently playing buttons to avoid heavy DOM queries
+        let activeBtnIds = new Set();
+
         function updateTracksPlayhead(barPhase) {
-            // barPhase is 0.0 -> 1.0 based on GLOBAL signature
-            
-            // Calculate Total Beats (approx) = (currentBar-1)*GlobalSn + (currentBeat-1) + beatProgress
-            // To be precise, we need 'beatProgress' inside this function or passed to it.
-            // Actually 'barPhase' is (beatIndex + beatProgress) / GlobalSn.
-            // So TotalBeatsInBar = barPhase * GlobalSn.
-            
             const globalSn = currentSigNum || 4;
             const currentTotalBeatsInBar = barPhase * globalSn;
             
-            // Total Absolute Beats since "start" (conceptually)
-            // We use modulo arithmetic so we don't need absolute 0 since start of song, just consistent bar counting.
-            // But we need bar number to know offset for 3/4 vs 4/4 sync.
+            // Absolute beats
             const absBeats = ((currentBar || 1) - 1) * globalSn + currentTotalBeatsInBar;
 
-            document.querySelectorAll('.step-btn').forEach(el => el.classList.remove('playing'));
+            // Calculate which buttons SHOULD be active this frame
+            const nextActiveBtnIds = new Set();
 
             tracks.forEach((track, tIdx) => {
-                // Determine track signature (Use global Track property, fallback to app global)
                 let trackSn = track.sn || globalSn;
-                
-                // Track Phase: (AbsoluteBeats % TrackSn) / TrackSn
-                // This correctly wraps at TrackSn (e.g., 3 beats) regardless of Global Bar (e.g. 4 beats)
                 const trackPhase = (absBeats % trackSn) / trackSn;
                 
-                // Clamp and normalize
                 const wrappedPhase = trackPhase % 1.0;
                 const normalizedPhase = wrappedPhase < 0 ? wrappedPhase + 1 : wrappedPhase;
                 
                 track.sequences.forEach((seq, seqIdx) => {
-                     // Check sequence-specific override (rare, but supported by ALiCA block syntax)
-                     // Now we use Track property. Seq property is deprecated in UI but logic remains compatible.
-                     // If we wanted seq override, we'd check seq.sn, but UI removed it.
                      const effectiveSn = trackSn;
                      
-                     // Recalculate if seq overrides
+                     // Recalculate if seq overrides (logic kept for compatibility)
                      const seqPhase = (effSn => {
                          if(effSn === trackSn) return normalizedPhase;
                          const p = (absBeats % effSn) / effSn;
@@ -307,14 +304,36 @@
                      const steps = seq.steps;
                      if(steps.length > 0 && seq.active !== false) {
                         const stepIndex = Math.floor(seqPhase * steps.length);
-                        // Safe clamp
                         const activeIndex = Math.min(stepIndex, steps.length - 1);
-    
-                        const btn = document.querySelector(`.step-btn[data-track="${tIdx}"][data-sequence="${seqIdx}"][data-step="${activeIndex}"]`);
-                        if(btn) btn.classList.add('playing');
+                        
+                        // Check if this specific step is active in data
+                        if (steps[activeIndex].active) {
+                            // Construct ID: btn-{trackIdx}-{seqIdx}-{stepIdx}
+                            nextActiveBtnIds.add(`btn-${tIdx}-${seqIdx}-${activeIndex}`);
+                        }
                      }
                 });
             });
+
+            // Diff and Update
+            // 1. Remove 'playing' from buttons that are no longer active
+            for (const id of activeBtnIds) {
+                if (!nextActiveBtnIds.has(id)) {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.classList.remove('playing');
+                }
+            }
+
+            // 2. Add 'playing' to new active buttons
+            for (const id of nextActiveBtnIds) {
+                if (!activeBtnIds.has(id)) {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.classList.add('playing');
+                }
+            }
+
+            // Update cache
+            activeBtnIds = nextActiveBtnIds;
         }
 
         // --- UI Logic ---
@@ -358,6 +377,7 @@
                 seq.steps.forEach((step, stepIdx) => {
                     const stepBtn = document.createElement('div');
                     stepBtn.className = `step-btn ${step.active ? 'active' : ''} h-8 w-6`; // Slightly bigger/taller step
+                    stepBtn.id = `btn-${index}-${seqIndex}-${stepIdx}`; // Optimized ID for playhead
                     stepBtn.dataset.track = index;
                     stepBtn.dataset.sequence = seqIndex;
                     stepBtn.dataset.step = stepIdx;
@@ -458,6 +478,7 @@
                 }]
             });
             renderTracks();
+            saveState();
         }
 
         function removeTrack(index) {
@@ -473,6 +494,7 @@
             }
             tracks.splice(index, 1);
             renderTracks();
+            saveState();
         }
 
         function toggleTrackActive(index, isActive) {
@@ -507,10 +529,10 @@
 
         function toggleStep(trackIndex, seqIndex, stepIndex) {
             tracks[trackIndex].sequences[seqIndex].steps[stepIndex].active = !tracks[trackIndex].sequences[seqIndex].steps[stepIndex].active;
-            const btn = document.querySelector(`.step-btn[data-track="${trackIndex}"][data-sequence="${seqIndex}"][data-step="${stepIndex}"]`);
+            const btn = document.getElementById(`btn-${trackIndex}-${seqIndex}-${stepIndex}`);
             if(btn) btn.classList.toggle('active');
             sendUpdate(tracks[trackIndex].id);
-            broadcastSequencerState();
+            saveState();
         }
 
         function updateTrackName(index, val) {
@@ -530,6 +552,7 @@
             tracks[index].name = val;
             // Send new updates with new name
             sendUpdate(tracks[index].id);
+            saveState();
         }
         
         function updateTrackParam(index, key, val) {
@@ -538,6 +561,7 @@
                  tracks[index][key] = v;
                  sendUpdate(tracks[index].id);
                  renderTracks(); // Re-render to update playhead logic
+                 saveState();
              }
         }
         
@@ -545,6 +569,7 @@
         function updateSeqParam(trackIndex, seqIndex, key, val) {
             tracks[trackIndex].sequences[seqIndex][key] = val;
             sendUpdate(tracks[trackIndex].id);
+            saveState();
         }
 
         function addSequence(trackIndex) {
@@ -561,6 +586,7 @@
             });
             renderTracks();
             sendUpdate(track.id);
+            saveState();
         }
 
         function removeSequence(trackIndex, seqIndex) {
@@ -574,6 +600,7 @@
             renderTracks();
             // Re-send updates for track (will recreate necessary IDs for remaining)
             sendUpdate(track.id);
+            saveState();
         }
 
         function updateSeqStepCount(trackIndex, seqIndex, val) {
@@ -591,6 +618,7 @@
             
             renderTracks();
             sendUpdate(tracks[trackIndex].id);
+            saveState();
         }
 
         // --- ALiCA Logic ---
@@ -679,6 +707,44 @@
                     id: track.name.replace(/[^a-zA-Z0-9_\-]/g, '_') // Fallback ID
                 }));
             }
+        }
+
+        // --- URL State & History ---
+        let saveTimeout = null;
+
+        function loadContentFromUrl() {
+            const hash = window.location.hash;
+            if (hash && hash.startsWith('#state=')) {
+                try {
+                    const stateStr = decodeURIComponent(hash.substring(7));
+                    const loadedTracks = JSON.parse(stateStr);
+                    if (Array.isArray(loadedTracks)) {
+                        console.log('Loaded state from URL:', loadedTracks.length, 'tracks');
+                        tracks = loadedTracks;
+                        renderTracks();
+                        return true; // Loaded successfully
+                    }
+                } catch (e) {
+                    console.error('Failed to load state from URL:', e);
+                }
+            }
+            return false;
+        }
+
+        function updateUrl() {
+            const stateStr = JSON.stringify(tracks);
+            const encoded = encodeURIComponent(stateStr);
+            const newUrl = window.location.origin + window.location.pathname + '#state=' + encoded;
+            window.history.replaceState(null, '', newUrl);
+        }
+
+        function saveState() {
+            // Save to URL immediately (or debounced? URL update is cheap-ish, but let's debounce slightly if needed)
+            // For now, immediate for responsiveness, or maybe debounce the URL part if it lags.
+            updateUrl();
+            
+            // Broadcast to other clients
+            broadcastSequencerState();
         }
 
         function broadcastSequencerState() {

@@ -213,6 +213,44 @@
         const bpmDisplay = document.getElementById('bpm-display');
         const sigDisplay = document.getElementById('sig-display');
 
+
+        // --- URL State & History ---
+        function loadContentFromUrl() {
+            const hash = window.location.hash;
+            if (hash && hash.startsWith('#state=')) {
+                try {
+                    const stateStr = decodeURIComponent(hash.substring(7));
+                    const loadedData = JSON.parse(stateStr);
+                    if (loadedData.faders && Array.isArray(loadedData.faders)) {
+                        console.log('Loaded state from URL:', loadedData.faders.length, 'faders');
+                        faders = loadedData.faders;
+                        nextId = loadedData.nextId || (Math.max(...faders.map(f => parseInt(f.id.split('_')[1]) || 0)) + 1);
+                        renderFaders();
+                        return true;
+                    }
+                } catch (e) {
+                    console.error('Failed to load state from URL:', e);
+                }
+            }
+            return false;
+        }
+
+        function updateUrl() {
+            const state = {
+                faders: faders,
+                nextId: nextId
+            };
+            const stateStr = JSON.stringify(state);
+            const encoded = encodeURIComponent(stateStr);
+            const newUrl = window.location.origin + window.location.pathname + '#state=' + encoded;
+            window.history.replaceState(null, '', newUrl);
+        }
+
+        function saveState() {
+            updateUrl();
+            broadcastFadersState();
+        }
+
         // --- WebSocket ---
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -256,11 +294,17 @@
                     // Receive fader state from another client
                     if (data.type === 'fadersChange' && data.state) {
                         applyFadersState(data.state);
+                        updateUrl();
                     }
 
                     // Receive shared state on connect
-                    if (data.type === 'sharedState' && data.fadersState) {
-                        applyFadersState(data.fadersState);
+                    if (data.type === 'sharedState') {
+                        if (data.fadersState && data.fadersState.faders && data.fadersState.faders.length > 0) {
+                            applyFadersState(data.fadersState);
+                            updateUrl();
+                        } else if (faders.length > 0) {
+                            broadcastFadersState();
+                        }
                     }
                 } catch(e) {
                     console.error("Parse error", e);
@@ -268,6 +312,8 @@
             };
         }
 
+
+        loadContentFromUrl();
         connect();
 
         function sendToServer(data) {
@@ -345,7 +391,7 @@
                 value: 0,
             });
             renderFaders();
-            broadcastFadersState();
+            saveState();
         }
 
         // --- Add XY Fader ---
@@ -362,14 +408,14 @@
                 valueY: 64,
             });
             renderFaders();
-            broadcastFadersState();
+            saveState();
         }
 
         // --- Remove Fader ---
         function removeFader(id) {
             faders = faders.filter(f => f.id !== id);
             renderFaders();
-            broadcastFadersState();
+            saveState();
         }
 
         // --- Render ---
@@ -512,7 +558,7 @@
             const fader = faders.find(f => f.id === id);
             if (fader) {
                 fader[key] = value;
-                broadcastFadersState();
+                saveState();
             }
         }
 
@@ -585,6 +631,7 @@
                 if (isDragging) {
                     isDragging = false;
                     thumb.classList.remove('dragging');
+                    saveState();
                 }
             });
 
@@ -592,6 +639,7 @@
                 if (isDragging) {
                     isDragging = false;
                     thumb.classList.remove('dragging');
+                    saveState();
                 }
             });
 
@@ -613,6 +661,7 @@
                     channel: (fader.channel || 1) - 1,
                     debug: false
                 });
+                saveState();
             });
         }
 
@@ -696,6 +745,7 @@
                 if (isDragging) {
                     isDragging = false;
                     cursor.classList.remove('active');
+                    saveState();
                 }
             });
 
@@ -703,6 +753,7 @@
                 if (isDragging) {
                     isDragging = false;
                     cursor.classList.remove('active');
+                    saveState();
                 }
             });
 
@@ -732,6 +783,7 @@
                     channel: (fader.channel || 1) - 1,
                     debug: false
                 });
+                saveState();
             });
         }
     </script>
