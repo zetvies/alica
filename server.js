@@ -5104,6 +5104,48 @@ function broadcastTempoAndSignature() {
   }
 }
 
+// Game state for multiplayer (tracked for MIDI control)
+let characters = {};
+
+function calculateAveragePosition() {
+    const chars = Object.values(characters);
+    if (chars.length === 0) return null;
+
+    let sumNX = 0;
+    let sumNY = 0;
+    let count = 0;
+
+    chars.forEach(c => {
+        if (c.nx !== undefined && c.ny !== undefined) {
+            sumNX += c.nx;
+            sumNY += c.ny;
+            count++;
+        }
+    });
+
+    if (count === 0) return null;
+
+    return {
+        nx: sumNX / count,
+        ny: sumNY / count
+    };
+}
+
+function sendAveragePositionMIDI() {
+    const avg = calculateAveragePosition();
+    if (!avg) return;
+
+    // Map Normalized (0-1) to MIDI CC (0-127)
+    // Clamp to 0-127 just in case
+    const ccX = Math.max(0, Math.min(127, Math.round(avg.nx * 127)));
+    const ccY = Math.max(0, Math.min(127, Math.round(avg.ny * 127)));
+
+    // Send CC on Channel 15 (14 zero-indexed)
+    // CC 24 for X, CC 25 for Y
+    sendCC(24, ccX, 14, false); // false = disable debug log to avoid spam
+    sendCC(25, ccY, 14, false);
+}
+
 // Handle incoming messages (reused for local WS and Relay)
 function handleMessage(data, ws = null) {
   console.log("[WS] Received action:", data.action, data);
