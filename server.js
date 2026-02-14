@@ -5479,15 +5479,52 @@ function handleMessage(data, ws = null) {
 
     default:
         // Handle messages that might not have an 'action' property but have a 'type'
-        // These are typically relay messages for collaboration (codeChange, sharedState, etc.)
-        if (data.type === 'codeChange' || data.type === 'sharedState' || data.type === 'sequencerChange') {
+        // Multiplayer Character Events (for MIDI control)
+        if (data.type === 'characterMove') {
+            if (data.id) {
+                // Update local state
+                if (!characters[data.id]) characters[data.id] = {};
+                if (data.x !== undefined) characters[data.id].x = data.x;
+                if (data.y !== undefined) characters[data.id].y = data.y;
+                if (data.nx !== undefined) characters[data.id].nx = data.nx;
+                if (data.ny !== undefined) characters[data.id].ny = data.ny;
+                if (data.facing) characters[data.id].facing = data.facing;
+                
+                sendAveragePositionMIDI();
+            }
+            return;
+        }
+        if (data.type === 'characterJoin') {
+             if (data.character && data.character.id) {
+                characters[data.character.id] = data.character;
+                sendAveragePositionMIDI();
+             }
+             return;
+        }
+        if (data.type === 'characterLeave') {
+             if (data.id) {
+                delete characters[data.id];
+                sendAveragePositionMIDI();
+             }
+             return;
+        }
+        if (data.type === 'characterSync') {
+             if (data.characters) {
+                characters = { ...data.characters }; // Copy
+                sendAveragePositionMIDI();
+             }
+             return;
+        }
+
+        // Relay messages for collaboration (codeChange, sharedState, etc.)
+        if (data.type === 'codeChange' || data.type === 'sharedState' || data.type === 'sequencerChange' || data.type === 'fadersChange') {
             // These are collaborative messages broadcasted by relay.
             // The server (this process) doesn't need to do anything with them except maybe log them.
             // console.log(`[WS] Received collaborative message: ${data.type}`);
             return;
         }
 
-      console.log(`[WS] Unknown action: ${data.action}`);
+      console.log(`[WS] Unknown action: ${data.action} / type: ${data.type}`);
   }
 }
 

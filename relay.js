@@ -73,6 +73,8 @@ wss.on('connection', (ws) => {
                     characters[data.id].x = data.x;
                     characters[data.id].y = data.y;
                     if (data.facing) characters[data.id].facing = data.facing;
+                    if (data.nx !== undefined) characters[data.id].nx = data.nx;
+                    if (data.ny !== undefined) characters[data.id].ny = data.ny;
                 }
                 broadcastToOthers(ws, JSON.stringify(data));
             }

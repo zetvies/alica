@@ -385,6 +385,20 @@
             background: #22c55e;
         }
 
+        .average-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background-color: white;
+            border: 2px solid rgba(0, 0, 0, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+            z-index: 10;
+            pointer-events: none;
+            transition: left 0.1s linear, top 0.1s linear;
+        }
+
         .player-count {
             font-size: 10px;
             color: #999;
@@ -483,6 +497,7 @@
         <!-- Game Area (Scaled 16:9) -->
         <div id="app-container">
             <div class="game-area" id="game-area">
+                <div id="average-dot" class="average-dot"></div>
                 <!-- Characters rendered here -->
             </div>
         </div>
@@ -755,6 +770,45 @@
             playerCountEl.textContent = count > 0 ? `${count} online` : '';
         }
 
+        function updateAverageVisualization() {
+            const chars = Object.values(allCharacters);
+            if (chars.length === 0) {
+                 const dot = document.getElementById('average-dot');
+                 if(dot) dot.style.display = 'none';
+                 return;
+            }
+
+            let sumNX = 0;
+            let sumNY = 0;
+            let count = 0;
+
+            chars.forEach(c => {
+                // Use nx/ny if available, otherwise fallback to x/y / GAME_WIDTH/HEIGHT
+                // For remote chars without nx/ny (legacy), x/y are raw pixels from ANY screen size, 
+                // effectively we assume they meant pixels on OUR screen size if we fallback.
+                let nx = c.nx;
+                let ny = c.ny;
+                if (nx === undefined) nx = c.x / GAME_WIDTH;
+                if (ny === undefined) ny = c.y / GAME_HEIGHT;
+                
+                sumNX += nx;
+                sumNY += ny;
+                count++;
+            });
+            
+            if (count === 0) return;
+
+            const avgX = (sumNX / count) * GAME_WIDTH;
+            const avgY = (sumNY / count) * GAME_HEIGHT;
+
+            const dot = document.getElementById('average-dot');
+            if (dot) {
+                dot.style.display = 'block';
+                dot.style.left = avgX + 'px';
+                dot.style.top = avgY + 'px';
+            }
+        }
+
         // ==================== MY CHARACTER ====================
         function getStartPosition() {
             return {
@@ -784,7 +838,12 @@
             me.x = Math.max(64, Math.min(GAME_WIDTH - 64, me.x));
             me.y = Math.max(64, Math.min(GAME_HEIGHT - 64, me.y));
 
+            // Update normalized coordinates for local use and sending
+            me.nx = me.x / GAME_WIDTH;
+            me.ny = me.y / GAME_HEIGHT;
+
             updateCharacterEl(me);
+            updateAverageVisualization();
 
             // Throttle network updates (every ~90ms)
             moveThrottle++;
@@ -795,6 +854,8 @@
                     id: myId,
                     x: Math.round(me.x),
                     y: Math.round(me.y),
+                    nx: me.nx,
+                    ny: me.ny,
                     facing: me.facing
                 });
             }
@@ -843,6 +904,7 @@
                             allCharacters[c.id] = c;
                             updateCharacterEl(c);
                             updatePlayerCount();
+                            updateAverageVisualization();
                         }
                     }
 
@@ -851,8 +913,11 @@
                         if (allCharacters[data.id]) {
                             allCharacters[data.id].x = data.x;
                             allCharacters[data.id].y = data.y;
+                            if (data.nx !== undefined) allCharacters[data.id].nx = data.nx;
+                            if (data.ny !== undefined) allCharacters[data.id].ny = data.ny;
                             if (data.facing) allCharacters[data.id].facing = data.facing;
                             updateCharacterEl(allCharacters[data.id]);
+                            updateAverageVisualization();
                         }
                     }
 
@@ -860,6 +925,7 @@
                     if (data.type === 'characterLeave' && data.id !== myId) {
                         removeCharacterEl(data.id);
                         updatePlayerCount();
+                        updateAverageVisualization();
                     }
 
                     // Full character sync (on connect, get all existing)
@@ -871,6 +937,7 @@
                             }
                         });
                         updatePlayerCount();
+                        updateAverageVisualization();
                     }
 
                 } catch (e) {
