@@ -5140,10 +5140,10 @@ function sendAveragePositionMIDI() {
     const ccX = Math.max(0, Math.min(127, Math.round(avg.nx * 127)));
     const ccY = Math.max(0, Math.min(127, Math.round(avg.ny * 127)));
 
-    // Send CC on Channel 15 (14 zero-indexed)
-    // CC 24 for X, CC 25 for Y
-    sendCC(24, ccX, 14, false); // false = disable debug log to avoid spam
-    sendCC(25, ccY, 14, false);
+    // Send CC on Channel 16 (15 zero-indexed)
+    // CC 36 (C2) for X, CC 38 (D2) for Y
+    sendCC(36, ccX, 15, false); // false = disable debug log to avoid spam
+    sendCC(38, ccY, 15, false);
 }
 
 // Handle incoming messages (reused for local WS and Relay)
