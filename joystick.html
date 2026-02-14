@@ -522,19 +522,19 @@
         <div class="settings-section-title">Buttons</div>
         <label>
             <span>Btn A Note</span>
-            <input type="number" id="btn-a-note" value="60" min="0" max="127">
+            <input type="number" id="btn-a-note" value="60" min="33" max="79">
         </label>
         <label>
             <span>Btn B Note</span>
-            <input type="number" id="btn-b-note" value="62" min="0" max="127">
+            <input type="number" id="btn-b-note" value="62" min="33" max="79">
         </label>
         <label>
             <span>Btn C Note</span>
-            <input type="number" id="btn-c-note" value="64" min="0" max="127">
+            <input type="number" id="btn-c-note" value="64" min="33" max="79">
         </label>
         <label>
             <span>Channel</span>
-            <input type="number" id="btn-channel" value="1" min="1" max="16">
+            <input type="number" id="btn-channel" value="15" min="1" max="16">
         </label>
         <label>
             <span>Velocity</span>
@@ -635,18 +635,34 @@
         // All characters (including self)
         const allCharacters = {};
 
-        // Joystick direction state
-        let joyDx = 0;
-        let joyDy = 0;
+        // Helper for random int
+        function getRandomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
 
-        // Config
+        // Config - randomize button notes (33-79 or A1-G5)
         const config = {
-            btnANote: 60,
-            btnBNote: 62,
-            btnCNote: 64,
-            btnChannel: 1,
+            btnANote: getRandomInt(33, 79),
+            btnBNote: getRandomInt(33, 79),
+            btnCNote: getRandomInt(33, 79),
+            btnChannel: 15,
             btnVelocity: 127,
         };
+
+        // Sync initial config to UI
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputs = {
+                'btn-a-note': config.btnANote,
+                'btn-b-note': config.btnBNote,
+                'btn-c-note': config.btnCNote,
+                'btn-channel': config.btnChannel,
+                'btn-velocity': config.btnVelocity
+            };
+            Object.entries(inputs).forEach(([id, val]) => {
+                const el = document.getElementById(id);
+                if (el) el.value = val;
+            });
+        });
 
         // ==================== JOIN SCREEN ====================
         const joinScreen = document.getElementById('join-screen');
